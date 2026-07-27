@@ -2,7 +2,7 @@
 /// `flutter run --dart-define=SPORTS_SCOPE_URL=http://192.168.1.20:3000`.
 const sportsScopeBaseUrl = String.fromEnvironment(
   'SPORTS_SCOPE_URL',
-  defaultValue: 'https://app.logicraft.ch',
+  defaultValue: 'https://sports.logicraft.ch',
 );
 
 /// Ce qu'on va naviguer : un itinéraire partagé, ou rien (navigation libre).

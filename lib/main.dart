@@ -333,7 +333,7 @@ class _SensorsPageState extends State<SensorsPage> {
               keyboardType: TextInputType.url,
               decoration: const InputDecoration(
                 labelText: 'Lien d\'un itinéraire partagé',
-                hintText: 'https://app.logicraft.ch/routes/…',
+                hintText: 'https://sports.logicraft.ch/routes/…',
               ),
               onSubmitted: (value) => _openPastedLink(sheetContext, value),
             ),

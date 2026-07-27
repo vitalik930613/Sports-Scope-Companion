@@ -64,14 +64,14 @@
 
             <!-- App Link sur l'URL réelle : un lien d'itinéraire partagé ouvre
                  directement la navigation dans l'appli, depuis n'importe où.
-                 Inactif tant que https://app.logicraft.ch/.well-known/assetlinks.json
+                 Inactif tant que https://sports.logicraft.ch/.well-known/assetlinks.json
                  ne publie pas l'empreinte SHA-256 de la clé de signature — d'ici
                  là Android se contente d'ouvrir le navigateur. -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="https" android:host="app.logicraft.ch"
+                <data android:scheme="https" android:host="sports.logicraft.ch"
                     android:pathPattern="/routes/.*/navigate"/>
             </intent-filter>
         </activity>
