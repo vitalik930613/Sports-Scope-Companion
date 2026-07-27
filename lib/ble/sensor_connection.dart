@@ -5,6 +5,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import 'characteristic_decoder.dart';
 import 'samples.dart';
+import 'sensor_profile.dart';
 
 enum SensorStatus { disconnected, connecting, connected, reconnecting, failed }
 
@@ -17,20 +18,30 @@ enum SensorStatus { disconnected, connecting, connected, reconnecting, failed }
 ///
 /// Chaque trame reçue est publiée deux fois : décodée sur [samples], et brute
 /// sur [rawFrames]. L'appelant persiste les deux.
+///
+/// Ce qu'on lit sur l'appareil n'est pas dicté par l'appelant : les capacités
+/// sont *découvertes* à la connexion (voir [detectedKinds]) et confrontées au
+/// registre des profils. Un capteur de puissance qui publie aussi la cadence
+/// est donc exploité en entier sans que personne ait eu à le déclarer.
 class SensorConnection {
   SensorConnection({
     required this.device,
-    required this.decoders,
     this.label,
   });
 
   final BluetoothDevice device;
-  final List<CharacteristicDecoder> decoders;
   final String? label;
 
   final _samples = StreamController<SensorSample>.broadcast();
   final _rawFrames = StreamController<RawFrame>.broadcast();
   final status = ValueNotifier<SensorStatus>(SensorStatus.disconnected);
+
+  /// Capacités reconnues sur l'appareil, remplies après la découverte des
+  /// services. Vide tant qu'on n'a pas été connecté au moins une fois.
+  final detectedKinds = ValueNotifier<Set<SensorKind>>(const {});
+
+  /// Décodeurs effectivement branchés, reconstruits à chaque (re)connexion.
+  var _decoders = <CharacteristicDecoder>[];
 
   Stream<SensorSample> get samples => _samples.stream;
   Stream<RawFrame> get rawFrames => _rawFrames.stream;
@@ -84,7 +95,20 @@ class SensorConnection {
         for (final c in service.characteristics) c.uuid: c,
     };
 
-    for (final decoder in decoders) {
+    // Le tri se fait sur ce qui est réellement exposé, pas sur ce qui a été
+    // annoncé au scan : le Di2 ne publie pas son service propriétaire, et une
+    // découverte reste la seule source fiable.
+    final kinds = kindsFromCharacteristics(characteristics.keys);
+    detectedKinds.value = kinds;
+    // Décodeurs neufs à chaque abonnement : ils portent des compteurs cumulés
+    // qu'une coupure a pu laisser à cheval.
+    _decoders = decodersFor(kinds);
+
+    if (_decoders.isEmpty) {
+      debugPrint('[ble] $name: aucun profil connu sur cet appareil');
+    }
+
+    for (final decoder in _decoders) {
       final characteristic = characteristics[decoder.characteristic];
       if (characteristic == null) {
         debugPrint('[ble] $name: ${decoder.characteristic} absente');
@@ -138,7 +162,7 @@ class SensorConnection {
   }
 
   void _resetDecoders() {
-    for (final decoder in decoders) {
+    for (final decoder in _decoders) {
       decoder.reset();
     }
   }
@@ -163,5 +187,6 @@ class SensorConnection {
     await _samples.close();
     await _rawFrames.close();
     status.dispose();
+    detectedKinds.dispose();
   }
 }

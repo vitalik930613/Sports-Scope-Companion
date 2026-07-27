@@ -4,16 +4,26 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
-import 'ble/characteristic_decoder.dart';
 import 'ble/samples.dart';
 import 'ble/sensor_connection.dart';
 import 'ble/sensor_hub.dart';
+import 'ble/sensor_profile.dart';
+import 'devices/known_device.dart';
+import 'devices/known_devices_store.dart';
 import 'drivetrain.dart';
 
-void main() => runApp(const SportsScopeApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Le catalogue est lu avant le premier écran : la liste des capteurs connus
+  // doit être là dès l'affichage, sinon elle apparaîtrait après coup.
+  final devices = await KnownDevicesStore.open();
+  runApp(SportsScopeApp(devices: devices));
+}
 
 class SportsScopeApp extends StatelessWidget {
-  const SportsScopeApp({super.key});
+  const SportsScopeApp({super.key, required this.devices});
+
+  final KnownDevicesStore devices;
 
   @override
   Widget build(BuildContext context) {
@@ -23,7 +33,7 @@ class SportsScopeApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
         useMaterial3: true,
       ),
-      home: const SensorSpikePage(),
+      home: SensorSpikePage(devices: devices),
     );
   }
 }
@@ -34,7 +44,9 @@ class SportsScopeApp extends StatelessWidget {
 /// parlent, et de voir défiler les trames brutes pour finir de décoder les
 /// octets Di2 encore inconnus (offset 3, offset 15).
 class SensorSpikePage extends StatefulWidget {
-  const SensorSpikePage({super.key});
+  const SensorSpikePage({super.key, required this.devices});
+
+  final KnownDevicesStore devices;
 
   @override
   State<SensorSpikePage> createState() => _SensorSpikePageState();
@@ -51,9 +63,13 @@ class _SensorSpikePageState extends State<SensorSpikePage> {
   StreamSubscription<bool>? _scanStateSub;
   StreamSubscription<RawFrame>? _frameSub;
 
+  KnownDevicesStore get _devices => widget.devices;
+
   @override
   void initState() {
     super.initState();
+
+    _devices.addListener(_onDevicesChanged);
 
     _scanSub = FlutterBluePlus.onScanResults.listen((results) {
       if (mounted) setState(() => _results = results);
@@ -71,15 +87,42 @@ class _SensorSpikePageState extends State<SensorSpikePage> {
         if (_recentFrames.length > 12) _recentFrames.removeLast();
       });
     });
+
+    _reconnectKnownDevices();
   }
 
   @override
   void dispose() {
+    _devices.removeListener(_onDevicesChanged);
     _scanSub?.cancel();
     _scanStateSub?.cancel();
     _frameSub?.cancel();
     _hub.dispose();
     super.dispose();
+  }
+
+  void _onDevicesChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// Reprend contact avec les capteurs connus, sans scan préalable.
+  ///
+  /// Un scan n'est pas nécessaire pour se connecter à une adresse déjà connue,
+  /// et il coûterait plusieurs secondes au démarrage. Les capteurs hors de
+  /// portée échouent puis repassent par le backoff de [SensorConnection] : au
+  /// moment d'enfourcher le vélo, ils se rattachent tout seuls.
+  Future<void> _reconnectKnownDevices() async {
+    if (!await FlutterBluePlus.isSupported) return;
+    if (FlutterBluePlus.adapterStateNow != BluetoothAdapterState.on) return;
+
+    for (final known in _devices.devices) {
+      if (!known.autoConnect) continue;
+      await _connect(
+        BluetoothDevice.fromId(known.remoteId),
+        label: known.name.isEmpty ? null : known.name,
+        announce: false,
+      );
+    }
   }
 
   Future<void> _startScan() async {
@@ -102,20 +145,53 @@ class _SensorSpikePageState extends State<SensorSpikePage> {
     await FlutterBluePlus.startScan(timeout: const Duration(seconds: 15));
   }
 
-  Future<void> _connect(BluetoothDevice device) async {
-    await FlutterBluePlus.stopScan();
+  /// Connecte un appareil et le retient dès qu'il a répondu.
+  ///
+  /// [announce] distingue le geste explicite (tap sur un résultat de scan, où
+  /// un échec mérite un message) de la reconnexion silencieuse au démarrage.
+  Future<void> _connect(
+    BluetoothDevice device, {
+    String? label,
+    bool announce = true,
+  }) async {
+    if (announce) await FlutterBluePlus.stopScan();
+
     try {
-      await _hub.add(device, [
-        HeartRateCharacteristic(),
-        CyclingPowerCharacteristic(),
-        CscCharacteristic(),
-        Di2Characteristic(),
-        VariaRadarCharacteristic(),
-      ]);
+      final connection = await _hub.add(device, label: label);
+      _rememberOnConnect(connection);
       if (mounted) setState(() {});
     } catch (e) {
-      _toast('Connexion échouée : $e');
+      if (announce) _toast('Connexion échouée : $e');
     }
+  }
+
+  /// Écrit l'appareil au catalogue à chaque fois qu'il passe à *connecté*.
+  ///
+  /// À la connexion, pas au tap : tant que l'appareil n'a pas répondu on ne
+  /// connaît ni son nom ni ses capacités, et mémoriser une adresse qui ne
+  /// répond jamais encombrerait la liste. Les reconnexions repassent par là,
+  /// ce qui rafraîchit la date et suffit à trier la liste par usage.
+  void _rememberOnConnect(SensorConnection connection) {
+    void persist() {
+      if (connection.status.value != SensorStatus.connected) return;
+      _devices.remember(
+        connection.device.remoteId.str,
+        name: connection.name,
+        kinds: connection.detectedKinds.value,
+      );
+    }
+
+    connection.status.addListener(persist);
+    // Les capacités arrivent à la découverte des services, parfois après le
+    // passage à « connecté » : les deux notifications déclenchent l'écriture.
+    connection.detectedKinds.addListener(persist);
+    persist();
+  }
+
+  Future<void> _forget(KnownDevice known) async {
+    await _hub.remove(DeviceIdentifier(known.remoteId));
+    await _devices.forget(known.remoteId);
+    if (mounted) setState(() {});
   }
 
   void _toast(String message) {
@@ -126,6 +202,23 @@ class _SensorSpikePageState extends State<SensorSpikePage> {
 
   @override
   Widget build(BuildContext context) {
+    final known = _devices.devices;
+    // Un capteur déjà connu n'a rien à faire dans les résultats de scan : il
+    // est déjà listé au-dessus, avec son état réel.
+    final knownIds = {for (final device in known) device.remoteId};
+    final discovered = [
+      for (final result in _results)
+        if (!knownIds.contains(result.device.remoteId.str)) result,
+    ];
+
+    // Un appareil qu'on vient de taper n'est pas encore au catalogue — il n'y
+    // entre qu'une fois connecté. Sans cette section, la connexion en cours
+    // n'aurait aucun retour visuel.
+    final pending = [
+      for (final connection in _hub.connections)
+        if (!knownIds.contains(connection.device.remoteId.str)) connection,
+    ];
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Capteurs'),
@@ -144,20 +237,24 @@ class _SensorSpikePageState extends State<SensorSpikePage> {
           const SizedBox(height: 12),
           _radar(),
           const SizedBox(height: 16),
-          if (_hub.connections.isNotEmpty) ...[
-            _sectionTitle('Connectés'),
-            for (final connection in _hub.connections)
-              _connectionTile(connection),
+          if (known.isNotEmpty) ...[
+            _sectionTitle('Mes capteurs'),
+            for (final device in known) _knownTile(device),
+            const SizedBox(height: 16),
+          ],
+          if (pending.isNotEmpty) ...[
+            _sectionTitle('Connexion en cours'),
+            for (final connection in pending) _connectionTile(connection),
             const SizedBox(height: 16),
           ],
           _sectionTitle(_scanning ? 'Scan en cours…' : 'Appareils détectés'),
-          if (_results.isEmpty && !_scanning)
+          if (discovered.isEmpty && !_scanning)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 24),
               child: Text('Réveille tes capteurs puis lance un scan.',
                   textAlign: TextAlign.center),
             ),
-          for (final result in _results) _scanTile(result),
+          for (final result in discovered) _scanTile(result),
           if (_recentFrames.isNotEmpty) ...[
             const SizedBox(height: 16),
             _sectionTitle('Trames brutes'),
@@ -290,6 +387,84 @@ class _SensorSpikePageState extends State<SensorSpikePage> {
     );
   }
 
+  /// Un capteur mémorisé, connecté ou non.
+  ///
+  /// La ligne existe même quand l'appareil est éteint : c'est tout l'intérêt de
+  /// s'en souvenir, on voit ce qui manque avant de partir.
+  Widget _knownTile(KnownDevice known) {
+    final connection = _hub.connectionFor(DeviceIdentifier(known.remoteId));
+    final capabilities = known.kinds.isEmpty
+        ? 'capacités inconnues'
+        : known.kinds.map(labelFor).join(' · ');
+
+    Widget tile(SensorStatus? status) {
+      final connected = status == SensorStatus.connected;
+      return ListTile(
+        dense: true,
+        leading: Icon(
+          connected
+              ? Icons.bluetooth_connected
+              : (status == null
+                  ? Icons.bluetooth_disabled
+                  : Icons.bluetooth_searching),
+          color: connected
+              ? Colors.teal
+              : (status == null ? Colors.grey : Colors.orange),
+        ),
+        title: Text(known.name.isEmpty ? '(sans nom)' : known.name),
+        subtitle: Text(
+          '$capabilities · ${_statusLabel(status, known)}',
+          maxLines: 2,
+        ),
+        trailing: PopupMenuButton<String>(
+          onSelected: (action) => switch (action) {
+            'forget' => _forget(known),
+            'auto' => _devices.setAutoConnect(known.remoteId, !known.autoConnect),
+            'connect' => _connect(
+                BluetoothDevice.fromId(known.remoteId),
+                label: known.name.isEmpty ? null : known.name,
+              ),
+            _ => null,
+          },
+          itemBuilder: (context) => [
+            if (connection == null)
+              const PopupMenuItem(value: 'connect', child: Text('Connecter')),
+            PopupMenuItem(
+              value: 'auto',
+              child: Text(known.autoConnect
+                  ? 'Ne plus connecter automatiquement'
+                  : 'Connecter automatiquement'),
+            ),
+            const PopupMenuItem(value: 'forget', child: Text('Oublier')),
+          ],
+        ),
+      );
+    }
+
+    if (connection == null) return tile(null);
+    return ValueListenableBuilder<SensorStatus>(
+      valueListenable: connection.status,
+      builder: (context, status, _) => tile(status),
+    );
+  }
+
+  String _statusLabel(SensorStatus? status, KnownDevice? known) {
+    // Pas de connexion ouverte : l'appareil est simplement absent, ou on a
+    // décidé de ne plus le solliciter.
+    if (status == null) {
+      return known?.autoConnect == false
+          ? 'connexion auto désactivée'
+          : 'hors ligne';
+    }
+    return switch (status) {
+      SensorStatus.connected => 'connecté',
+      SensorStatus.connecting => 'connexion…',
+      SensorStatus.reconnecting => 'reconnexion…',
+      SensorStatus.disconnected => 'déconnecté',
+      SensorStatus.failed => 'échec',
+    };
+  }
+
   Widget _connectionTile(SensorConnection connection) {
     return ValueListenableBuilder<SensorStatus>(
       valueListenable: connection.status,
@@ -302,7 +477,7 @@ class _SensorSpikePageState extends State<SensorSpikePage> {
           color: status == SensorStatus.connected ? Colors.teal : Colors.orange,
         ),
         title: Text(connection.name.isEmpty ? '(sans nom)' : connection.name),
-        subtitle: Text(status.name),
+        subtitle: Text(_statusLabel(status, null)),
       ),
     );
   }
@@ -311,12 +486,20 @@ class _SensorSpikePageState extends State<SensorSpikePage> {
     final name = result.advertisementData.advName.isNotEmpty
         ? result.advertisementData.advName
         : result.device.platformName;
+    // Ce que l'appareil annonce savoir faire — indicatif seulement, plusieurs
+    // capteurs (dont le Di2) n'annoncent pas leur service propriétaire.
+    final kinds = kindsFromServices(result.advertisementData.serviceUuids);
+
     return ListTile(
       dense: true,
       title: Text(name.isEmpty ? '(sans nom)' : name),
-      subtitle: Text('${result.device.remoteId} · ${result.rssi} dBm'),
+      subtitle: Text([
+        '${result.device.remoteId} · ${result.rssi} dBm',
+        if (kinds.isNotEmpty) kinds.map(labelFor).join(' · '),
+      ].join('\n')),
+      isThreeLine: kinds.isNotEmpty,
       trailing: const Icon(Icons.link),
-      onTap: () => _connect(result.device),
+      onTap: () => _connect(result.device, label: name),
     );
   }
 

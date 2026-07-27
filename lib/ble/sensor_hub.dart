@@ -3,11 +3,9 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
-import 'characteristic_decoder.dart';
 import 'decoders/di2.dart';
 import 'samples.dart';
 import 'sensor_connection.dart';
-import 'sensor_uuids.dart';
 
 /// Agrège plusieurs capteurs en un seul flux d'échantillons.
 ///
@@ -36,33 +34,31 @@ class SensorHub {
   /// chose dans les deux cas.
   final latestRadar = ValueNotifier<RadarSample?>(null);
 
-  /// Services à annoncer au scan. Le Di2 n'annonce pas forcément son service
-  /// propriétaire dans ses trames de publicité : le filtrer ici le rendrait
-  /// invisible, d'où un scan large et un tri sur ce qu'on trouve après
-  /// connexion.
-  static List<Guid> get knownServices => [
-        BleServices.heartRate,
-        BleServices.cyclingPower,
-        BleServices.cyclingSpeedCadence,
-        BleServices.di2,
-        BleServices.variaRadar,
-      ];
+  /// Une connexion déjà ouverte vers cet appareil, s'il y en a une.
+  SensorConnection? connectionFor(DeviceIdentifier remoteId) {
+    for (final connection in _connections) {
+      if (connection.device.remoteId == remoteId) return connection;
+    }
+    return null;
+  }
 
   /// Ajoute un capteur et lance sa connexion.
   ///
-  /// [decoders] décrit ce qu'on veut lire dessus ; les caractéristiques
-  /// absentes sont simplement ignorées, un même appareil pouvant porter
-  /// plusieurs profils (capteur de puissance publiant aussi la cadence).
+  /// Ce qu'on lira dessus n'est pas passé en paramètre : la connexion découvre
+  /// les capacités de l'appareil et se branche sur tous les profils reconnus
+  /// (voir `sensor_profile.dart`). Ajouter un capteur au projet ne touche donc
+  /// jamais à ce fichier.
+  ///
+  /// Redemander un appareil déjà présent renvoie la connexion existante : deux
+  /// abonnements sur la même caractéristique doubleraient les échantillons.
   Future<SensorConnection> add(
-    BluetoothDevice device,
-    List<CharacteristicDecoder> decoders, {
+    BluetoothDevice device, {
     String? label,
   }) async {
-    final connection = SensorConnection(
-      device: device,
-      decoders: decoders,
-      label: label,
-    );
+    final existing = connectionFor(device.remoteId);
+    if (existing != null) return existing;
+
+    final connection = SensorConnection(device: device, label: label);
     _connections.add(connection);
 
     connection.samples.listen(_onSample, onError: (Object e) {
@@ -90,6 +86,17 @@ class SensorHub {
         break;
     }
     _samples.add(sample);
+  }
+
+  /// Ferme la connexion à un appareil et cesse de le suivre.
+  ///
+  /// Les dernières valeurs affichées ne sont pas remises à zéro : un capteur
+  /// débranché en cours de sortie ne doit pas effacer ce qu'il a mesuré.
+  Future<void> remove(DeviceIdentifier remoteId) async {
+    final connection = connectionFor(remoteId);
+    if (connection == null) return;
+    _connections.remove(connection);
+    await connection.dispose();
   }
 
   Future<void> dispose() async {
