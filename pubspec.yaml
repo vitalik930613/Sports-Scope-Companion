@@ -1,0 +1,31 @@
+name: sports_scope_companion
+description: Enregistrement de capteurs vélo (Di2, puissance, cadence, cardio, GPS) et navigation.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ">=3.12.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # BLE. L'API de flutter_blue_plus bouge d'une mineure à l'autre :
+  # épinglée volontairement.
+  flutter_blue_plus: ^1.35.0
+
+  # Persistance de session. Écriture disque avant affichage.
+  drift: ^2.20.0
+  sqlite3_flutter_libs: ^0.5.24
+  path_provider: ^2.1.4
+  path: ^1.9.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  drift_dev: ^2.20.0
+  build_runner: ^2.4.12
+
+flutter:
+  uses-material-design: true
