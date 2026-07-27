@@ -1,6 +1,8 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
@@ -45,6 +47,13 @@ class _NavigationPageState extends State<NavigationPage> {
   void initState() {
     super.initState();
 
+    // Plein écran, barres système comprises : sur un guidon, chaque centimètre
+    // de carte compte, et les barres d'Android n'ont rien à y faire. `sticky`
+    // les fait réapparaître le temps d'un balayage depuis le bord puis les
+    // remasque — sans quoi un geste involontaire les laisserait à l'écran pour
+    // le reste de la sortie.
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.black)
@@ -68,6 +77,13 @@ class _NavigationPageState extends State<NavigationPage> {
         },
       ));
 
+    // La console de la page remonte dans la sortie de `flutter run`. Sans ça,
+    // une erreur JavaScript côté navigation serait invisible : le WebView
+    // afficherait juste une carte figée, sans rien dire.
+    _controller.setOnConsoleMessage((message) {
+      debugPrint('[web] ${message.level.name}: ${message.message}');
+    });
+
     _bridge = SensorBridge(
       hub: widget.hub,
       send: _controller.runJavaScript,
@@ -82,6 +98,11 @@ class _NavigationPageState extends State<NavigationPage> {
   void _configureAndroid() {
     final platform = _controller.platform;
     if (platform is! AndroidWebViewController) return;
+
+    // Rend la page inspectable depuis `chrome://inspect` du poste de dev —
+    // DOM, réseau, points d'arrêt. Uniquement en debug : en release, ça
+    // ouvrirait le contenu de l'appli à n'importe quel poste branché en USB.
+    if (kDebugMode) AndroidWebViewController.enableDebugging(true);
 
     platform.setGeolocationPermissionsPromptCallbacks(
       onShowPrompt: (request) async =>
@@ -116,6 +137,12 @@ class _NavigationPageState extends State<NavigationPage> {
 
   @override
   void dispose() {
+    // Les barres reviennent en quittant la navigation : la page des capteurs
+    // est un écran d'appli ordinaire, avec son horloge et ses gestes.
+    SystemChrome.setEnabledSystemUIMode(
+      SystemUiMode.manual,
+      overlays: SystemUiOverlay.values,
+    );
     _bridge.dispose();
     super.dispose();
   }
@@ -138,15 +165,17 @@ class _NavigationPageState extends State<NavigationPage> {
       },
       child: Scaffold(
         backgroundColor: Colors.black,
-        body: SafeArea(
-          child: Stack(
-            children: [
-              if (_error == null) WebViewWidget(controller: _controller),
-              if (_error == null && _progress < 100)
-                LinearProgressIndicator(value: _progress / 100),
-              if (_error != null) _errorView(),
-            ],
-          ),
+        // Pas de SafeArea autour de la carte : en immersif il n'y a plus de
+        // barres à contourner, et l'encoche éventuelle est mieux occupée par la
+        // carte que par une bande noire. Seul le message d'erreur, qui est du
+        // texte à lire, garde ses marges.
+        body: Stack(
+          children: [
+            if (_error == null) WebViewWidget(controller: _controller),
+            if (_error == null && _progress < 100)
+              LinearProgressIndicator(value: _progress / 100),
+            if (_error != null) SafeArea(child: _errorView()),
+          ],
         ),
       ),
     );
