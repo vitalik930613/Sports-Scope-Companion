@@ -53,33 +53,71 @@ class SensorConnection {
   Timer? _retryTimer;
   int _attempt = 0;
   bool _disposed = false;
+  bool _everConnected = false;
 
   static const _maxBackoff = Duration(seconds: 30);
 
+  /// Ouvre la connexion et la maintient.
+  ///
+  /// Retourne dès que la demande est passée au système, *pas* quand le capteur
+  /// répond : un capteur endormi peut mettre des minutes, et rien ne doit
+  /// attendre après lui.
   Future<void> start() async {
-    _connectionSub ??= device.connectionState.listen((state) {
-      if (_disposed) return;
-      if (state == BluetoothConnectionState.disconnected &&
-          status.value == SensorStatus.connected) {
-        status.value = SensorStatus.reconnecting;
-        _resetDecoders();
-        _scheduleRetry();
-      }
-    });
+    // C'est l'état de connexion qui pilote tout, jamais le retour de
+    // `connect()` : en mode auto-connexion le système rattache l'appareil dans
+    // notre dos, et une reconnexion doit rebrancher les notifications même si
+    // personne ne l'a demandée.
+    _connectionSub ??= device.connectionState.listen(_onConnectionState);
     await _connect();
+  }
+
+  Future<void> _onConnectionState(BluetoothConnectionState state) async {
+    if (_disposed) return;
+
+    if (state == BluetoothConnectionState.connected) {
+      try {
+        await _subscribeAll();
+        if (_disposed) return;
+        _everConnected = true;
+        _attempt = 0;
+        status.value = SensorStatus.connected;
+      } catch (e) {
+        // Découverte impossible (appareil parti en cours de route) : le système
+        // finira par signaler la déconnexion, qui relancera le cycle.
+        debugPrint('[ble] $name: découverte échouée ($e)');
+      }
+      return;
+    }
+
+    await _cancelCharacteristicSubs();
+    _resetDecoders();
+    if (_disposed) return;
+    status.value =
+        _everConnected ? SensorStatus.reconnecting : SensorStatus.connecting;
   }
 
   Future<void> _connect() async {
     if (_disposed) return;
-    status.value = _attempt == 0 ? SensorStatus.connecting : SensorStatus.reconnecting;
+    status.value =
+        _everConnected ? SensorStatus.reconnecting : SensorStatus.connecting;
 
     try {
-      await device.connect(timeout: const Duration(seconds: 15));
-      await _subscribeAll();
-      _attempt = 0;
-      status.value = SensorStatus.connected;
+      // `autoConnect` délègue la reconnexion à la pile Bluetooth du téléphone :
+      // elle rattache le capteur dès qu'il réapparaît, sans que l'appli scanne
+      // en boucle. C'est ce qui permet de lancer l'appli à la maison et de voir
+      // les capteurs arriver seuls une fois sur le vélo.
+      //
+      // Corollaire : l'appel rend la main immédiatement et ne lève pas si le
+      // capteur est absent — il n'y a donc pas d'« échec de connexion » à
+      // traiter ici, seulement des échecs d'appel système.
+      //
+      // `mtu: null` est imposé par flutter_blue_plus, incompatible avec
+      // `autoConnect`. Sans conséquence : les trames des capteurs tiennent
+      // largement dans la MTU par défaut.
+      await device.connect(autoConnect: true, mtu: null);
     } catch (e) {
-      debugPrint('[ble] $name: échec de connexion ($e)');
+      debugPrint('[ble] $name: demande de connexion refusée ($e)');
+      status.value = SensorStatus.failed;
       _scheduleRetry();
     }
   }
@@ -152,8 +190,9 @@ class SensorConnection {
     if (_disposed) return;
     _retryTimer?.cancel();
 
-    // Backoff exponentiel plafonné : un capteur éteint en fin de sortie ne doit
-    // pas vider la batterie du téléphone en scannant en boucle.
+    // Ne concerne plus l'absence du capteur — le système s'en charge — mais le
+    // refus de l'appel lui-même : Bluetooth coupé au mauvais moment, pile déjà
+    // occupée. Backoff exponentiel plafonné, pour ne pas insister à vide.
     final delay = Duration(
       milliseconds: (500 * (1 << _attempt.clamp(0, 6))).clamp(500, _maxBackoff.inMilliseconds),
     );

@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import 'package:app_links/app_links.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import 'ble/samples.dart';
 import 'ble/sensor_connection.dart';
@@ -11,6 +13,9 @@ import 'ble/sensor_profile.dart';
 import 'devices/known_device.dart';
 import 'devices/known_devices_store.dart';
 import 'drivetrain.dart';
+import 'navigation/navigation_page.dart';
+import 'navigation/navigation_target.dart';
+import 'ui/sensor_icons.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,50 +25,131 @@ Future<void> main() async {
   runApp(SportsScopeApp(devices: devices));
 }
 
-class SportsScopeApp extends StatelessWidget {
+class SportsScopeApp extends StatefulWidget {
   const SportsScopeApp({super.key, required this.devices});
 
   final KnownDevicesStore devices;
 
   @override
+  State<SportsScopeApp> createState() => _SportsScopeAppState();
+}
+
+class _SportsScopeAppState extends State<SportsScopeApp> {
+  /// Le hub vit au-dessus des écrans : les capteurs restent connectés quand on
+  /// passe de la page de diagnostic à la navigation, et un lien entrant peut
+  /// ouvrir la navigation sans repasser par la page des capteurs.
+  final _hub = SensorHub();
+  final _navigatorKey = GlobalKey<NavigatorState>();
+  final _appLinks = AppLinks();
+  StreamSubscription<Uri>? _linkSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _listenForLinks();
+  }
+
+  /// « Ouvrir dans l'appli » depuis le site, ou un lien d'itinéraire partagé.
+  Future<void> _listenForLinks() async {
+    _linkSub = _appLinks.uriLinkStream.listen(_openLink);
+    // L'appli lancée *par* le lien : le flux n'en garde pas trace, il faut le
+    // réclamer explicitement.
+    final initial = await _appLinks.getInitialLink();
+    if (initial != null) await _openLink(initial);
+  }
+
+  Future<void> _openLink(Uri uri) async {
+    final target = NavigationTarget.parse(uri);
+    if (target == null) {
+      debugPrint('[links] lien ignoré : $uri');
+      return;
+    }
+    await openNavigation(_navigatorKey.currentContext, target, _hub);
+  }
+
+  @override
+  void dispose() {
+    _linkSub?.cancel();
+    _hub.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Sports Scope',
+      navigatorKey: _navigatorKey,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
         useMaterial3: true,
       ),
-      home: SensorSpikePage(devices: devices),
+      home: SensorsPage(devices: widget.devices, hub: _hub),
     );
   }
 }
 
-/// Écran de spike : scanner, connecter, afficher en direct.
+/// Ouvre la navigation, après avoir obtenu la position.
 ///
-/// Pas d'enregistrement ici — l'objectif est de valider que les quatre capteurs
-/// parlent, et de voir défiler les trames brutes pour finir de décoder les
-/// octets Di2 encore inconnus (offset 3, offset 15).
-class SensorSpikePage extends StatefulWidget {
-  const SensorSpikePage({super.key, required this.devices});
+/// La permission est demandée ici et pas dans la page : le WebView ne sait pas
+/// la réclamer lui-même, il se contente de relayer une autorisation que
+/// l'application doit déjà détenir. Sans elle, la carte s'afficherait sans
+/// jamais suivre le cycliste — une panne silencieuse.
+Future<void> openNavigation(
+  BuildContext? context,
+  NavigationTarget target,
+  SensorHub hub,
+) async {
+  if (context == null || !context.mounted) return;
+
+  final status = await Permission.location.request();
+  if (!context.mounted) return;
+
+  if (!status.isGranted) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('Sans autorisation de position, la navigation ne peut pas '
+          'te suivre.'),
+    ));
+    return;
+  }
+
+  await Navigator.of(context).push(MaterialPageRoute(
+    builder: (_) => NavigationPage(target: target, hub: hub),
+  ));
+}
+
+/// Écran de diagnostic des capteurs : scanner, connecter, afficher en direct.
+///
+/// Ce n'est pas l'écran de sortie — la navigation, elle, est dans
+/// [NavigationPage]. Celui-ci reste l'outil de dépannage : voir qui répond, ce
+/// qu'on décode, et les trames brutes pour finir de décoder les octets Di2
+/// encore inconnus (offset 3, offset 15).
+class SensorsPage extends StatefulWidget {
+  const SensorsPage({super.key, required this.devices, required this.hub});
 
   final KnownDevicesStore devices;
 
+  /// Le hub appartient à l'application, pas à cet écran : les capteurs doivent
+  /// rester connectés quand on passe en navigation.
+  final SensorHub hub;
+
   @override
-  State<SensorSpikePage> createState() => _SensorSpikePageState();
+  State<SensorsPage> createState() => _SensorsPageState();
 }
 
-class _SensorSpikePageState extends State<SensorSpikePage> {
-  final _hub = SensorHub();
+class _SensorsPageState extends State<SensorsPage> {
   final _drivetrain = Drivetrain.road;
   final _recentFrames = <RawFrame>[];
 
   List<ScanResult> _results = const [];
   bool _scanning = false;
+  var _adapterState = BluetoothAdapterState.unknown;
   StreamSubscription<List<ScanResult>>? _scanSub;
   StreamSubscription<bool>? _scanStateSub;
+  StreamSubscription<BluetoothAdapterState>? _adapterSub;
   StreamSubscription<RawFrame>? _frameSub;
 
   KnownDevicesStore get _devices => widget.devices;
+  SensorHub get _hub => widget.hub;
 
   @override
   void initState() {
@@ -78,6 +164,19 @@ class _SensorSpikePageState extends State<SensorSpikePage> {
       if (mounted) setState(() => _scanning = scanning);
     });
 
+    // La reconnexion est déclenchée par l'état de l'adaptateur, pas par
+    // `initState` : au lancement, `adapterStateNow` vaut encore `unknown` — il
+    // n'est renseigné qu'une fois le flux écouté. Tester l'état ici ne
+    // reconnectait donc jamais rien.
+    //
+    // Passer par le flux couvre aussi le Bluetooth allumé après coup, cas
+    // banal : on ouvre l'appli, puis on active le Bluetooth.
+    _adapterSub = FlutterBluePlus.adapterState.listen((state) {
+      if (!mounted) return;
+      setState(() => _adapterState = state);
+      if (state == BluetoothAdapterState.on) _reconnectKnownDevices();
+    });
+
     // Les dernières trames brutes restent à l'écran : c'est l'outil de reverse,
     // et ça montre immédiatement si un capteur n'émet que du silence.
     _frameSub = _hub.rawFrames.listen((frame) {
@@ -87,8 +186,6 @@ class _SensorSpikePageState extends State<SensorSpikePage> {
         if (_recentFrames.length > 12) _recentFrames.removeLast();
       });
     });
-
-    _reconnectKnownDevices();
   }
 
   @override
@@ -96,8 +193,9 @@ class _SensorSpikePageState extends State<SensorSpikePage> {
     _devices.removeListener(_onDevicesChanged);
     _scanSub?.cancel();
     _scanStateSub?.cancel();
+    _adapterSub?.cancel();
     _frameSub?.cancel();
-    _hub.dispose();
+    // Le hub n'est pas fermé ici : il survit à cet écran.
     super.dispose();
   }
 
@@ -107,21 +205,23 @@ class _SensorSpikePageState extends State<SensorSpikePage> {
 
   /// Reprend contact avec les capteurs connus, sans scan préalable.
   ///
-  /// Un scan n'est pas nécessaire pour se connecter à une adresse déjà connue,
-  /// et il coûterait plusieurs secondes au démarrage. Les capteurs hors de
-  /// portée échouent puis repassent par le backoff de [SensorConnection] : au
-  /// moment d'enfourcher le vélo, ils se rattachent tout seuls.
+  /// Un scan est inutile pour se rattacher à une adresse déjà connue. Les
+  /// demandes partent toutes en même temps : elles rendent la main aussitôt,
+  /// le système rattachant chaque capteur au fur et à mesure qu'il réapparaît.
+  ///
+  /// Idempotent : le hub renvoie la connexion existante si l'appareil est déjà
+  /// suivi, ce qui permet de rappeler la méthode à chaque allumage du
+  /// Bluetooth.
   Future<void> _reconnectKnownDevices() async {
     if (!await FlutterBluePlus.isSupported) return;
-    if (FlutterBluePlus.adapterStateNow != BluetoothAdapterState.on) return;
 
     for (final known in _devices.devices) {
       if (!known.autoConnect) continue;
-      await _connect(
+      unawaited(_connect(
         BluetoothDevice.fromId(known.remoteId),
         label: known.name.isEmpty ? null : known.name,
         announce: false,
-      );
+      ));
     }
   }
 
@@ -130,7 +230,7 @@ class _SensorSpikePageState extends State<SensorSpikePage> {
       _toast('Bluetooth non supporté sur cet appareil');
       return;
     }
-    if (FlutterBluePlus.adapterStateNow != BluetoothAdapterState.on) {
+    if (_adapterState != BluetoothAdapterState.on) {
       try {
         await FlutterBluePlus.turnOn();
       } catch (_) {
@@ -194,6 +294,74 @@ class _SensorSpikePageState extends State<SensorSpikePage> {
     if (mounted) setState(() {});
   }
 
+  /// Choix de ce qu'on navigue.
+  ///
+  /// Le chemin normal reste le lien depuis le site (« Ouvrir dans l'appli »),
+  /// qui arrive en lien entrant. Ce panneau est là pour les deux cas qu'un lien
+  /// ne couvre pas : partir sans itinéraire, et ouvrir un lien reçu ailleurs.
+  Future<void> _chooseNavigation() async {
+    final controller = TextEditingController();
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 16,
+          bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 16,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.explore),
+              title: const Text('Navigation libre'),
+              subtitle: const Text('Carte et position, sans itinéraire'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                openNavigation(context, const NavigationTarget.free(), _hub);
+              },
+            ),
+            const Divider(),
+            TextField(
+              controller: controller,
+              autocorrect: false,
+              keyboardType: TextInputType.url,
+              decoration: const InputDecoration(
+                labelText: 'Lien d\'un itinéraire partagé',
+                hintText: 'https://app.logicraft.ch/routes/…',
+              ),
+              onSubmitted: (value) => _openPastedLink(sheetContext, value),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: () => _openPastedLink(sheetContext, controller.text),
+              icon: const Icon(Icons.navigation),
+              label: const Text('Naviguer cet itinéraire'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    controller.dispose();
+  }
+
+  void _openPastedLink(BuildContext sheetContext, String value) {
+    final uri = Uri.tryParse(value.trim());
+    final target = uri == null ? null : NavigationTarget.parse(uri);
+    if (target == null) {
+      _toast('Ce lien ne mène pas à un itinéraire.');
+      return;
+    }
+    Navigator.of(sheetContext).pop();
+    openNavigation(context, target, _hub);
+  }
+
   void _toast(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -230,9 +398,30 @@ class _SensorSpikePageState extends State<SensorSpikePage> {
           ),
         ],
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _chooseNavigation,
+        icon: const Icon(Icons.navigation),
+        label: const Text('Naviguer'),
+      ),
       body: ListView(
         padding: const EdgeInsets.all(12),
         children: [
+          // Bluetooth éteint, capteurs muets : autant le dire, sinon la page
+          // ressemble à une panne de l'appli.
+          if (_adapterState == BluetoothAdapterState.off)
+            Card(
+              color: Theme.of(context).colorScheme.errorContainer,
+              child: ListTile(
+                leading: const Icon(Icons.bluetooth_disabled),
+                title: const Text('Bluetooth éteint'),
+                subtitle: const Text(
+                    'Les capteurs se rattacheront seuls une fois activé.'),
+                trailing: TextButton(
+                  onPressed: () => FlutterBluePlus.turnOn(),
+                  child: const Text('Activer'),
+                ),
+              ),
+            ),
           _liveValues(),
           const SizedBox(height: 12),
           _radar(),
@@ -279,9 +468,11 @@ class _SensorSpikePageState extends State<SensorSpikePage> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _metric(_hub.latestHeartRate, 'bpm', Icons.favorite),
-                _metric(_hub.latestPower, 'W', Icons.bolt),
-                _metric(_hub.latestCadence, 'tr/min', Icons.autorenew,
+                _metric(_hub.latestHeartRate, 'bpm',
+                    iconFor(SensorKind.heartRate)),
+                _metric(_hub.latestPower, 'W', iconFor(SensorKind.power)),
+                _metric(_hub.latestCadence, 'tr/min',
+                    iconFor(SensorKind.speedCadence),
                     format: (v) => (v as double).round().toString()),
               ],
             ),
@@ -294,6 +485,7 @@ class _SensorSpikePageState extends State<SensorSpikePage> {
                 }
                 final front = _drivetrain.chainringTeeth(gears);
                 final rear = _drivetrain.sprocketTeeth(gears);
+                final ratio = _drivetrain.ratio(gears);
                 final dev = _drivetrain.development(gears);
                 return Column(
                   children: [
@@ -301,10 +493,14 @@ class _SensorSpikePageState extends State<SensorSpikePage> {
                         style: Theme.of(context).textTheme.headlineMedium),
                     const SizedBox(height: 4),
                     Text(
-                      front != null && rear != null && dev != null
-                          ? '$front × $rear dents · ${dev.toStringAsFixed(2)} m/tour'
+                      front != null && rear != null && ratio != null && dev != null
+                          // Le ratio se compare d'un vélo à l'autre, le
+                          // développement dépend des pneus : les deux servent,
+                          // et pas aux mêmes questions.
+                          ? '$front × $rear dents · ratio ${ratio.toStringAsFixed(2)} · ${dev.toStringAsFixed(2)} m/tour'
                           : 'dents inconnues pour cette position',
                       style: Theme.of(context).textTheme.bodySmall,
+                      textAlign: TextAlign.center,
                     ),
                   ],
                 );
@@ -393,29 +589,27 @@ class _SensorSpikePageState extends State<SensorSpikePage> {
   /// s'en souvenir, on voit ce qui manque avant de partir.
   Widget _knownTile(KnownDevice known) {
     final connection = _hub.connectionFor(DeviceIdentifier(known.remoteId));
-    final capabilities = known.kinds.isEmpty
-        ? 'capacités inconnues'
-        : known.kinds.map(labelFor).join(' · ');
 
     Widget tile(SensorStatus? status) {
       final connected = status == SensorStatus.connected;
+      // L'icône dit *ce qu'est* le capteur, la couleur dit s'il répond : deux
+      // informations dans un seul point de l'écran, lisible en roulant.
+      final color = connected
+          ? Colors.teal
+          : (status == null ? Colors.grey : Colors.orange);
+
       return ListTile(
         dense: true,
-        leading: Icon(
-          connected
-              ? Icons.bluetooth_connected
-              : (status == null
-                  ? Icons.bluetooth_disabled
-                  : Icons.bluetooth_searching),
-          color: connected
-              ? Colors.teal
-              : (status == null ? Colors.grey : Colors.orange),
-        ),
+        leading: Icon(iconForDevice(known.kinds), color: color),
         title: Text(known.name.isEmpty ? '(sans nom)' : known.name),
-        subtitle: Text(
-          '$capabilities · ${_statusLabel(status, known)}',
-          maxLines: 2,
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SensorKindIcons(known.kinds),
+            Text(_statusLabel(status, known)),
+          ],
         ),
+        isThreeLine: true,
         trailing: PopupMenuButton<String>(
           onSelected: (action) => switch (action) {
             'forget' => _forget(known),
@@ -468,16 +662,28 @@ class _SensorSpikePageState extends State<SensorSpikePage> {
   Widget _connectionTile(SensorConnection connection) {
     return ValueListenableBuilder<SensorStatus>(
       valueListenable: connection.status,
-      builder: (context, status, _) => ListTile(
-        dense: true,
-        leading: Icon(
-          status == SensorStatus.connected
-              ? Icons.bluetooth_connected
-              : Icons.bluetooth_searching,
-          color: status == SensorStatus.connected ? Colors.teal : Colors.orange,
+      builder: (context, status, _) => ValueListenableBuilder<Set<SensorKind>>(
+        // Les capacités n'arrivent qu'à la découverte des services : l'icône
+        // passe donc du bluetooth générique au capteur reconnu en cours de
+        // connexion.
+        valueListenable: connection.detectedKinds,
+        builder: (context, kinds, _) => ListTile(
+          dense: true,
+          leading: Icon(
+            iconForDevice(kinds),
+            color:
+                status == SensorStatus.connected ? Colors.teal : Colors.orange,
+          ),
+          title: Text(connection.name.isEmpty ? '(sans nom)' : connection.name),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (kinds.isNotEmpty) SensorKindIcons(kinds),
+              Text(_statusLabel(status, null)),
+            ],
+          ),
+          isThreeLine: kinds.isNotEmpty,
         ),
-        title: Text(connection.name.isEmpty ? '(sans nom)' : connection.name),
-        subtitle: Text(_statusLabel(status, null)),
       ),
     );
   }
@@ -492,11 +698,15 @@ class _SensorSpikePageState extends State<SensorSpikePage> {
 
     return ListTile(
       dense: true,
+      leading: Icon(iconForDevice(kinds), color: Colors.grey),
       title: Text(name.isEmpty ? '(sans nom)' : name),
-      subtitle: Text([
-        '${result.device.remoteId} · ${result.rssi} dBm',
-        if (kinds.isNotEmpty) kinds.map(labelFor).join(' · '),
-      ].join('\n')),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('${result.device.remoteId} · ${result.rssi} dBm'),
+          if (kinds.isNotEmpty) SensorKindIcons(kinds),
+        ],
+      ),
       isThreeLine: kinds.isNotEmpty,
       trailing: const Icon(Icons.link),
       onTap: () => _connect(result.device, label: name),

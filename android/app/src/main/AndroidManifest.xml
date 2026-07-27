@@ -10,9 +10,21 @@
          localisation fine. -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
 
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
+
+    <!-- La navigation charge l'application web dans un WebView. Flutter ne
+         déclare INTERNET que dans les manifestes debug et profile : sans cette
+         ligne, la version release afficherait une page blanche. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Position, pour deux usages : la géolocalisation de la page de
+         navigation (toutes versions d'Android), et le scan BLE sur Android 11
+         et antérieurs. Une seule déclaration, sans `maxSdkVersion` : le même
+         manifeste ne peut pas porter deux fois la même permission, et c'est la
+         navigation qui impose la portée la plus large. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <application
         android:label="Sports Scope Companion"
@@ -38,6 +50,29 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+
+            <!-- « Ouvrir dans l'appli » depuis le site : sportsscope://navigate/<token>.
+                 Schéma propre à l'appli, donc rien à publier côté serveur et
+                 fonctionne avec une signature de debug. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="sportsscope" android:host="navigate"/>
+            </intent-filter>
+
+            <!-- App Link sur l'URL réelle : un lien d'itinéraire partagé ouvre
+                 directement la navigation dans l'appli, depuis n'importe où.
+                 Inactif tant que https://app.logicraft.ch/.well-known/assetlinks.json
+                 ne publie pas l'empreinte SHA-256 de la clé de signature — d'ici
+                 là Android se contente d'ouvrir le navigateur. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https" android:host="app.logicraft.ch"
+                    android:pathPattern="/routes/.*/navigate"/>
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
