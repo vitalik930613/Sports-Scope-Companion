@@ -36,7 +36,8 @@ class NavigationPage extends StatefulWidget {
   State<NavigationPage> createState() => _NavigationPageState();
 }
 
-class _NavigationPageState extends State<NavigationPage> {
+class _NavigationPageState extends State<NavigationPage>
+    with WidgetsBindingObserver {
   late final WebViewController _controller;
   late final SensorBridge _bridge;
 
@@ -53,6 +54,7 @@ class _NavigationPageState extends State<NavigationPage> {
     // remasque — sans quoi un geste involontaire les laisserait à l'écran pour
     // le reste de la sortie.
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    WidgetsBinding.instance.addObserver(this);
 
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
@@ -67,6 +69,7 @@ class _NavigationPageState extends State<NavigationPage> {
           // La page peut avoir été rechargée (retour de veille, perte de
           // réseau) : on republie l'état plutôt que d'attendre une trame.
           _bridge.pushNow();
+          _publishInsets();
         },
         onWebResourceError: (error) {
           // Seule l'erreur du document principal nous intéresse : une tuile ou
@@ -120,6 +123,34 @@ class _NavigationPageState extends State<NavigationPage> {
     _controller.loadRequest(widget.target.url(baseUrl: widget.baseUrl));
   }
 
+  /// Communique à la page les zones matériellement obstruées de l'écran.
+  ///
+  /// En plein écran, la carte passe volontiers derrière l'encoche — mais pas
+  /// le bandeau de virage, qui devient illisible sous la caméra. La page ne
+  /// peut pas deviner ces mesures : `env(safe-area-inset-*)` reste à zéro dans
+  /// un WebView tant que la fenêtre n'est pas déclarée en mode découpe. On les
+  /// pousse donc en variables CSS, que les bandeaux du haut ajoutent à leur
+  /// position ; dans un navigateur ordinaire elles n'existent pas et valent 0.
+  ///
+  /// `viewPadding` et non `padding` : la première garde la hauteur de
+  /// l'obstruction physique même quand les barres système sont masquées, ce qui
+  /// est exactement le cas ici.
+  Future<void> _publishInsets() async {
+    if (!mounted) return;
+    final insets = MediaQuery.viewPaddingOf(context);
+
+    await _controller.runJavaScript(
+      "document.documentElement.style.setProperty('--app-inset-top', '${insets.top}px');"
+      "document.documentElement.style.setProperty('--app-inset-bottom', '${insets.bottom}px');",
+    );
+  }
+
+  @override
+  void didChangeMetrics() {
+    // Rotation, écran partagé : les zones obstruées changent de place.
+    _publishInsets();
+  }
+
   /// Messages venus de la page.
   ///
   /// Un seul type pour l'instant : `ready`, que la page émet quand son pont est
@@ -137,6 +168,7 @@ class _NavigationPageState extends State<NavigationPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     // Les barres reviennent en quittant la navigation : la page des capteurs
     // est un écran d'appli ordinaire, avec son horloge et ses gestes.
     SystemChrome.setEnabledSystemUIMode(
