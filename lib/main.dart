@@ -76,12 +76,16 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
   }
 
   /// « Ouvrir dans l'appli » depuis le site, ou un lien d'itinéraire partagé.
-  Future<void> _listenForLinks() async {
+  ///
+  /// Le flux suffit : `uriLinkStream` émet le lien initial puis les suivants (cf. le
+  /// README d'app_links). Y ajouter un `getInitialLink()` ouvrait la navigation DEUX
+  /// fois au démarrage à froid — sans conséquence tant que les deux pages étaient
+  /// identiques, fatal depuis que le lien porte un jeton de session à usage unique :
+  /// la première ouverture le consommait, la seconde le trouvait déjà utilisé et
+  /// retombait en anonyme… par-dessus la première, connectée. C'est cette page-là
+  /// qu'on voyait.
+  void _listenForLinks() {
     _linkSub = _appLinks.uriLinkStream.listen(_openLink);
-    // L'appli lancée *par* le lien : le flux n'en garde pas trace, il faut le
-    // réclamer explicitement.
-    final initial = await _appLinks.getInitialLink();
-    if (initial != null) await _openLink(initial);
   }
 
   Future<void> _openLink(Uri uri) async {
