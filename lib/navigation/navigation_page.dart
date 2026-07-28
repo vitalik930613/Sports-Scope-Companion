@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
+import '../account/site_session.dart';
 import '../ble/sensor_hub.dart';
 import 'navigation_target.dart';
 import 'screen_dimmer.dart';
@@ -26,11 +27,18 @@ class NavigationPage extends StatefulWidget {
     super.key,
     required this.target,
     required this.hub,
+    required this.session,
     this.baseUrl = sportsScopeBaseUrl,
   });
 
   final NavigationTarget target;
   final SensorHub hub;
+
+  /// Pas pour authentifier la page — le cookie du WebView s'en charge — mais
+  /// pour tenir à jour ce que l'appli affiche de la session : la navigation est
+  /// la page du site la plus souvent ouverte, donc le meilleur point d'écoute.
+  final SiteSession session;
+
   final String baseUrl;
 
   @override
@@ -77,6 +85,10 @@ class _NavigationPageState extends State<NavigationPage>
           // pleine veille laisserait une carte allumée à 1 % de luminosité. Si
           // elle se rendort, elle le redira.
           _screen.restore();
+          // Une page anonyme n'est pas une panne mais une navigation dégradée
+          // (pas d'itinéraires, fond de carte par défaut, POI muets) : on le
+          // note pour que l'écran des capteurs puisse le dire avant la sortie.
+          _checkSession();
         },
         onWebResourceError: (error) {
           // Seule l'erreur du document principal nous intéresse : une tuile ou
@@ -128,6 +140,10 @@ class _NavigationPageState extends State<NavigationPage>
   void _load() {
     setState(() => _error = null);
     _controller.loadRequest(widget.target.url(baseUrl: widget.baseUrl));
+  }
+
+  Future<void> _checkSession() async {
+    await widget.session.record(await probeSignedIn(_controller));
   }
 
   /// Communique à la page les zones matériellement obstruées de l'écran.

@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import 'account/account_page.dart';
+import 'account/site_session.dart';
 import 'ble/samples.dart';
 import 'ble/sensor_connection.dart';
 import 'ble/sensor_hub.dart';
@@ -29,14 +31,24 @@ Future<void> main() async {
   // Le magasin de sorties, lui, n'est qu'un chemin sur le disque : l'ouvrir ici
   // évite un `Future` de plus dans l'arbre de widgets.
   final rides = await RideStore.open();
-  runApp(SportsScopeApp(devices: devices, rides: rides));
+  // L'état de session est lu avant le premier écran pour la même raison : le
+  // bandeau « non connecté » doit être juste dès l'affichage, pas apparaître
+  // après coup.
+  final session = await SiteSession.open();
+  runApp(SportsScopeApp(devices: devices, rides: rides, session: session));
 }
 
 class SportsScopeApp extends StatefulWidget {
-  const SportsScopeApp({super.key, required this.devices, required this.rides});
+  const SportsScopeApp({
+    super.key,
+    required this.devices,
+    required this.rides,
+    required this.session,
+  });
 
   final KnownDevicesStore devices;
   final RideStore rides;
+  final SiteSession session;
 
   @override
   State<SportsScopeApp> createState() => _SportsScopeAppState();
@@ -78,7 +90,12 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
       debugPrint('[links] lien ignoré : $uri');
       return;
     }
-    await openNavigation(_navigatorKey.currentContext, target, _hub);
+    await openNavigation(
+      _navigatorKey.currentContext,
+      target,
+      _hub,
+      widget.session,
+    );
   }
 
   @override
@@ -103,6 +120,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
         hub: _hub,
         recorder: _recorder,
         rides: widget.rides,
+        session: widget.session,
       ),
     );
   }
@@ -118,6 +136,7 @@ Future<void> openNavigation(
   BuildContext? context,
   NavigationTarget target,
   SensorHub hub,
+  SiteSession session,
 ) async {
   if (context == null || !context.mounted) return;
 
@@ -133,7 +152,7 @@ Future<void> openNavigation(
   }
 
   await Navigator.of(context).push(MaterialPageRoute(
-    builder: (_) => NavigationPage(target: target, hub: hub),
+    builder: (_) => NavigationPage(target: target, hub: hub, session: session),
   ));
 }
 
@@ -150,6 +169,7 @@ class SensorsPage extends StatefulWidget {
     required this.hub,
     required this.recorder,
     required this.rides,
+    required this.session,
   });
 
   final KnownDevicesStore devices;
@@ -162,6 +182,10 @@ class SensorsPage extends StatefulWidget {
   final RideRecorder recorder;
 
   final RideStore rides;
+
+  /// La session du site, partagée avec la navigation : elle appartient à
+  /// l'application, pas à cet écran.
+  final SiteSession session;
 
   @override
   State<SensorsPage> createState() => _SensorsPageState();
@@ -189,11 +213,20 @@ class _SensorsPageState extends State<SensorsPage> {
     ));
   }
 
+  void _openAccount() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => AccountPage(session: widget.session),
+    ));
+  }
+
   @override
   void initState() {
     super.initState();
 
     _devices.addListener(_onDevicesChanged);
+    // La navigation, elle aussi, constate l'état de la session : revenir d'une
+    // sortie doit rafraîchir le bandeau ici.
+    widget.session.addListener(_onSessionChanged);
 
     _scanSub = FlutterBluePlus.onScanResults.listen((results) {
       if (mounted) setState(() => _results = results);
@@ -229,6 +262,7 @@ class _SensorsPageState extends State<SensorsPage> {
   @override
   void dispose() {
     _devices.removeListener(_onDevicesChanged);
+    widget.session.removeListener(_onSessionChanged);
     _scanSub?.cancel();
     _scanStateSub?.cancel();
     _adapterSub?.cancel();
@@ -238,6 +272,10 @@ class _SensorsPageState extends State<SensorsPage> {
   }
 
   void _onDevicesChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _onSessionChanged() {
     if (mounted) setState(() {});
   }
 
@@ -361,7 +399,12 @@ class _SensorsPageState extends State<SensorsPage> {
               subtitle: const Text('Carte et position, sans itinéraire'),
               onTap: () {
                 Navigator.of(sheetContext).pop();
-                openNavigation(context, const NavigationTarget.free(), _hub);
+                openNavigation(
+                  context,
+                  const NavigationTarget.free(),
+                  _hub,
+                  widget.session,
+                );
               },
             ),
             const Divider(),
@@ -397,7 +440,7 @@ class _SensorsPageState extends State<SensorsPage> {
       return;
     }
     Navigator.of(sheetContext).pop();
-    openNavigation(context, target, _hub);
+    openNavigation(context, target, _hub, widget.session);
   }
 
   void _toast(String message) {
@@ -429,6 +472,20 @@ class _SensorsPageState extends State<SensorsPage> {
       appBar: AppBar(
         title: const Text('Capteurs'),
         actions: [
+          IconButton(
+            onPressed: _openAccount,
+            // La couleur porte l'information : l'icône ne change pas, seul son
+            // état le fait — vert connecté, orange anonyme, gris inconnu.
+            icon: Icon(
+              Icons.account_circle,
+              color: switch (widget.session.signedIn) {
+                true => Colors.teal,
+                false => Colors.orange,
+                null => null,
+              },
+            ),
+            tooltip: 'Compte',
+          ),
           IconButton(
             onPressed: _openRides,
             icon: const Icon(Icons.route),
@@ -462,6 +519,24 @@ class _SensorsPageState extends State<SensorsPage> {
                 trailing: TextButton(
                   onPressed: () => FlutterBluePlus.turnOn(),
                   child: const Text('Activer'),
+                ),
+              ),
+            ),
+          // Une navigation anonyme n'a l'air de rien : la carte s'affiche, mais
+          // sans les itinéraires du compte, avec le fond de carte par défaut et
+          // des POI muets. Autant le dire au départ plutôt que de le découvrir
+          // sur la route.
+          if (widget.session.signedIn == false)
+            Card(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              child: ListTile(
+                leading: const Icon(Icons.person_off),
+                title: const Text('Non connecté au site'),
+                subtitle: const Text('Sans session : pas d\'itinéraires '
+                    'sauvegardés, fond de carte par défaut, POI indisponibles.'),
+                trailing: TextButton(
+                  onPressed: _openAccount,
+                  child: const Text('Se connecter'),
                 ),
               ),
             ),
