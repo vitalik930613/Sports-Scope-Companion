@@ -8,6 +8,7 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../ble/sensor_hub.dart';
 import 'navigation_target.dart';
+import 'screen_dimmer.dart';
 import 'sensor_bridge.dart';
 
 /// La navigation de sports-scope, affichée telle quelle.
@@ -40,6 +41,7 @@ class _NavigationPageState extends State<NavigationPage>
     with WidgetsBindingObserver {
   late final WebViewController _controller;
   late final SensorBridge _bridge;
+  final _screen = ScreenDimmer();
 
   int _progress = 0;
   String? _error;
@@ -70,6 +72,11 @@ class _NavigationPageState extends State<NavigationPage>
           // réseau) : on republie l'état plutôt que d'attendre une trame.
           _bridge.pushNow();
           _publishInsets();
+          // Une page fraîchement chargée n'est pas en veille : son voile noir a
+          // disparu avec son état. Sans cette remise à zéro, un rechargement en
+          // pleine veille laisserait une carte allumée à 1 % de luminosité. Si
+          // elle se rendort, elle le redira.
+          _screen.restore();
         },
         onWebResourceError: (error) {
           // Seule l'erreur du document principal nous intéresse : une tuile ou
@@ -153,14 +160,27 @@ class _NavigationPageState extends State<NavigationPage>
 
   /// Messages venus de la page.
   ///
-  /// Un seul type pour l'instant : `ready`, que la page émet quand son pont est
-  /// en place. Le protocole est volontairement en JSON typé — il grossira (mise
-  /// en veille de l'écran, demande d'enregistrement), et un simple mot-clé
-  /// deviendrait vite illisible.
+  /// `ready` : la page annonce que son pont est en place.
+  /// `screen` : elle entre ou sort de sa veille, et demande le rétroéclairage
+  /// correspondant — ce qu'un navigateur ne sait pas faire lui-même.
+  ///
+  /// Le protocole est volontairement en JSON typé : il grossira, et un simple
+  /// mot-clé deviendrait vite illisible.
   void _onPageMessage(JavaScriptMessage message) {
     try {
       final decoded = jsonDecode(message.message);
-      if (decoded is Map && decoded['type'] == 'ready') _bridge.pushNow();
+      if (decoded is! Map) return;
+
+      switch (decoded['type']) {
+        case 'ready':
+          _bridge.pushNow();
+        case 'screen':
+          if (decoded['state'] == 'dimmed') {
+            _screen.dim();
+          } else {
+            _screen.restore();
+          }
+      }
     } catch (_) {
       // Message hors protocole : on l'ignore, la navigation prime.
     }
@@ -169,6 +189,11 @@ class _NavigationPageState extends State<NavigationPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    // Filet de sécurité : quitter la navigation en veille (bouton retour, page
+    // qui plante) ne doit pas laisser l'appareil à 1 % de luminosité sur
+    // l'écran des capteurs. La page le demande aussi de son côté, mais elle
+    // n'est pas toujours en état de le faire.
+    _screen.restore();
     // Les barres reviennent en quittant la navigation : la page des capteurs
     // est un écran d'appli ordinaire, avec son horloge et ses gestes.
     SystemChrome.setEnabledSystemUIMode(
