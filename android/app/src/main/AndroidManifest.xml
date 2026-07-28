@@ -18,13 +18,29 @@
          ligne, la version release afficherait une page blanche. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- Position, pour deux usages : la géolocalisation de la page de
-         navigation (toutes versions d'Android), et le scan BLE sur Android 11
-         et antérieurs. Une seule déclaration, sans `maxSdkVersion` : le même
-         manifeste ne peut pas porter deux fois la même permission, et c'est la
-         navigation qui impose la portée la plus large. -->
+    <!-- Position, pour trois usages : la géolocalisation de la page de
+         navigation (toutes versions d'Android), l'enregistrement des sorties, et
+         le scan BLE sur Android 11 et antérieurs. Une seule déclaration, sans
+         `maxSdkVersion` : le même manifeste ne peut pas porter deux fois la même
+         permission, et c'est la navigation qui impose la portée la plus large. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- Enregistrement d'une sortie : la localisation tourne dans un service au
+         premier plan (geolocator), sans quoi Android gèlerait le processus dès
+         l'écran éteint — une sortie de trois heures se réduirait à ses premières
+         minutes. Le service est démarré alors que l'appli est à l'écran, ce qui
+         dispense d'ACCESS_BACKGROUND_LOCATION (« autoriser tout le temps ») : on
+         ne démarre jamais la localisation depuis l'arrière-plan. WAKE_LOCK garde
+         le processeur éveillé entre deux trames, faute de quoi les notifications
+         BLE arriveraient par paquets au réveil. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Android 13+ : sans elle la notification du service existe mais reste
+         invisible — le témoin « enregistrement en cours » disparaîtrait. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:label="Sports Scope Companion"

@@ -15,6 +15,10 @@ import 'devices/known_devices_store.dart';
 import 'drivetrain.dart';
 import 'navigation/navigation_page.dart';
 import 'navigation/navigation_target.dart';
+import 'recording/recording_card.dart';
+import 'recording/ride_recorder.dart';
+import 'recording/ride_store.dart';
+import 'recording/rides_page.dart';
 import 'ui/sensor_icons.dart';
 
 Future<void> main() async {
@@ -22,13 +26,17 @@ Future<void> main() async {
   // Le catalogue est lu avant le premier écran : la liste des capteurs connus
   // doit être là dès l'affichage, sinon elle apparaîtrait après coup.
   final devices = await KnownDevicesStore.open();
-  runApp(SportsScopeApp(devices: devices));
+  // Le magasin de sorties, lui, n'est qu'un chemin sur le disque : l'ouvrir ici
+  // évite un `Future` de plus dans l'arbre de widgets.
+  final rides = await RideStore.open();
+  runApp(SportsScopeApp(devices: devices, rides: rides));
 }
 
 class SportsScopeApp extends StatefulWidget {
-  const SportsScopeApp({super.key, required this.devices});
+  const SportsScopeApp({super.key, required this.devices, required this.rides});
 
   final KnownDevicesStore devices;
+  final RideStore rides;
 
   @override
   State<SportsScopeApp> createState() => _SportsScopeAppState();
@@ -39,6 +47,12 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
   /// passe de la page de diagnostic à la navigation, et un lien entrant peut
   /// ouvrir la navigation sans repasser par la page des capteurs.
   final _hub = SensorHub();
+
+  /// L'enregistreur vit au même étage que le hub, et pour la même raison : une
+  /// sortie commencée sur l'écran des capteurs doit continuer pendant toute la
+  /// navigation, et survivre au retour en arrière.
+  late final _recorder = RideRecorder(hub: _hub, store: widget.rides);
+
   final _navigatorKey = GlobalKey<NavigatorState>();
   final _appLinks = AppLinks();
   StreamSubscription<Uri>? _linkSub;
@@ -70,6 +84,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
   @override
   void dispose() {
     _linkSub?.cancel();
+    _recorder.dispose();
     _hub.dispose();
     super.dispose();
   }
@@ -83,7 +98,12 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
         useMaterial3: true,
       ),
-      home: SensorsPage(devices: widget.devices, hub: _hub),
+      home: SensorsPage(
+        devices: widget.devices,
+        hub: _hub,
+        recorder: _recorder,
+        rides: widget.rides,
+      ),
     );
   }
 }
@@ -124,13 +144,24 @@ Future<void> openNavigation(
 /// qu'on décode, et les trames brutes pour finir de décoder les octets Di2
 /// encore inconnus (offset 3, offset 15).
 class SensorsPage extends StatefulWidget {
-  const SensorsPage({super.key, required this.devices, required this.hub});
+  const SensorsPage({
+    super.key,
+    required this.devices,
+    required this.hub,
+    required this.recorder,
+    required this.rides,
+  });
 
   final KnownDevicesStore devices;
 
   /// Le hub appartient à l'application, pas à cet écran : les capteurs doivent
   /// rester connectés quand on passe en navigation.
   final SensorHub hub;
+
+  /// L'enregistreur, pour la même raison que le hub.
+  final RideRecorder recorder;
+
+  final RideStore rides;
 
   @override
   State<SensorsPage> createState() => _SensorsPageState();
@@ -150,6 +181,13 @@ class _SensorsPageState extends State<SensorsPage> {
 
   KnownDevicesStore get _devices => widget.devices;
   SensorHub get _hub => widget.hub;
+  RideRecorder get _recorder => widget.recorder;
+
+  void _openRides() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => RidesPage(store: widget.rides, recorder: _recorder),
+    ));
+  }
 
   @override
   void initState() {
@@ -392,6 +430,11 @@ class _SensorsPageState extends State<SensorsPage> {
         title: const Text('Capteurs'),
         actions: [
           IconButton(
+            onPressed: _openRides,
+            icon: const Icon(Icons.route),
+            tooltip: 'Mes sorties',
+          ),
+          IconButton(
             onPressed: _scanning ? FlutterBluePlus.stopScan : _startScan,
             icon: Icon(_scanning ? Icons.stop : Icons.search),
             tooltip: _scanning ? 'Arrêter' : 'Scanner',
@@ -422,6 +465,10 @@ class _SensorsPageState extends State<SensorsPage> {
                 ),
               ),
             ),
+          // L'enregistrement passe avant les valeurs en direct : c'est le geste
+          // qu'on cherche avant de partir, les mesures ne sont qu'un contrôle.
+          RecordingCard(recorder: _recorder, store: widget.rides),
+          const SizedBox(height: 12),
           _liveValues(),
           const SizedBox(height: 12),
           _radar(),
