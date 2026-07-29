@@ -1,12 +1,12 @@
 import 'dart:async';
 
 import 'package:app_links/app_links.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'account/account_page.dart';
+import 'account/rider_profile_store.dart';
 import 'account/site_session.dart';
 import 'ble/samples.dart';
 import 'ble/sensor_connection.dart';
@@ -15,12 +15,14 @@ import 'ble/sensor_profile.dart';
 import 'devices/known_device.dart';
 import 'devices/known_devices_store.dart';
 import 'drivetrain.dart';
-import 'navigation/navigation_page.dart';
+import 'ride/ride_shell_page.dart';
 import 'navigation/navigation_target.dart';
 import 'recording/recording_card.dart';
 import 'recording/ride_recorder.dart';
 import 'recording/ride_store.dart';
 import 'recording/rides_page.dart';
+import 'ui/metric_tile.dart';
+import 'ui/radar_card.dart';
 import 'ui/sensor_icons.dart';
 
 Future<void> main() async {
@@ -35,7 +37,15 @@ Future<void> main() async {
   // bandeau « non connecté » doit être juste dès l'affichage, pas apparaître
   // après coup.
   final session = await SiteSession.open();
-  runApp(SportsScopeApp(devices: devices, rides: rides, session: session));
+  // Les seuils du cycliste sont relus au démarrage : ils viennent du site, donc
+  // une sortie lancée hors réseau n'aurait sinon aucune zone à afficher.
+  final riderProfile = await RiderProfileStore.open();
+  runApp(SportsScopeApp(
+    devices: devices,
+    rides: rides,
+    session: session,
+    riderProfile: riderProfile,
+  ));
 }
 
 class SportsScopeApp extends StatefulWidget {
@@ -44,11 +54,13 @@ class SportsScopeApp extends StatefulWidget {
     required this.devices,
     required this.rides,
     required this.session,
+    required this.riderProfile,
   });
 
   final KnownDevicesStore devices;
   final RideStore rides;
   final SiteSession session;
+  final RiderProfileStore riderProfile;
 
   @override
   State<SportsScopeApp> createState() => _SportsScopeAppState();
@@ -99,6 +111,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
       target,
       _hub,
       widget.session,
+      widget.riderProfile,
     );
   }
 
@@ -125,6 +138,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
         recorder: _recorder,
         rides: widget.rides,
         session: widget.session,
+        riderProfile: widget.riderProfile,
       ),
     );
   }
@@ -141,6 +155,7 @@ Future<void> openNavigation(
   NavigationTarget target,
   SensorHub hub,
   SiteSession session,
+  RiderProfileStore riderProfile,
 ) async {
   if (context == null || !context.mounted) return;
 
@@ -156,14 +171,19 @@ Future<void> openNavigation(
   }
 
   await Navigator.of(context).push(MaterialPageRoute(
-    builder: (_) => NavigationPage(target: target, hub: hub, session: session),
+    builder: (_) => RideShellPage(
+      target: target,
+      hub: hub,
+      session: session,
+      riderProfile: riderProfile,
+    ),
   ));
 }
 
 /// Écran de diagnostic des capteurs : scanner, connecter, afficher en direct.
 ///
 /// Ce n'est pas l'écran de sortie — la navigation, elle, est dans
-/// [NavigationPage]. Celui-ci reste l'outil de dépannage : voir qui répond, ce
+/// [RideShellPage]. Celui-ci reste l'outil de dépannage : voir qui répond, ce
 /// qu'on décode, et les trames brutes pour finir de décoder les octets Di2
 /// encore inconnus (offset 3, offset 15).
 class SensorsPage extends StatefulWidget {
@@ -174,6 +194,7 @@ class SensorsPage extends StatefulWidget {
     required this.recorder,
     required this.rides,
     required this.session,
+    required this.riderProfile,
   });
 
   final KnownDevicesStore devices;
@@ -190,6 +211,10 @@ class SensorsPage extends StatefulWidget {
   /// La session du site, partagée avec la navigation : elle appartient à
   /// l'application, pas à cet écran.
   final SiteSession session;
+
+  /// Les seuils du cycliste, transmis à la navigation qui les tient à jour
+  /// depuis le site. Cet écran ne s'en sert pas lui-même.
+  final RiderProfileStore riderProfile;
 
   @override
   State<SensorsPage> createState() => _SensorsPageState();
@@ -408,6 +433,7 @@ class _SensorsPageState extends State<SensorsPage> {
                   const NavigationTarget.free(),
                   _hub,
                   widget.session,
+                  widget.riderProfile,
                 );
               },
             ),
@@ -444,7 +470,7 @@ class _SensorsPageState extends State<SensorsPage> {
       return;
     }
     Navigator.of(sheetContext).pop();
-    openNavigation(context, target, _hub, widget.session);
+    openNavigation(context, target, _hub, widget.session, widget.riderProfile);
   }
 
   void _toast(String message) {
@@ -548,9 +574,9 @@ class _SensorsPageState extends State<SensorsPage> {
           // qu'on cherche avant de partir, les mesures ne sont qu'un contrôle.
           RecordingCard(recorder: _recorder, store: widget.rides),
           const SizedBox(height: 12),
-          _liveValues(),
+          LiveValuesCard(hub: _hub, drivetrain: _drivetrain),
           const SizedBox(height: 12),
-          _radar(),
+          RadarCard(hub: _hub),
           const SizedBox(height: 16),
           if (known.isNotEmpty) ...[
             _sectionTitle('Mes capteurs'),
@@ -584,130 +610,6 @@ class _SensorsPageState extends State<SensorsPage> {
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Text(text, style: Theme.of(context).textTheme.titleMedium),
       );
-
-  Widget _liveValues() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _metric(_hub.latestHeartRate, 'bpm',
-                    iconFor(SensorKind.heartRate)),
-                _metric(_hub.latestPower, 'W', iconFor(SensorKind.power)),
-                _metric(_hub.latestCadence, 'tr/min',
-                    iconFor(SensorKind.speedCadence),
-                    format: (v) => (v as double).round().toString()),
-              ],
-            ),
-            const Divider(height: 32),
-            ValueListenableBuilder(
-              valueListenable: _hub.latestGears,
-              builder: (context, gears, _) {
-                if (gears == null) {
-                  return const Text('Vitesses : —');
-                }
-                final front = _drivetrain.chainringTeeth(gears);
-                final rear = _drivetrain.sprocketTeeth(gears);
-                final ratio = _drivetrain.ratio(gears);
-                final dev = _drivetrain.development(gears);
-                return Column(
-                  children: [
-                    Text('$gears',
-                        style: Theme.of(context).textTheme.headlineMedium),
-                    const SizedBox(height: 4),
-                    Text(
-                      front != null && rear != null && ratio != null && dev != null
-                          // Le ratio se compare d'un vélo à l'autre, le
-                          // développement dépend des pneus : les deux servent,
-                          // et pas aux mêmes questions.
-                          ? '$front × $rear dents · ratio ${ratio.toStringAsFixed(2)} · ${dev.toStringAsFixed(2)} m/tour'
-                          : 'dents inconnues pour cette position',
-                      style: Theme.of(context).textTheme.bodySmall,
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Le radar mérite son propre bloc : la donnée est une liste, et l'affichage
-  /// doit distinguer « route dégagée » de « pas de radar ».
-  Widget _radar() {
-    return ValueListenableBuilder<RadarSample?>(
-      valueListenable: _hub.latestRadar,
-      builder: (context, radar, _) {
-        if (radar == null) {
-          return const SizedBox.shrink();
-        }
-
-        final nearest = radar.nearest;
-        final color = radar.isClear
-            ? Colors.teal
-            : (nearest!.distanceM < 40 ? Colors.red : Colors.orange);
-
-        return Card(
-          color: color.withValues(alpha: 0.12),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Icon(radar.isClear ? Icons.check_circle : Icons.warning,
-                    color: color),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: radar.isClear
-                      ? const Text('Route dégagée')
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('${radar.targets.length} véhicule(s)',
-                                style:
-                                    Theme.of(context).textTheme.titleMedium),
-                            const SizedBox(height: 4),
-                            for (final t in radar.targets)
-                              Text('$t',
-                                  style: const TextStyle(
-                                      fontFamily: 'monospace', fontSize: 12)),
-                          ],
-                        ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _metric(
-    ValueListenable<Object?> listenable,
-    String unit,
-    IconData icon, {
-    String Function(Object)? format,
-  }) {
-    return ValueListenableBuilder<Object?>(
-      valueListenable: listenable,
-      builder: (context, value, _) => Column(
-        children: [
-          Icon(icon, size: 20),
-          const SizedBox(height: 4),
-          Text(
-            value == null ? '—' : (format?.call(value) ?? value.toString()),
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          Text(unit, style: Theme.of(context).textTheme.bodySmall),
-        ],
-      ),
-    );
-  }
 
   /// Un capteur mémorisé, connecté ou non.
   ///

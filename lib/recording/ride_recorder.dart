@@ -10,6 +10,7 @@ import '../drivetrain.dart';
 import 'gps_fix.dart';
 import 'gps_source.dart';
 import 'ride_session.dart';
+import 'ride_stats.dart';
 import 'ride_store.dart';
 import 'track_point.dart';
 
@@ -116,6 +117,11 @@ class RideRecorder extends ChangeNotifier {
 
   int get pointCount => _pointCount;
 
+  /// Agrégats de la sortie en cours (moyennes, maxima, dénivelé, puissance
+  /// normalisée). Mis à jour à chaque point, avec le même code que celui qui
+  /// résume la sortie à l'export : l'écran et le `.fit` ne peuvent pas diverger.
+  final stats = RideStats();
+
   /// Dernière position connue, même périmée — l'UI s'en sert pour dire si le
   /// GPS a accroché.
   GpsFix? get lastFix => _lastFix;
@@ -139,6 +145,7 @@ class RideRecorder extends ChangeNotifier {
     _distanceM = 0;
     _pointCount = 0;
     _recordedSeconds = 0;
+    stats.reset();
     _lastFix = null;
     _referenceFix = null;
     _lastMetaSave = DateTime.now();
@@ -261,6 +268,9 @@ class RideRecorder extends ChangeNotifier {
 
     final now = DateTime.now();
     final point = capture(now);
+    // Avant l'écriture : un disque plein ne doit pas effacer le point de
+    // l'affichage, où il vient tout juste d'être mesuré.
+    stats.add(point);
 
     try {
       sink.writeln(jsonEncode(point.toJson()));

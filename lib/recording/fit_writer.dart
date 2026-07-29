@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'ride_session.dart';
+import 'ride_stats.dart';
 import 'track_point.dart';
 
 /// Encode une sortie enregistrée en fichier `.fit`.
@@ -51,7 +52,7 @@ class FitWriter {
     final file = _FitFile();
     final start = points.first.at.toUtc();
     final end = points.last.at.toUtc();
-    final summary = _Summary.of(points);
+    final summary = RideStats.of(points);
 
     // — file_id : ce que le fichier est. Premier message obligatoire.
     file.define(_Local.fileId, _Mesg.fileId, const [
@@ -239,7 +240,7 @@ class FitWriter {
   /// cardio au bout d'une heure. On regarde donc l'ensemble des points avant
   /// d'écrire — un capteur qui a répondu une seule fois garde sa colonne, une
   /// sortie sans capteur n'en traîne aucune.
-  static List<_FieldDef> _recordFields(_Summary summary) => [
+  static List<_FieldDef> _recordFields(RideStats summary) => [
         const _FieldDef(253, _BaseType.uint32), // timestamp
         if (summary.hasPosition) ...const [
           _FieldDef(0, _BaseType.sint32), // position_lat
@@ -253,7 +254,7 @@ class FitWriter {
         if (summary.hasPower) const _FieldDef(7, _BaseType.uint16),
       ];
 
-  static Map<int, int?> _recordValues(TrackPoint point, _Summary summary) => {
+  static Map<int, int?> _recordValues(TrackPoint point, RideStats summary) => {
         253: _timestamp(point.at),
         if (summary.hasPosition) ...{
           0: _semicircles(point.lat),
@@ -263,7 +264,7 @@ class FitWriter {
         if (summary.hasHeartRate) 3: point.heartRate,
         if (summary.hasCadence) 4: point.cadence?.round(),
         5: _centimetres(point.distanceM),
-        if (summary.hasSpeed) 6: _millimetresPerSecond(_Summary.speedOf(point)),
+        if (summary.hasSpeed) 6: _millimetresPerSecond(RideStats.speedOf(point)),
         if (summary.hasPower) 7: point.power,
       };
 
@@ -304,130 +305,6 @@ class EmptyRide implements Exception {
 
   @override
   String toString() => 'Sortie vide : aucun point enregistré.';
-}
-
-/// Ce qu'on peut dire d'une sortie en une passe sur ses points.
-class _Summary {
-  _Summary._();
-
-  double distanceM = 0;
-  double ascentM = 0;
-  double descentM = 0;
-
-  double? firstLat;
-  double? firstLng;
-  double? lastLat;
-  double? lastLng;
-
-  bool hasPosition = false;
-  bool hasAltitude = false;
-  bool hasHeartRate = false;
-  bool hasCadence = false;
-  bool hasPower = false;
-  bool hasSpeed = false;
-
-  int? avgHeartRate;
-  int? maxHeartRate;
-  int? avgCadence;
-  int? maxCadence;
-  int? avgPower;
-  int? maxPower;
-  double? avgSpeedMps;
-  double? maxSpeedMps;
-
-  /// La vitesse d'un point : celle du GPS, ou à défaut celle du capteur de roue.
-  ///
-  /// Le GPS d'abord parce qu'il ne dépend d'aucun réglage ; le capteur de roue
-  /// en secours parce qu'il continue de mesurer là où le GPS ne voit plus rien
-  /// (tunnel, forêt dense).
-  static double? speedOf(TrackPoint point) =>
-      point.speedMps ?? point.wheelSpeedMps;
-
-  /// Seuil de bruit du dénivelé : l'altitude GPS oscille de quelques mètres à
-  /// l'arrêt. Sans hystérésis, une pause de dix minutes « gravit » cent mètres.
-  static const _altitudeNoiseM = 1.0;
-
-  static _Summary of(List<TrackPoint> points) {
-    final summary = _Summary._();
-
-    var hrSum = 0, hrCount = 0;
-    var cadenceSum = 0.0, cadenceCount = 0;
-    var powerSum = 0, powerCount = 0;
-    var speedSum = 0.0, speedCount = 0;
-    double? altitudeReference;
-
-    for (final point in points) {
-      summary.distanceM = point.distanceM;
-
-      if (point.hasPosition) {
-        summary.hasPosition = true;
-        summary.firstLat ??= point.lat;
-        summary.firstLng ??= point.lng;
-        summary.lastLat = point.lat;
-        summary.lastLng = point.lng;
-      }
-
-      final altitude = point.altitudeM;
-      if (altitude != null) {
-        summary.hasAltitude = true;
-        altitudeReference ??= altitude;
-        if (altitude - altitudeReference > _altitudeNoiseM) {
-          summary.ascentM += altitude - altitudeReference;
-          altitudeReference = altitude;
-        } else if (altitudeReference - altitude > _altitudeNoiseM) {
-          summary.descentM += altitudeReference - altitude;
-          altitudeReference = altitude;
-        }
-      }
-
-      final heartRate = point.heartRate;
-      if (heartRate != null) {
-        summary.hasHeartRate = true;
-        hrSum += heartRate;
-        hrCount++;
-        summary.maxHeartRate = _max(summary.maxHeartRate, heartRate);
-      }
-
-      final cadence = point.cadence;
-      if (cadence != null) {
-        summary.hasCadence = true;
-        cadenceSum += cadence;
-        cadenceCount++;
-        summary.maxCadence = _max(summary.maxCadence, cadence.round());
-      }
-
-      final power = point.power;
-      if (power != null) {
-        summary.hasPower = true;
-        powerSum += power;
-        powerCount++;
-        summary.maxPower = _max(summary.maxPower, power);
-      }
-
-      final speed = speedOf(point);
-      if (speed != null) {
-        summary.hasSpeed = true;
-        speedSum += speed;
-        speedCount++;
-        summary.maxSpeedMps =
-            summary.maxSpeedMps == null || speed > summary.maxSpeedMps!
-                ? speed
-                : summary.maxSpeedMps;
-      }
-    }
-
-    if (hrCount > 0) summary.avgHeartRate = (hrSum / hrCount).round();
-    if (cadenceCount > 0) {
-      summary.avgCadence = (cadenceSum / cadenceCount).round();
-    }
-    if (powerCount > 0) summary.avgPower = (powerSum / powerCount).round();
-    if (speedCount > 0) summary.avgSpeedMps = speedSum / speedCount;
-
-    return summary;
-  }
-
-  static int _max(int? current, int value) =>
-      current == null || value > current ? value : current;
 }
 
 /// Types de base du format, avec leur code, leur taille et leur valeur
