@@ -147,6 +147,14 @@ Le chien de garde lit `recorder.lastFix` plutôt que d'ouvrir un flux GPS à lui
 conséquence assumée, **hors enregistrement il n'a pas de position** et le retour
 auto repose entièrement sur le pont.
 
+**Pour essayer le radar sans radar** : l'icône ◎ de la barre du haut, sur l'écran
+des capteurs, ouvre `RadarDebugPage` — jusqu'à trois véhicules qui remontent en
+boucle (`RadarSimulator`, pur et testé), avec la vitesse d'approche réglable.
+Elle monte **les widgets de la sortie**, pas des copies : ce qu'on y voit et
+entend est ce qui sortira sur la route. « Débrancher le radar » y coupe les
+trames pour vérifier que la perte du capteur ne s'annonce pas comme une voie
+libre.
+
 ## Ajouter un capteur BLE
 
 Une seule entrée à écrire : un `SensorProfile` dans `sensorProfiles`

@@ -434,44 +434,8 @@ class _RideShellPageState extends State<RideShellPage>
                 ),
               ),
             ),
-            // Les bandes des deux bords, seulement sur la carte : ailleurs,
-            // tout l'écran fait déjà défiler d'un glissé.
-            if (_page == RidePage.navigation)
-              Positioned(
-                left: 0,
-                top: 0,
-                bottom: bandHeight,
-                child: MapEdgeHandle(direction: -1, onStep: _stepPage),
-              ),
-            // La gouttière droite est partagée : la bande de bord n'existe que
-            // sur la carte, la jauge radar sur toutes les pages. Elles sont
-            // empilées plutôt que juxtaposées — se partager vingt-deux points
-            // en donnerait onze à chacune, et onze points ne se visent pas à
-            // vélo.
-            Positioned(
-              right: 0,
-              top: 0,
-              bottom: bandHeight,
-              child: ValueListenableBuilder<RadarView>(
-                valueListenable: _radar,
-                builder: (context, radar, _) => SizedBox(
-                  width: MapEdgeHandle.width,
-                  child: Stack(
-                    children: [
-                      Positioned.fill(child: RadarSideGauge(view: radar)),
-                      if (_page == RidePage.navigation)
-                        Positioned.fill(
-                          child: MapEdgeHandle(
-                            direction: 1,
-                            onStep: _stepPage,
-                            showBar: !radar.isAlerting,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+            _gutter(RadarGaugeSide.left, bandHeight),
+            _gutter(RadarGaugeSide.right, bandHeight),
             Positioned(
               left: 0,
               right: 0,
@@ -506,6 +470,44 @@ class _RideShellPageState extends State<RideShellPage>
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// Une gouttière, c'est-à-dire deux choses qui se partagent le même bord :
+  /// la bande de changement de page, qui n'existe que sur la carte, et la jauge
+  /// radar, qui est là sur toutes les pages.
+  ///
+  /// Empilées plutôt que juxtaposées — se partager vingt-deux points en
+  /// donnerait onze à chacune, et onze points ne se visent pas à vélo. Quand le
+  /// radar alerte, c'est lui qu'on voit : la bande garde ses gestes et efface
+  /// son repère.
+  Widget _gutter(RadarGaugeSide side, double bandHeight) {
+    final left = side == RadarGaugeSide.left;
+
+    return Positioned(
+      left: left ? 0 : null,
+      right: left ? null : 0,
+      top: 0,
+      bottom: bandHeight,
+      child: ValueListenableBuilder<RadarView>(
+        valueListenable: _radar,
+        builder: (context, radar, _) => SizedBox(
+          width: MapEdgeHandle.width,
+          child: Stack(
+            children: [
+              Positioned.fill(child: RadarSideGauge(view: radar, side: side)),
+              if (_page == RidePage.navigation)
+                Positioned.fill(
+                  child: MapEdgeHandle(
+                    direction: left ? -1 : 1,
+                    onStep: _stepPage,
+                    showBar: !radar.isAlerting,
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

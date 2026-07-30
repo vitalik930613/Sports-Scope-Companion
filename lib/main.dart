@@ -15,8 +15,12 @@ import 'ble/sensor_profile.dart';
 import 'devices/known_device.dart';
 import 'devices/known_devices_store.dart';
 import 'drivetrain.dart';
-import 'ride/ride_shell_page.dart';
+import 'navigation/navigation_picker_sheet.dart';
 import 'navigation/navigation_target.dart';
+import 'navigation/route_catalog_store.dart';
+import 'ride/radar_debug_page.dart';
+import 'ride/ride_shell_page.dart';
+import 'recording/gps_source.dart';
 import 'recording/recording_card.dart';
 import 'recording/ride_recorder.dart';
 import 'recording/ride_store.dart';
@@ -40,11 +44,16 @@ Future<void> main() async {
   // Les seuils du cycliste sont relus au démarrage : ils viennent du site, donc
   // une sortie lancée hors réseau n'aurait sinon aucune zone à afficher.
   final riderProfile = await RiderProfileStore.open();
+  // Et les itinéraires du compte, pour la même raison encore : on choisit son
+  // tracé au départ, c'est-à-dire à l'endroit de la sortie où le réseau manque
+  // le plus souvent.
+  final routes = await RouteCatalogStore.open();
   runApp(SportsScopeApp(
     devices: devices,
     rides: rides,
     session: session,
     riderProfile: riderProfile,
+    routes: routes,
   ));
 }
 
@@ -55,10 +64,12 @@ class SportsScopeApp extends StatefulWidget {
     required this.rides,
     required this.session,
     required this.riderProfile,
+    required this.routes,
   });
 
   final KnownDevicesStore devices;
   final RideStore rides;
+  final RouteCatalogStore routes;
   final SiteSession session;
   final RiderProfileStore riderProfile;
 
@@ -140,6 +151,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
         rides: widget.rides,
         session: widget.session,
         riderProfile: widget.riderProfile,
+        routes: widget.routes,
       ),
     );
   }
@@ -172,6 +184,11 @@ Future<void> openNavigation(
     return;
   }
 
+  if (!recorder.isActive) {
+    await _offerRecording(context, recorder);
+    if (!context.mounted) return;
+  }
+
   await Navigator.of(context).push(MaterialPageRoute(
     builder: (_) => RideShellPage(
       target: target,
@@ -181,6 +198,84 @@ Future<void> openNavigation(
       riderProfile: riderProfile,
     ),
   ));
+}
+
+/// Propose de lancer l'enregistrement, juste avant de partir.
+///
+/// Posée ici et pas dans la coquille, pour deux raisons. D'abord parce que
+/// l'écran de sortie ne pilote pas l'enregistreur et ne doit pas commencer :
+/// une sortie vit au-dessus des écrans, elle ne naît pas de l'un d'eux. Ensuite
+/// parce que c'est le dernier moment où le cycliste a encore ses mains — après,
+/// il roule.
+///
+/// Le démarrage n'est pas automatique : ouvrir la carte pour vérifier une route
+/// avant de partir fabriquerait une sortie de deux minutes à chaque fois, et
+/// c'est le genre de déchet qu'on finit par ne plus trier.
+///
+/// **La navigation s'ouvre dans tous les cas.** Refus, panne de GPS, position
+/// désactivée : l'enregistrement est un supplément, la navigation est le but.
+Future<void> _offerRecording(
+  BuildContext context,
+  RideRecorder recorder,
+) async {
+  final wanted = await showDialog<bool>(
+    context: context,
+    // Pas de sortie par le côté : une fois la navigation ouverte, le bandeau
+    // d'enregistrement n'est plus atteignable, donc c'est l'unique occasion de
+    // la sortie. Un tap à côté ne doit pas trancher à la place du cycliste.
+    barrierDismissible: false,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Enregistrer cette sortie ?'),
+      content: const Text(
+        'La trace, les capteurs et le dénivelé seront écrits pendant toute la '
+        'navigation.\n\nC\'est maintenant ou jamais : l\'écran de sortie n\'a '
+        'pas de bouton d\'enregistrement.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('Naviguer seulement'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: const Text('Enregistrer'),
+        ),
+      ],
+    ),
+  );
+
+  if (wanted != true || !context.mounted) return;
+
+  try {
+    await recorder.start();
+  } on GpsUnavailable catch (e) {
+    if (!context.mounted) return;
+    await _tellRecordingFailed(context, e.message);
+  } catch (e) {
+    if (!context.mounted) return;
+    await _tellRecordingFailed(context, 'Enregistrement impossible : $e');
+  }
+}
+
+/// Dit qu'on partira sans trace.
+///
+/// Une dialogue et pas un `SnackBar` : la navigation s'ouvre dans la seconde et
+/// recouvrirait le message avant qu'il ait été lu. Le cycliste doit savoir en
+/// partant que rien ne sera enregistré — il le découvrirait sinon en rentrant.
+Future<void> _tellRecordingFailed(BuildContext context, String message) async {
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Sortie non enregistrée'),
+      content: Text('$message\n\nLa navigation s\'ouvre quand même.'),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          child: const Text('Continuer'),
+        ),
+      ],
+    ),
+  );
 }
 
 /// Écran de diagnostic des capteurs : scanner, connecter, afficher en direct.
@@ -198,9 +293,13 @@ class SensorsPage extends StatefulWidget {
     required this.rides,
     required this.session,
     required this.riderProfile,
+    required this.routes,
   });
 
   final KnownDevicesStore devices;
+
+  /// Les itinéraires du compte, pour le sélecteur de navigation.
+  final RouteCatalogStore routes;
 
   /// Le hub appartient à l'application, pas à cet écran : les capteurs doivent
   /// rester connectés quand on passe en navigation.
@@ -242,6 +341,16 @@ class _SensorsPageState extends State<SensorsPage> {
   void _openRides() {
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => RidesPage(store: widget.rides, recorder: _recorder),
+    ));
+  }
+
+  /// Le banc d'essai du radar. Sa place est ici et pas dans un écran caché : le
+  /// jour où le décodage du Varia sera confirmé, c'est de cette page qu'on
+  /// partira pour comparer ce qu'affiche une vraie voiture à ce qu'affiche une
+  /// voiture simulée.
+  void _openRadarSimulator() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const RadarDebugPage(),
     ));
   }
 
@@ -405,76 +514,23 @@ class _SensorsPageState extends State<SensorsPage> {
   /// Choix de ce qu'on navigue.
   ///
   /// Le chemin normal reste le lien depuis le site (« Ouvrir dans l'appli »),
-  /// qui arrive en lien entrant. Ce panneau est là pour les deux cas qu'un lien
-  /// ne couvre pas : partir sans itinéraire, et ouvrir un lien reçu ailleurs.
+  /// qui arrive en lien entrant et court-circuite tout ceci. Ce panneau est là
+  /// pour le reste : reprendre un de ses itinéraires, partir sans tracé, ou
+  /// ouvrir un lien reçu ailleurs.
+  ///
+  /// La feuille ne fait que **rendre une cible** — ouvrir la navigation demande
+  /// une permission et pose la question de l'enregistrement, deux choses qui
+  /// n'ont rien à faire dans un sélecteur.
   Future<void> _chooseNavigation() async {
-    final controller = TextEditingController();
-
-    await showModalBottomSheet<void>(
+    final target = await showModalBottomSheet<NavigationTarget>(
       context: context,
       isScrollControlled: true,
-      builder: (sheetContext) => Padding(
-        padding: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          top: 16,
-          bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 16,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.explore),
-              title: const Text('Navigation libre'),
-              subtitle: const Text('Carte et position, sans itinéraire'),
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                openNavigation(
-                  context,
-                  target: const NavigationTarget.free(),
-                  hub: _hub,
-                  recorder: widget.recorder,
-                  session: widget.session,
-                  riderProfile: widget.riderProfile,
-                );
-              },
-            ),
-            const Divider(),
-            TextField(
-              controller: controller,
-              autocorrect: false,
-              keyboardType: TextInputType.url,
-              decoration: const InputDecoration(
-                labelText: 'Lien d\'un itinéraire partagé',
-                hintText: 'https://sports.logicraft.ch/routes/…',
-              ),
-              onSubmitted: (value) => _openPastedLink(sheetContext, value),
-            ),
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              onPressed: () => _openPastedLink(sheetContext, controller.text),
-              icon: const Icon(Icons.navigation),
-              label: const Text('Naviguer cet itinéraire'),
-            ),
-          ],
-        ),
-      ),
+      builder: (_) => NavigationPickerSheet(catalog: widget.routes),
     );
 
-    controller.dispose();
-  }
+    if (target == null || !mounted) return;
 
-  void _openPastedLink(BuildContext sheetContext, String value) {
-    final uri = Uri.tryParse(value.trim());
-    final target = uri == null ? null : NavigationTarget.parse(uri);
-    if (target == null) {
-      _toast('Ce lien ne mène pas à un itinéraire.');
-      return;
-    }
-    Navigator.of(sheetContext).pop();
-    openNavigation(
+    await openNavigation(
       context,
       target: target,
       hub: _hub,
@@ -533,6 +589,11 @@ class _SensorsPageState extends State<SensorsPage> {
             tooltip: 'Mes sorties',
           ),
           IconButton(
+            onPressed: _openRadarSimulator,
+            icon: const Icon(Icons.radar),
+            tooltip: 'Simuler le radar',
+          ),
+          IconButton(
             onPressed: _scanning ? FlutterBluePlus.stopScan : _startScan,
             icon: Icon(_scanning ? Icons.stop : Icons.search),
             tooltip: _scanning ? 'Arrêter' : 'Scanner',
@@ -545,7 +606,17 @@ class _SensorsPageState extends State<SensorsPage> {
         label: const Text('Naviguer'),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(12),
+        // Une `ListView` sans marge explicite prendrait celle du système toute
+        // seule ; en lui en donnant une, on hérite du devoir de la compléter —
+        // sinon la dernière carte de la liste finit sous la barre de
+        // navigation. Le bouton flottant s'ajoute par-dessus, d'où le supplément
+        // qui permet de faire défiler ce qu'il recouvre.
+        padding: EdgeInsets.fromLTRB(
+          12,
+          12,
+          12,
+          12 + 72 + MediaQuery.paddingOf(context).bottom,
+        ),
         children: [
           // Bluetooth éteint, capteurs muets : autant le dire, sinon la page
           // ressemble à une panne de l'appli.

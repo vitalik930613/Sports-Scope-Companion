@@ -77,10 +77,20 @@ cible par défaut) elle fonctionne.
 
 # Enregistrer une sortie
 
-Le bandeau **Enregistrement** est en haut de l'écran des capteurs. Démarrer
-demande la position (et, sur Android 13+, l'autorisation de notifier), puis
-écrit un point par seconde : position, altitude, vitesse GPS, plus le cardio, la
-puissance, la cadence et les vitesses Di2 des capteurs connectés à ce
+Deux façons de lancer une sortie. Le bandeau **Enregistrement**, en haut de
+l'écran des capteurs. Et, si vous partez en navigation sans avoir rien lancé,
+l'appli **pose la question avant d'ouvrir la carte** : « Enregistrer cette
+sortie ? ».
+
+Répondre *Naviguer seulement* n'est pas rattrapable : l'écran de sortie est un
+tableau de bord, pas une télécommande, il n'a pas de bouton d'enregistrement. Le
+démarrage n'est pas automatique pour autant — ouvrir la carte deux minutes pour
+vérifier une route fabriquerait une sortie à chaque fois. Si le GPS se dérobe au
+moment de démarrer, l'appli le dit et ouvre la navigation quand même.
+
+Démarrer demande la position (et, sur Android 13+, l'autorisation de notifier),
+puis écrit un point par seconde : position, altitude, vitesse GPS, plus le
+cardio, la puissance, la cadence et les vitesses Di2 des capteurs connectés à ce
 moment-là. La sortie continue quand on passe en navigation, écran éteint ou
 appli en arrière-plan — c'est le rôle du service au premier plan, signalé par sa
 notification persistante.
