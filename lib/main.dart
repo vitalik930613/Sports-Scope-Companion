@@ -108,10 +108,11 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
     }
     await openNavigation(
       _navigatorKey.currentContext,
-      target,
-      _hub,
-      widget.session,
-      widget.riderProfile,
+      target: target,
+      hub: _hub,
+      recorder: _recorder,
+      session: widget.session,
+      riderProfile: widget.riderProfile,
     );
   }
 
@@ -151,12 +152,13 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
 /// l'application doit déjà détenir. Sans elle, la carte s'afficherait sans
 /// jamais suivre le cycliste — une panne silencieuse.
 Future<void> openNavigation(
-  BuildContext? context,
-  NavigationTarget target,
-  SensorHub hub,
-  SiteSession session,
-  RiderProfileStore riderProfile,
-) async {
+  BuildContext? context, {
+  required NavigationTarget target,
+  required SensorHub hub,
+  required RideRecorder recorder,
+  required SiteSession session,
+  required RiderProfileStore riderProfile,
+}) async {
   if (context == null || !context.mounted) return;
 
   final status = await Permission.location.request();
@@ -174,6 +176,7 @@ Future<void> openNavigation(
     builder: (_) => RideShellPage(
       target: target,
       hub: hub,
+      recorder: recorder,
       session: session,
       riderProfile: riderProfile,
     ),
@@ -430,10 +433,11 @@ class _SensorsPageState extends State<SensorsPage> {
                 Navigator.of(sheetContext).pop();
                 openNavigation(
                   context,
-                  const NavigationTarget.free(),
-                  _hub,
-                  widget.session,
-                  widget.riderProfile,
+                  target: const NavigationTarget.free(),
+                  hub: _hub,
+                  recorder: widget.recorder,
+                  session: widget.session,
+                  riderProfile: widget.riderProfile,
                 );
               },
             ),
@@ -470,7 +474,14 @@ class _SensorsPageState extends State<SensorsPage> {
       return;
     }
     Navigator.of(sheetContext).pop();
-    openNavigation(context, target, _hub, widget.session, widget.riderProfile);
+    openNavigation(
+      context,
+      target: target,
+      hub: _hub,
+      recorder: widget.recorder,
+      session: widget.session,
+      riderProfile: widget.riderProfile,
+    );
   }
 
   void _toast(String message) {
