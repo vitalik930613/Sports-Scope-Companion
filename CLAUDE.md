@@ -91,6 +91,19 @@ Côté site, tout ça vit dans `app/javascript/companionBridge.ts` et
 `RouteNavigation.vue` (`inCompanionApp()`, `appOwnsChrome`) du repo Rails.
 **Toucher au protocole demande de modifier les deux dépôts.**
 
+### Appeler une API du site sans identifiants
+
+L'appli ne détient aucun jeton : la session est un cookie du pot partagé par
+tous les WebViews. Pour lire une API authentifiée, on **fait appeler un
+WebView** plutôt que d'extraire le cookie — voir `RouteCatalogFetch`
+(`navigation/route_catalog_fetch.dart`), qui charge une page du site hors écran
+et y exécute `fetch('/api/routes', {credentials: 'same-origin'})`, résultat
+renvoyé par un canal JS. `Accept: application/json` est indispensable : c'est ce
+qui fait répondre à Rails un 401 propre au lieu d'une redirection HTML, donc ce
+qui permet de distinguer « pas connecté » de « pas de réseau ». Le résultat va
+dans un cache disque (`RouteCatalogStore`), qui fait autorité pour l'affichage —
+on choisit son tracé au départ, là où le réseau manque.
+
 ## Le tableau de bord de sortie (`lib/ride/`)
 
 `RideShellPage` est la coquille : plein écran, rétroéclairage, zones obstruées

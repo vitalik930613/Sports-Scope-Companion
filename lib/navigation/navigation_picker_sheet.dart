@@ -103,6 +103,7 @@ class _NavigationPickerSheetState extends State<NavigationPickerSheet> {
           ),
           const Divider(),
           _header(),
+          _notice(),
           Flexible(
             child: routes.isEmpty
                 ? _emptyMessage()
@@ -169,41 +170,60 @@ class _NavigationPickerSheetState extends State<NavigationPickerSheet> {
     );
   }
 
-  /// Ce qu'on dit quand la liste est vide — et il y a quatre façons de l'être,
-  /// dont une seule que le cycliste puisse corriger.
-  Widget _emptyMessage() {
+  /// Ce qui s'est passé au dernier rafraîchissement, quand ce n'est pas « tout
+  /// va bien ».
+  ///
+  /// Affiché **même quand la liste n'est pas vide** : une liste qui date sans le
+  /// dire est pire qu'une liste absente, parce qu'on lui fait confiance. Et sur
+  /// les deux causes possibles, une seule se corrige — autant ne pas les
+  /// confondre.
+  Widget _notice() {
     final message = switch (_status) {
-      null => 'Chargement…',
       RouteFetchStatus.signedOut =>
-        'Connecte-toi depuis l\'écran Compte pour retrouver tes itinéraires.',
-      RouteFetchStatus.failed =>
-        'Liste indisponible hors ligne, et rien en mémoire. '
-            'Le lien d\'un itinéraire partagé marche quand même.',
-      RouteFetchStatus.ok => 'Aucun itinéraire enregistré sur le site.',
+        'Pas connecté : ouvre l\'écran Compte pour retrouver tes itinéraires.',
+      RouteFetchStatus.failed when widget.catalog.updatedAt != null =>
+        'Site injoignable — liste du '
+            '${formatDateTime(widget.catalog.updatedAt!)}.',
+      RouteFetchStatus.failed => 'Site injoignable.',
+      _ => null,
     };
 
+    if (message == null) return const SizedBox.shrink();
+
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16),
+      padding: const EdgeInsets.only(bottom: 4),
       child: Text(
         message,
-        style: const TextStyle(color: Colors.grey),
+        style: const TextStyle(color: Colors.orange, fontSize: 12),
       ),
     );
   }
 
-  Widget _routeTile(RouteSummary route) {
-    // Une liste venue du cache peut dater : le dire là où on la lit, sans en
-    // faire une alerte — elle reste parfaitement utilisable.
-    final stale = _status != null && _status != RouteFetchStatus.ok;
+  /// Ce qu'on dit quand la liste est vide. Le cas « pas connecté » et le cas
+  /// « injoignable » sont déjà portés par [_notice] : ici on ne traite que ce
+  /// qu'il reste.
+  Widget _emptyMessage() {
+    final message = switch (_status) {
+      null => 'Chargement…',
+      RouteFetchStatus.ok => 'Aucun itinéraire enregistré sur le site.',
+      _ => 'Rien en mémoire. Le lien d\'un itinéraire partagé marche '
+          'quand même.',
+    };
 
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Text(message, style: const TextStyle(color: Colors.grey)),
+    );
+  }
+
+  Widget _routeTile(RouteSummary route) {
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: Icon(_iconFor(route.activity)),
       title: Text(route.name, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
         '${formatDistance(route.distanceM)} · '
-        '${route.elevationGainM.round()} m D+'
-        '${stale && route.updatedAt != null ? ' · en mémoire' : ''}',
+        '${route.elevationGainM.round()} m D+',
       ),
       onTap: () => _pick(
         NavigationTarget(shareToken: route.shareToken, label: route.name),

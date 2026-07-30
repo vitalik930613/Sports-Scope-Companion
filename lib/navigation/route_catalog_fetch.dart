@@ -43,9 +43,12 @@ class RouteFetchResult {
 /// exactement comme l'écran Compte l'a laissé. Aucune dépendance nouvelle,
 /// aucune session à recopier, et rien à changer côté Rails.
 ///
-/// Le prix, c'est un chargement de page du site pour pouvoir émettre depuis la
-/// bonne origine. C'est aussi la raison pour laquelle le résultat est mis en
-/// cache : on ne paie ça qu'une fois par départ, et jamais hors ligne.
+/// **La page chargée est `robots.txt`**, et ce n'est pas une coquetterie : on ne
+/// veut qu'une *origine* d'où émettre. Charger la racine du site amènerait toute
+/// l'application Vue, son service worker et ses dizaines de requêtes — long,
+/// et surtout riche en occasions d'échouer pour des raisons qui n'ont rien à
+/// voir avec ce qu'on demande. Un fichier texte statique n'a ni JavaScript, ni
+/// sous-ressource, ni cycle de vie.
 class RouteCatalogFetch {
   const RouteCatalogFetch({
     this.baseUrl = sportsScopeBaseUrl,
@@ -61,34 +64,62 @@ class RouteCatalogFetch {
 
   static const _channel = 'SportsScopeRoutes';
 
-  /// Le `fetch` lui-même. `same-origin` embarque le cookie de session, et
-  /// `Accept: application/json` est ce qui fait répondre à Rails un 401 propre
-  /// plutôt qu'une redirection HTML vers la page de connexion — c'est ce qui
-  /// nous permet de distinguer « pas connecté » de « pas de réseau ».
+  /// Le document qui sert d'origine. Statique, minuscule, sans JavaScript.
+  static const _originPath = '/robots.txt';
+
+  /// Le `fetch` lui-même.
+  ///
+  /// - `same-origin` embarque le cookie de session ;
+  /// - `Accept: application/json` est ce qui fait répondre à Rails un 401 propre
+  ///   plutôt qu'une redirection HTML vers la page de connexion — c'est ce qui
+  ///   permet de distinguer « pas connecté » de « pas de réseau » ;
+  /// - `no-store` parce qu'une liste d'itinéraires servie depuis un cache HTTP
+  ///   n'aurait aucun intérêt : on a déjà le nôtre, sur disque.
+  ///
+  /// Le code HTTP est renvoyé même en cas d'échec : c'est la seule chose qui
+  /// permette de diagnostiquer depuis un téléphone au bout d'un `adb`.
   static const _script = '''
     (function () {
       var send = function (payload) {
         try { $_channel.postMessage(JSON.stringify(payload)); } catch (e) {}
       };
-      fetch('/api/routes', {
-        credentials: 'same-origin',
-        headers: { 'Accept': 'application/json' }
-      }).then(function (response) {
-        if (response.status === 401) return send({ status: 'signedOut' });
-        if (!response.ok) return send({ status: 'failed' });
-        return response.json().then(function (body) {
-          send({ status: 'ok', body: body });
+      try {
+        fetch('/api/routes', {
+          credentials: 'same-origin',
+          cache: 'no-store',
+          headers: { 'Accept': 'application/json' }
+        }).then(function (response) {
+          if (response.status === 401) return send({ status: 'signedOut' });
+          if (!response.ok) {
+            return send({ status: 'failed', code: response.status });
+          }
+          return response.json().then(function (body) {
+            send({ status: 'ok', body: body });
+          });
+        }).catch(function (e) {
+          send({ status: 'failed', reason: String(e) });
         });
-      }).catch(function () { send({ status: 'failed' }); });
+      } catch (e) {
+        send({ status: 'failed', reason: String(e) });
+      }
     })();
   ''';
 
   Future<RouteFetchResult> run() async {
     final answer = Completer<RouteFetchResult>();
     late final WebViewController controller;
+    Timer? retries;
 
     void finish(RouteFetchResult result) {
-      if (!answer.isCompleted) answer.complete(result);
+      if (answer.isCompleted) return;
+      retries?.cancel();
+      answer.complete(result);
+    }
+
+    void ask() {
+      controller.runJavaScript(_script).catchError((Object e) {
+        debugPrint('[itinéraires] script refusé : $e');
+      });
     }
 
     try {
@@ -100,25 +131,55 @@ class RouteCatalogFetch {
         )
         ..setNavigationDelegate(
           NavigationDelegate(
-            // La page n'est là que pour donner une origine au `fetch` : ce
-            // qu'elle affiche n'a aucune importance, personne ne la regarde.
-            onPageFinished: (_) => controller.runJavaScript(_script),
-            onWebResourceError: (_) => finish(
-              const RouteFetchResult(RouteFetchStatus.failed),
-            ),
+            onPageFinished: (url) {
+              debugPrint('[itinéraires] origine chargée : $url');
+              ask();
+            },
+            onWebResourceError: (error) {
+              // **Seule une erreur de cadre principal est fatale.** Android
+              // signale ici la moindre sous-ressource en échec — une icône
+              // manquante, une requête coupée — et traiter ça comme une panne
+              // faisait abandonner la requête avant même de l'avoir émise.
+              if (error.isForMainFrame != true) {
+                debugPrint('[itinéraires] ressource ignorée : '
+                    '${error.url} (${error.description})');
+                return;
+              }
+              debugPrint('[itinéraires] origine injoignable : '
+                  '${error.description}');
+              finish(const RouteFetchResult(RouteFetchStatus.failed));
+            },
           ),
         );
 
-      await controller.loadRequest(Uri.parse(baseUrl));
+      await controller.loadRequest(Uri.parse('$baseUrl$_originPath'));
+
+      // Filet : `onPageFinished` peut ne jamais venir, ou venir avant que le
+      // canal ne soit prêt. Redemander coûte un `fetch` de plus au pire, et
+      // évite d'attendre le délai complet pour rien.
+      retries = Timer.periodic(
+        const Duration(milliseconds: 1500),
+        (_) => ask(),
+      );
     } catch (e) {
       debugPrint('[itinéraires] rafraîchissement impossible : $e');
+      retries?.cancel();
       return const RouteFetchResult(RouteFetchStatus.failed);
     }
 
-    return answer.future.timeout(
+    final result = await answer.future.timeout(
       timeout,
-      onTimeout: () => const RouteFetchResult(RouteFetchStatus.failed),
+      onTimeout: () {
+        debugPrint('[itinéraires] pas de réponse en ${timeout.inSeconds} s');
+        retries?.cancel();
+        return const RouteFetchResult(RouteFetchStatus.failed);
+      },
     );
+
+    retries.cancel();
+    debugPrint('[itinéraires] ${result.status.name}, '
+        '${result.routes.length} itinéraire(s)');
+    return result;
   }
 
   RouteFetchResult _decode(String message) {
@@ -134,11 +195,17 @@ class RouteCatalogFetch {
             RouteSummary.listFromPayload(decoded['body']),
           ),
         'signedOut' => const RouteFetchResult(RouteFetchStatus.signedOut),
-        _ => const RouteFetchResult(RouteFetchStatus.failed),
+        _ => _failure(decoded),
       };
     } catch (e) {
       debugPrint('[itinéraires] réponse illisible : $e');
       return const RouteFetchResult(RouteFetchStatus.failed);
     }
+  }
+
+  RouteFetchResult _failure(Map<dynamic, dynamic> decoded) {
+    debugPrint('[itinéraires] échec du fetch : '
+        'code=${decoded['code']} raison=${decoded['reason']}');
+    return const RouteFetchResult(RouteFetchStatus.failed);
   }
 }
