@@ -16,6 +16,36 @@ enum RidePage {
   static int get count => RidePage.values.length;
 }
 
+/// Le défilement est **circulaire** : après la dernière page revient la
+/// première. Un `PageView` ne sait pas boucler, donc la pile est parcourue par
+/// un index *brut* qui monte et descend sans borne, et [pageOf] le ramène au
+/// catalogue.
+///
+/// [rawPageOrigin] est le point de départ, choisi assez loin de zéro pour qu'une
+/// sortie n'atteigne jamais le bout : il faudrait dix mille changements de page
+/// dans le même sens. C'est un multiple du nombre de pages, pour que l'origine
+/// tombe bien sur la carte.
+int get rawPageOrigin => RidePage.count * 10000;
+
+/// La page du catalogue qu'affiche un index brut.
+///
+/// Le `%` de Dart rend toujours un résultat positif pour un diviseur positif —
+/// contrairement à C ou JavaScript : reculer sous l'origine n'a donc pas besoin
+/// de rattrapage.
+int pageOf(int raw, {int count = 0}) => raw % (count > 0 ? count : RidePage.count);
+
+/// L'index brut le plus proche de [from] qui affiche la page [page].
+///
+/// Par le chemin court, jamais par le tour complet : revenir sur la carte depuis
+/// la dernière page ne doit pas faire défiler tout le catalogue à l'envers sous
+/// les yeux du cycliste.
+int rawPageFor(int page, {required int from, int count = 0}) {
+  final pages = count > 0 ? count : RidePage.count;
+  var delta = (page - pageOf(from, count: pages)) % pages;
+  if (delta > pages ~/ 2) delta -= pages;
+  return from + delta;
+}
+
 /// Amplitude minimale d'un glissé, en pixels logiques, pour valoir changement
 /// de page. Assez court pour un pouce ganté, assez long pour qu'un appui qui
 /// ripe sur le bandeau ne fasse pas défiler.
@@ -25,42 +55,30 @@ const double swipeMinDistance = 40;
 /// court. En pixels logiques par seconde.
 const double swipeMinVelocity = 180;
 
-/// La page où mène un glissé horizontal sur le bandeau.
+/// Ce que dit un glissé horizontal : `1` vers la suite (le doigt part à
+/// gauche), `-1` vers le précédent, `0` quand le geste ne dit rien de net.
 ///
-/// Rend [current] quand le geste ne dit rien de net : sur un guidon, une main
-/// qui tremble ne doit pas changer de page.
+/// Zéro plutôt qu'une supposition : sur un guidon, une main qui tremble ne doit
+/// rien déclencher.
 ///
 /// [dx] est le déplacement cumulé du geste (négatif vers la gauche) et
 /// [velocity] sa vitesse à l'instant du relâchement. **La vitesse l'emporte sur
 /// le déplacement** : partir à gauche puis renvoyer vers la droite est un
 /// retour en arrière, pas une avancée — c'est la dernière intention qui compte.
-int pageAfterSwipe({
-  required int current,
-  required double dx,
-  required double velocity,
-  int count = 0,
-}) {
-  final pages = count > 0 ? count : RidePage.count;
-
-  final int direction;
-  if (velocity.abs() >= swipeMinVelocity) {
-    direction = velocity < 0 ? 1 : -1;
-  } else if (dx.abs() >= swipeMinDistance) {
-    direction = dx < 0 ? 1 : -1;
-  } else {
-    return current;
-  }
-
-  return (current + direction).clamp(0, pages - 1);
+int swipeDirection({required double dx, required double velocity}) {
+  if (velocity.abs() >= swipeMinVelocity) return velocity < 0 ? 1 : -1;
+  if (dx.abs() >= swipeMinDistance) return dx < 0 ? 1 : -1;
+  return 0;
 }
 
 /// La physique du [PageView] selon que la carte est vivante ou non.
 ///
 /// La carte a besoin du glissé horizontal pour se déplacer, et un `PageView` le
 /// réclame pour lui. Tant que la carte est à l'écran et posée, le défilement est
-/// donc coupé net : on quitte la carte par le bandeau, les pastilles ou la bande
-/// du bord droit — jamais par un glissé sur la carte elle-même. Sur les pages de
-/// données, rien ne dispute le geste et toute la surface ramène à la carte.
+/// donc coupé net : on la quitte par les bandes des deux bords ou par les
+/// pastilles — jamais par un glissé en plein milieu de la carte, qui appartient
+/// à MapLibre. Sur les pages de données, rien ne dispute le geste et toute la
+/// surface fait défiler.
 ///
 /// Volontairement piloté par « la carte est-elle vivante » et non par l'index :
 /// bascule à mi-glissé, la physique changerait au milieu du geste et

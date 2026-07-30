@@ -1,18 +1,45 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../account/rider_profile.dart';
+import '../../account/rider_profile_store.dart';
 import '../../ble/sensor_hub.dart';
 import '../../recording/ride_recorder.dart';
 import '../../ui/formats.dart';
 import '../nav_state.dart';
 import '../ride_pages.dart';
+import 'swipe_zone.dart';
 
-/// Le bandeau du bas : les valeurs instantanées, et la façon de changer de page.
+/// Les jeux de valeurs du bandeau.
 ///
-/// Présent sur toutes les pages, y compris la carte — c'est ce qui en fait le
-/// bon hôte pour les gestes. La carte occupe tout le reste de l'écran et réclame
-/// le glissé horizontal pour se déplacer ; le bandeau, lui, n'a rien en dessous,
-/// donc un glissé dessus ne peut vouloir dire qu'une chose.
+/// Quatre cases, pas plus : au-delà, les chiffres deviennent trop petits pour
+/// être lus d'un coup d'œil en roulant, ce qui est le seul usage du bandeau. Ce
+/// qui ne tient pas passe donc dans le jeu suivant, à un glissé de là.
+enum RideBandSet {
+  /// L'avancement de la sortie : ce qu'on regarde le plus souvent.
+  ride,
+
+  /// L'effort : le cardio et la puissance, chacun avec sa zone.
+  effort;
+
+  static int get count => RideBandSet.values.length;
+
+  /// Le jeu qu'on atteint en glissant dans ce sens. La liste est refermée sur
+  /// elle-même — après le dernier revient le premier — parce qu'à deux jeux, un
+  /// bout de course voudrait dire « glissé sans effet », et un geste sans effet
+  /// se prend pour une panne.
+  RideBandSet stepped(int direction) =>
+      RideBandSet.values[(index + direction) % count];
+}
+
+/// Le bandeau du bas : les valeurs instantanées de la sortie.
+///
+/// Présent sur toutes les pages, y compris la carte. Un glissé horizontal
+/// dessus **change de jeu de valeurs**, pas de page : le bandeau n'a rien en
+/// dessous de lui, donc un geste qui y démarre lui appartient sans ambiguïté, et
+/// c'est le seul endroit où l'on peut faire défiler des chiffres sans les
+/// perdre de vue. Changer de page, c'est l'affaire des bandes du bord de la
+/// carte et des pastilles, à droite d'ici.
 ///
 /// Il ne réutilise pas [MetricTile] : celui-ci empile icône, valeur et unité
 /// pour l'écran de diagnostic et réclame une soixantaine de points de haut. Ici
@@ -23,7 +50,8 @@ class RideBottomBand extends StatefulWidget {
     required this.hub,
     required this.recorder,
     required this.nav,
-    required this.pageIndex,
+    required this.riderProfile,
+    required this.page,
     required this.onGoToPage,
   });
 
@@ -31,11 +59,16 @@ class RideBottomBand extends StatefulWidget {
   final RideRecorder recorder;
   final ValueListenable<NavState?> nav;
 
+  /// Les seuils du cycliste, d'où sortent les zones. Vides tant que la page du
+  /// site ne les a pas poussés — le bandeau affiche alors un tiret, jamais une
+  /// zone devinée à partir d'un seuil par défaut.
+  final RiderProfileStore riderProfile;
+
   /// La page affichée, pour les pastilles.
-  final int pageIndex;
+  final RidePage page;
 
   /// Demande de changement de page — la coquille possède le contrôleur.
-  final void Function(int page) onGoToPage;
+  final void Function(RidePage page) onGoToPage;
 
   /// Hauteur du contenu, hors zone système. Le bandeau s'étire ensuite de
   /// [MediaQueryData.viewPadding] vers le bas pour que ses valeurs ne passent
@@ -52,55 +85,67 @@ class RideBottomBand extends StatefulWidget {
 }
 
 class _RideBottomBandState extends State<RideBottomBand> {
-  /// Déplacement cumulé du glissé en cours. Un geste lent et net doit compter
-  /// autant qu'une chiquenaude : la vitesse au relâchement ne suffit pas.
-  double _dragged = 0;
+  /// Le jeu de valeurs affiché. Il ne suit pas la page : on peut très bien
+  /// vouloir ses zones de puissance en gardant la carte sous les yeux.
+  RideBandSet _set = RideBandSet.ride;
 
-  void _onDragEnd(DragEndDetails details) {
-    final next = pageAfterSwipe(
-      current: widget.pageIndex,
-      dx: _dragged,
-      velocity: details.velocity.pixelsPerSecond.dx,
-    );
-    _dragged = 0;
-    if (next != widget.pageIndex) widget.onGoToPage(next);
-  }
+  void _onSwipe(int direction) =>
+      setState(() => _set = _set.stepped(direction));
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onHorizontalDragStart: (_) => _dragged = 0,
-      onHorizontalDragUpdate: (d) => _dragged += d.delta.dx,
-      onHorizontalDragEnd: _onDragEnd,
+    return SwipeZone(
+      onSwipe: _onSwipe,
       child: Container(
         height: RideBottomBand.heightFor(context),
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.viewPaddingOf(context).bottom,
-        ),
         decoration: const BoxDecoration(
           color: Color(0xFF101214),
           border: Border(top: BorderSide(color: Colors.white24)),
         ),
-        child: Row(
+        child: Stack(
           children: [
-            Expanded(child: _duration()),
-            Expanded(child: _distance()),
-            Expanded(child: _speed()),
-            Expanded(
-              child: _sensor(widget.hub.latestHeartRate, 'bpm'),
+            Positioned.fill(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.viewPaddingOf(context).bottom,
+                ),
+                child: Row(
+                  children: [
+                    for (final metric in _metrics()) Expanded(child: metric),
+                    _PageDots(current: widget.page, onTap: widget.onGoToPage),
+                  ],
+                ),
+              ),
             ),
-            Expanded(child: _sensor(widget.hub.latestPower, 'W')),
-            _PageDots(
-              count: RidePage.count,
-              current: widget.pageIndex,
-              onTap: widget.onGoToPage,
+            // Le rappel du jeu affiché, tout en haut : à peine visible, mais
+            // c'est ce qui distingue « j'ai glissé » de « le bandeau a changé
+            // tout seul ».
+            Positioned(
+              top: 3,
+              left: 0,
+              right: 0,
+              child: Center(child: _SetDots(current: _set)),
             ),
           ],
         ),
       ),
     );
   }
+
+  List<Widget> _metrics() => switch (_set) {
+        RideBandSet.ride => [
+            _duration(),
+            _distance(),
+            _speed(),
+            _sensor(widget.hub.latestPower, 'W'),
+          ],
+        RideBandSet.effort => [
+            _sensor(widget.hub.latestHeartRate, 'bpm'),
+            _zone(widget.hub.latestHeartRate, 'zone bpm', hr: true),
+            _sensor(widget.hub.latestPower, 'W'),
+            _zone(widget.hub.latestPower, 'zone W', hr: false),
+          ],
+      };
 
   /// Durée et distance viennent de l'enregistreur, pas de la page : hors
   /// enregistrement elles n'existent pas, et un zéro ferait croire à un compteur
@@ -148,6 +193,33 @@ class _RideBottomBandState extends State<RideBottomBand> {
         builder: (context, value, _) =>
             _BandMetric(value: value?.toString(), label: label),
       );
+
+  /// La zone d'entraînement où tombe la mesure du moment.
+  ///
+  /// Deux façons d'être vide, et le même tiret pour les deux : capteur muet, ou
+  /// seuils inconnus du site. Les distinguer demanderait un mot, et le bandeau
+  /// n'a la place que pour un chiffre — la page Effort dira laquelle.
+  Widget _zone(
+    ValueListenable<int?> listenable,
+    String label, {
+    required bool hr,
+  }) =>
+      ListenableBuilder(
+        listenable: widget.riderProfile,
+        builder: (context, _) => ValueListenableBuilder<int?>(
+          valueListenable: listenable,
+          builder: (context, value, _) {
+            final profile = widget.riderProfile.profile;
+            final TrainingZone? zone = value == null
+                ? null
+                : (hr ? profile.hrZoneFor(value) : profile.powerZoneFor(value));
+            return _BandMetric(
+              value: zone?.key.toUpperCase(),
+              label: label,
+            );
+          },
+        ),
+      );
 }
 
 /// Une valeur du bandeau : le chiffre, puis son unité en dessous.
@@ -194,18 +266,13 @@ class _BandMetric extends StatelessWidget {
 
 /// Les pastilles de page, à l'extrémité du bandeau.
 ///
-/// Elles disent où on est, et permettent d'y aller directement : le glissé est
-/// pratique à deux pages, il le sera moins à cinq.
+/// Elles disent où on est, et permettent d'y aller directement : le glissé sur
+/// le bord de la carte est pratique à deux pages, il le sera moins à cinq.
 class _PageDots extends StatelessWidget {
-  const _PageDots({
-    required this.count,
-    required this.current,
-    required this.onTap,
-  });
+  const _PageDots({required this.current, required this.onTap});
 
-  final int count;
-  final int current;
-  final void Function(int page) onTap;
+  final RidePage current;
+  final void Function(RidePage page) onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -214,9 +281,9 @@ class _PageDots extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          for (var i = 0; i < count; i++)
+          for (final page in RidePage.values)
             GestureDetector(
-              onTap: () => onTap(i),
+              onTap: () => onTap(page),
               behavior: HitTestBehavior.opaque,
               // La pastille fait 8 points, sa zone tactile 22 : à vélo, on vise
               // mal.
@@ -229,7 +296,7 @@ class _PageDots extends StatelessWidget {
                     height: 8,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: i == current ? Colors.white : Colors.white30,
+                      color: page == current ? Colors.white : Colors.white30,
                     ),
                   ),
                 ),
@@ -237,6 +304,37 @@ class _PageDots extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// Les pastilles du jeu de valeurs, en haut du bandeau.
+///
+/// Horizontales, contrairement à celles des pages : elles disent dans quel sens
+/// glisser. Et minuscules — c'est un repère, pas une commande ; on change de jeu
+/// en glissant sur le bandeau, qui offre une cible autrement plus large qu'un
+/// point de quatre points de côté.
+class _SetDots extends StatelessWidget {
+  const _SetDots({required this.current});
+
+  final RideBandSet current;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final set in RideBandSet.values)
+          Container(
+            width: 4,
+            height: 4,
+            margin: const EdgeInsets.symmetric(horizontal: 2),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: set == current ? Colors.white54 : Colors.white24,
+            ),
+          ),
+      ],
     );
   }
 }

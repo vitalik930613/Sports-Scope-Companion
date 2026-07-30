@@ -80,11 +80,16 @@ class _RideShellPageState extends State<RideShellPage>
   /// et surtout le retour automatique sur la carte à l'approche d'un virage.
   final _nav = NavStateNotifier();
 
-  final _pages = PageController();
+  final _pages = PageController(initialPage: rawPageOrigin);
 
-  /// La page affichée. Suit le défilement dès qu'il passe la moitié, pour que
-  /// les pastilles ne restent pas en retard sur ce qu'on voit.
-  int _pageIndex = 0;
+  /// L'index brut du défilement, qui monte et descend sans borne pour que le
+  /// catalogue tourne en boucle (voir [rawPageOrigin]). Suit le défilement dès
+  /// qu'il passe la moitié, pour que les pastilles ne restent pas en retard sur
+  /// ce qu'on voit.
+  int _rawPage = rawPageOrigin;
+
+  /// La page affichée, celle du catalogue.
+  RidePage get _page => RidePage.values[pageOf(_rawPage)];
 
   /// Un défilement est-il en cours ? Sert à ne basculer la carte en « vivante »
   /// qu'une fois le geste terminé : le faire à mi-glissé couperait le geste au
@@ -95,7 +100,7 @@ class _RideShellPageState extends State<RideShellPage>
   /// affichée et posée. Le [PageView] est alors entièrement hors du test de
   /// touche — sans quoi son détecteur, qui couvre toute la surface, volerait à
   /// MapLibre le glissé dont la carte a besoin pour se déplacer.
-  bool get _mapLive => _pageIndex == 0 && !_scrolling;
+  bool get _mapLive => _page == RidePage.navigation && !_scrolling;
 
   /// Construit une fois : un changement de page ne doit pas reconstruire l'arbre
   /// du WebView. Le widget est bête et le contrôleur porte tout l'état, mais une
@@ -132,7 +137,7 @@ class _RideShellPageState extends State<RideShellPage>
     _applyScreen(_screenPolicy.pageReloaded());
     // Elle ne sait pas non plus qu'elle est peut-être masquée par une page de
     // données : on le lui redit, sinon elle animerait dans le vide.
-    _web.setOccluded(_pageIndex != 0);
+    _web.setOccluded(_page != RidePage.navigation);
     // Une page anonyme n'est pas une panne mais une navigation dégradée
     // (pas d'itinéraires, fond de carte par défaut, POI muets) : on le
     // note pour que l'écran des capteurs puisse le dire avant la sortie.
@@ -162,24 +167,34 @@ class _RideShellPageState extends State<RideShellPage>
     _publishInsets();
   }
 
-  /// Emmène le cycliste sur une page, d'où qu'en vienne la demande : glissé sur
-  /// le bandeau, pastille, poignée du bord, ou plus tard retour automatique à
-  /// l'approche d'un virage.
-  void _goToPage(int page) {
+  /// Emmène le cycliste sur une page nommée : pastille, bouton retour, ou plus
+  /// tard retour automatique à l'approche d'un virage. Par le chemin le plus
+  /// court dans la boucle, jamais par le tour complet.
+  void _goToPage(RidePage page) =>
+      _animateTo(rawPageFor(page.index, from: _rawPage));
+
+  /// Avance ou recule d'une page, sans se soucier de laquelle : c'est ce que
+  /// demandent les bandes du bord, qui parlent en gestes et pas en destinations.
+  /// L'index brut n'ayant pas de bout, il n'y a rien à borner — la boucle est
+  /// exactement là.
+  void _stepPage(int direction) => _animateTo(_rawPage + direction);
+
+  void _animateTo(int rawPage) {
     if (!_pages.hasClients) return;
     _pages.animateToPage(
-      page.clamp(0, RidePage.count - 1),
+      rawPage,
       duration: const Duration(milliseconds: 260),
       curve: Curves.easeOutCubic,
     );
   }
 
-  void _onPageChanged(int page) {
-    setState(() => _pageIndex = page);
+  void _onPageChanged(int rawPage) {
+    setState(() => _rawPage = rawPage);
     // La page web n'est plus regardée : qu'elle cesse d'animer. Elle continue
     // en revanche de suivre la position, de compter les virages et de publier
     // son état — c'est tout l'intérêt de la garder montée.
-    _web.setOccluded(page != 0);
+    final page = pageOf(rawPage);
+    _web.setOccluded(page != RidePage.navigation.index);
     _applyScreen(_screenPolicy.movedTo(page));
   }
 
@@ -251,8 +266,8 @@ class _RideShellPageState extends State<RideShellPage>
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
-        if (_pageIndex != 0) {
-          _goToPage(0);
+        if (_page != RidePage.navigation) {
+          _goToPage(RidePage.navigation);
           return;
         }
         // Capturé avant l'attente : le WebView peut disparaître entre-temps.
@@ -280,7 +295,12 @@ class _RideShellPageState extends State<RideShellPage>
               child: _webView,
             ),
             // Les pages de données, dans le même cadre, opaques quand elles
-            // sont là. La page 0 est vide : c'est la carte qu'on voit à travers.
+            // sont là. La page « navigation » est vide : c'est la carte qu'on
+            // voit à travers.
+            //
+            // Construite à la demande et sans fin, parce que le catalogue
+            // tourne en boucle : l'index brut du défilement ne revient jamais
+            // en arrière, c'est [pageOf] qui le replie sur les pages réelles.
             Positioned(
               left: 0,
               right: 0,
@@ -290,27 +310,36 @@ class _RideShellPageState extends State<RideShellPage>
                 onNotification: _onScrollNotification,
                 child: IgnorePointer(
                   ignoring: _mapLive,
-                  child: PageView(
+                  child: PageView.builder(
                     controller: _pages,
                     physics: physicsForMap(mapLive: _mapLive),
                     onPageChanged: _onPageChanged,
-                    children: [
-                      const SizedBox.shrink(),
-                      RideSummaryPage(recorder: widget.recorder, nav: _nav),
-                    ],
+                    itemBuilder: (context, rawPage) =>
+                        switch (RidePage.values[pageOf(rawPage)]) {
+                      RidePage.navigation => const SizedBox.shrink(),
+                      RidePage.effort =>
+                        RideSummaryPage(recorder: widget.recorder, nav: _nav),
+                    },
                   ),
                 ),
               ),
             ),
-            // La poignée du bord droit, seulement sur la carte : ailleurs, tout
-            // l'écran ramène déjà à la carte d'un glissé.
-            if (_pageIndex == 0)
+            // Les bandes des deux bords, seulement sur la carte : ailleurs,
+            // tout l'écran fait déjà défiler d'un glissé.
+            if (_page == RidePage.navigation) ...[
+              Positioned(
+                left: 0,
+                top: 0,
+                bottom: bandHeight,
+                child: MapEdgeHandle(direction: -1, onStep: _stepPage),
+              ),
               Positioned(
                 right: 0,
                 top: 0,
                 bottom: bandHeight,
-                child: MapEdgeHandle(onOpen: () => _goToPage(1)),
+                child: MapEdgeHandle(direction: 1, onStep: _stepPage),
               ),
+            ],
             Positioned(
               left: 0,
               right: 0,
@@ -319,7 +348,8 @@ class _RideShellPageState extends State<RideShellPage>
                 hub: widget.hub,
                 recorder: widget.recorder,
                 nav: _nav,
-                pageIndex: _pageIndex,
+                riderProfile: widget.riderProfile,
+                page: _page,
                 onGoToPage: _goToPage,
               ),
             ),

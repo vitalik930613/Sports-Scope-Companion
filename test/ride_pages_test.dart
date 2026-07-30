@@ -5,57 +5,72 @@ import 'package:sports_scope_companion/ride/ride_pages.dart';
 /// Le changement de page se joue sur un guidon, à une main, souvent gantée : un
 /// geste ambigu doit ne rien faire plutôt que de deviner.
 void main() {
-  group('pageAfterSwipe', () {
-    test('une chiquenaude vers la gauche avance d\'une page', () {
-      expect(
-        pageAfterSwipe(current: 0, dx: -20, velocity: -600, count: 3),
-        1,
-      );
+  group('swipeDirection', () {
+    test('une chiquenaude vers la gauche avance', () {
+      expect(swipeDirection(dx: -20, velocity: -600), 1);
     });
 
-    test('une chiquenaude vers la droite recule d\'une page', () {
-      expect(
-        pageAfterSwipe(current: 2, dx: 20, velocity: 600, count: 3),
-        1,
-      );
+    test('une chiquenaude vers la droite recule', () {
+      expect(swipeDirection(dx: 20, velocity: 600), -1);
     });
 
     test('un glissé lent mais net compte quand même', () {
       // Le doigt s'arrête avant de se lever : la vitesse est nulle, l'intention
       // ne l'est pas.
-      expect(
-        pageAfterSwipe(current: 0, dx: -120, velocity: 0, count: 3),
-        1,
-      );
+      expect(swipeDirection(dx: -120, velocity: 0), 1);
     });
 
-    test('un tremblement ne change pas de page', () {
-      expect(pageAfterSwipe(current: 1, dx: -6, velocity: -30, count: 3), 1);
-      expect(pageAfterSwipe(current: 1, dx: 0, velocity: 0, count: 3), 1);
+    test('un tremblement ne dit rien', () {
+      expect(swipeDirection(dx: -6, velocity: -30), 0);
+      expect(swipeDirection(dx: 0, velocity: 0), 0);
     });
 
     test('la vitesse l\'emporte sur le déplacement cumulé', () {
       // Parti à gauche, renvoyé à droite avant de lâcher : c'est un retour en
       // arrière. Se tromper ici, c'est emmener le cycliste à l'opposé de ce
       // qu'il vient de demander.
-      expect(
-        pageAfterSwipe(current: 1, dx: -200, velocity: 900, count: 3),
-        0,
-      );
+      expect(swipeDirection(dx: -200, velocity: 900), -1);
+    });
+  });
+
+  group('pageOf', () {
+    test('replie l\'index brut sur le catalogue', () {
+      expect(pageOf(rawPageOrigin), 0);
+      expect(pageOf(rawPageOrigin + 1), 1 % RidePage.count);
     });
 
-    test('on ne dépasse pas les extrémités', () {
-      expect(pageAfterSwipe(current: 0, dx: 200, velocity: 900, count: 2), 0);
-      expect(pageAfterSwipe(current: 1, dx: -200, velocity: -900, count: 2), 1);
+    test('reculer sous l\'origine repart de la fin', () {
+      // C'est toute la boucle : la page qui précède la carte est la dernière.
+      // Elle tient au `%` de Dart, qui reste positif là où celui de C ou de
+      // JavaScript rendrait un index négatif — et donc un plantage.
+      expect(pageOf(-1, count: 3), 2);
+      expect(pageOf(-3, count: 3), 0);
+    });
+  });
+
+  group('rawPageFor', () {
+    test('reste sur place quand on y est déjà', () {
+      expect(rawPageFor(1, from: 1001, count: 4), 1001);
+    });
+
+    test('recule quand la cible est juste avant', () {
+      expect(rawPageFor(0, from: 1001, count: 4), 1000);
+    });
+
+    test('depuis la dernière page, la carte est juste après', () {
+      // Et pas trois pages en arrière : rembobiner tout le catalogue sous les
+      // yeux du cycliste serait long et illisible. C'est le seul intérêt de
+      // l'index brut par rapport à un simple numéro de page.
+      expect(rawPageFor(0, from: 1003, count: 4), 1004);
+    });
+
+    test('avance quand c\'est plus court', () {
+      expect(rawPageFor(2, from: 1001, count: 4), 1002);
     });
 
     test('sans nombre de pages, le catalogue fait foi', () {
-      // La borne suit l'ajout d'une page au catalogue, sans que l'appelant ait
-      // à la répéter.
-      final last = RidePage.count - 1;
-
-      expect(pageAfterSwipe(current: 0, dx: -200, velocity: -900), 1);
-      expect(pageAfterSwipe(current: last, dx: -200, velocity: -900), last);
+      expect(pageOf(rawPageFor(RidePage.effort.index, from: rawPageOrigin)),
+          RidePage.effort.index);
     });
   });
 

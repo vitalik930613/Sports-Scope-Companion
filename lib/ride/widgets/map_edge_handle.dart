@@ -1,35 +1,40 @@
 import 'package:flutter/material.dart';
 
-/// La poignée du bord droit : la seconde façon de quitter la carte.
+import 'swipe_zone.dart';
+
+/// Les bandes des deux bords de la carte : la façon de changer de page sans
+/// prendre à MapLibre le geste dont il a besoin.
 ///
-/// Sur la carte, le glissé horizontal appartient à MapLibre — on ne peut pas le
-/// lui reprendre sans casser le déplacement. Restent le bandeau du bas, les
-/// pastilles… et cette bande, qui a l'avantage d'être là où le pouce droit tombe
-/// naturellement sur un guidon.
+/// Sur la carte, le glissé horizontal appartient au déplacement de la carte —
+/// on ne peut pas le lui reprendre en plein milieu sans casser la consultation
+/// de l'itinéraire. Ces bandes découpent donc les deux bords, où l'on ne
+/// déplace pas la carte de toute façon : c'est là que tombent les pouces sur un
+/// guidon, et un glissé qui y démarre ne peut vouloir dire qu'une chose.
 ///
-/// Étroite à dessein : quatorze points, c'est assez pour être touché sans viser
-/// et trop peu pour gêner un déplacement de carte. La barre claire au milieu
+/// Étroites à dessein : vingt-deux points, assez pour être touchées sans viser
+/// et assez peu pour laisser la carte tranquille. La barre claire au milieu
 /// n'est pas décorative — sans elle, rien ne dirait qu'il y a quelque chose là.
 class MapEdgeHandle extends StatelessWidget {
-  const MapEdgeHandle({super.key, required this.onOpen});
+  const MapEdgeHandle({super.key, required this.direction, required this.onStep});
 
-  /// Le cycliste demande la page suivante.
-  final VoidCallback onOpen;
+  /// Ce que vaut un *appui* sur cette bande : `1` pour celle de droite (la page
+  /// suivante), `-1` pour celle de gauche. Un *glissé*, lui, garde toujours sa
+  /// propre direction — même sur la bande de gauche, partir vers la gauche
+  /// avance.
+  final int direction;
 
-  static const width = 14.0;
+  /// Le cycliste demande la page d'à côté, dans le sens donné.
+  final void Function(int direction) onStep;
+
+  static const width = 22.0;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       width: width,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onOpen,
-        // Un glissé vers la gauche ouvre aussi : c'est le geste que le bandeau a
-        // appris au cycliste, il doit marcher partout où il a un sens.
-        onHorizontalDragEnd: (d) {
-          if (d.velocity.pixelsPerSecond.dx < 0) onOpen();
-        },
+      child: SwipeZone(
+        onTap: () => onStep(direction),
+        onSwipe: onStep,
         child: Center(
           child: Container(
             width: 4,
