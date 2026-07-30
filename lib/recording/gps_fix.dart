@@ -38,16 +38,29 @@ class GpsFix {
   static const _earthRadiusM = 6371008.8;
 
   /// Distance orthodromique jusqu'à [other], en mètres.
+  double distanceTo(GpsFix other) =>
+      haversineM(lat, lng, other.lat, other.lng);
+
+  /// Distance orthodromique entre deux couples de coordonnées, en mètres.
   ///
   /// Haversine sur une sphère : à l'échelle d'une seconde de vélo, l'écart avec
   /// un calcul ellipsoïdal se compte en millimètres — sans commune mesure avec
   /// le bruit du GPS lui-même.
-  double distanceTo(GpsFix other) {
-    final dLat = _radians(other.lat - lat);
-    final dLng = _radians(other.lng - lng);
+  ///
+  /// Statique parce que tout ne vient pas d'un [GpsFix] : le virage annoncé par
+  /// la page de navigation n'est qu'un couple de coordonnées, et lui fabriquer
+  /// une date et une précision pour pouvoir le mesurer serait un mensonge.
+  static double haversineM(
+    double lat1,
+    double lng1,
+    double lat2,
+    double lng2,
+  ) {
+    final dLat = _radians(lat2 - lat1);
+    final dLng = _radians(lng2 - lng1);
     final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
-        math.cos(_radians(lat)) *
-            math.cos(_radians(other.lat)) *
+        math.cos(_radians(lat1)) *
+            math.cos(_radians(lat2)) *
             math.sin(dLng / 2) *
             math.sin(dLng / 2);
     return 2 * _earthRadiusM * math.asin(math.min(1, math.sqrt(a)));

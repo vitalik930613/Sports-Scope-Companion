@@ -31,6 +31,12 @@ dependencies:
   # Export : le .fit part par le menu de partage d'Android.
   share_plus: ^13.3.0
 
+  # Les alertes sonores du radar arrière, déclarées en guidage de navigation :
+  # elles sortent au volume multimédia — le seul qu'un cycliste monte — et font
+  # baisser la musique le temps du bip au lieu de la couper. Les tonalités sont
+  # générées par `tool/radar_tones.dart`.
+  audioplayers: ^6.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -38,3 +44,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  assets:
+    - assets/sounds/

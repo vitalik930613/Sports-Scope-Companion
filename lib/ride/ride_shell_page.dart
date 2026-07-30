@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -8,12 +10,19 @@ import '../ble/sensor_hub.dart';
 import '../navigation/navigation_target.dart';
 import '../navigation/screen_dimmer.dart';
 import '../recording/ride_recorder.dart';
+import 'auto_return_policy.dart';
 import 'nav_state.dart';
 import 'navigation_web_view.dart';
 import 'pages/ride_summary_page.dart';
+import 'radar_alert_sound.dart';
+import 'radar_severity.dart';
 import 'ride_pages.dart';
 import 'screen_policy.dart';
+import 'turn_proximity.dart';
 import 'widgets/map_edge_handle.dart';
+import 'widgets/radar_distance_badges.dart';
+import 'widgets/radar_frame.dart';
+import 'widgets/radar_side_gauge.dart';
 import 'widgets/ride_bottom_band.dart';
 
 /// La coquille d'une sortie : ce qui appartient à l'écran, pas à la page web.
@@ -96,6 +105,35 @@ class _RideShellPageState extends State<RideShellPage>
   /// milieu, et le défilement s'arrêterait en travers.
   bool _scrolling = false;
 
+  /// Le retour automatique sur la carte, et la restitution de la page ensuite.
+  final _alerts = RideAlertSource();
+  final _autoReturn = AutoReturnPolicy();
+  static const _proximity = TurnProximity();
+
+  /// L'horloge du retour automatique. Le front d'une alerte arrive par le pont,
+  /// mais « rendre la page une fois le calme revenu » n'est piloté que par le
+  /// temps qui passe : sans ce tic, la page ne reviendrait qu'au prochain
+  /// message, c'est-à-dire jamais si le GPS a décroché.
+  Timer? _tick;
+
+  /// Le cycliste a-t-il changé de page de sa main depuis la dernière décision ?
+  /// C'est ce qui lui donne le dernier mot sur la politique.
+  bool _userMoved = false;
+
+  /// Nombre de déplacements en cours décidés par la politique. Un compteur et
+  /// pas un booléen : deux animations peuvent se chevaucher, et retomber à
+  /// « c'est le cycliste » entre les deux ferait annuler le retour par le
+  /// retour lui-même.
+  int _autoMoves = 0;
+
+  /// Le radar, prêt à dessiner et capable de se périmer tout seul.
+  late final RadarViewNotifier _radar;
+
+  /// Et sa voix : le seul élément du tableau de bord qui n'attende pas qu'on
+  /// regarde l'écran.
+  final _radarVoice = RadarAlertVoice();
+  final _radarSound = RadarAlertPlayer();
+
   /// La carte a-t-elle la main sur les gestes ? Vrai seulement quand elle est
   /// affichée et posée. Le [PageView] est alors entièrement hors du test de
   /// touche — sans quoi son détecteur, qui couvre toute la surface, volerait à
@@ -119,6 +157,12 @@ class _RideShellPageState extends State<RideShellPage>
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     WidgetsBinding.instance.addObserver(this);
 
+    _radar = RadarViewNotifier(widget.hub.latestRadar);
+    _radar.addListener(_speakRadar);
+    // Chargés maintenant : quand une voiture arrivera, il ne sera plus temps
+    // d'ouvrir des fichiers.
+    unawaited(_radarSound.warmUp());
+
     _web = NavigationWebController(
       hub: widget.hub,
       target: widget.target,
@@ -126,6 +170,11 @@ class _RideShellPageState extends State<RideShellPage>
       onMessage: _onPageMessage,
       onPageFinished: _onPageFinished,
     );
+
+    // Deux déclencheurs pour une seule décision : le pont pour les fronts, le
+    // temps pour les délais.
+    _nav.addListener(_decideReturn);
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) => _decideReturn());
   }
 
   void _onPageFinished() {
@@ -138,10 +187,54 @@ class _RideShellPageState extends State<RideShellPage>
     // Elle ne sait pas non plus qu'elle est peut-être masquée par une page de
     // données : on le lui redit, sinon elle animerait dans le vide.
     _web.setOccluded(_page != RidePage.navigation);
+    // Elle a pu recharger, ou ouvrir un autre tracé : l'arrivée qu'on avait déjà
+    // vue ne compte plus, celle qui viendra sera une nouvelle arrivée.
+    _alerts.reset();
+    _autoReturn.reset();
     // Une page anonyme n'est pas une panne mais une navigation dégradée
     // (pas d'itinéraires, fond de carte par défaut, POI muets) : on le
     // note pour que l'écran des capteurs puisse le dire avant la sortie.
     _checkSession();
+  }
+
+  /// Le radar vient de changer d'état : y a-t-il quelque chose à dire ?
+  void _speakRadar() {
+    if (_radarVoice.read(_radar.value.severity) case final cue?) {
+      _radarSound.play(cue);
+    }
+  }
+
+  /// Faut-il ramener le cycliste sur la carte, ou lui rendre sa page ?
+  ///
+  /// La position vient de l'enregistreur et non d'un abonnement à part : c'est
+  /// le seul flux GPS de l'appli, et en ouvrir un deuxième pour le chien de
+  /// garde coûterait un service au premier plan de plus, avec sa notification
+  /// qui parlerait d'un enregistrement inexistant. Conséquence assumée : hors
+  /// enregistrement, le chien de garde n'a pas de position et le retour
+  /// automatique repose entièrement sur le pont.
+  void _decideReturn() {
+    if (!mounted) return;
+
+    final now = DateTime.now();
+    final state = _nav.value;
+    final alert = _alerts.read(
+      state,
+      turnImminent: _proximity.imminent(
+        state: state,
+        fix: widget.recorder.lastFix,
+        now: now,
+      ),
+    );
+
+    final decision = _autoReturn.update(
+      now: now,
+      currentPage: _page,
+      alert: alert,
+      userMoved: _userMoved,
+    );
+    _userMoved = false;
+
+    if (decision.goTo case final page?) _goToPage(page, auto: true);
   }
 
   Future<void> _checkSession() async {
@@ -170,8 +263,8 @@ class _RideShellPageState extends State<RideShellPage>
   /// Emmène le cycliste sur une page nommée : pastille, bouton retour, ou plus
   /// tard retour automatique à l'approche d'un virage. Par le chemin le plus
   /// court dans la boucle, jamais par le tour complet.
-  void _goToPage(RidePage page) =>
-      _animateTo(rawPageFor(page.index, from: _rawPage));
+  void _goToPage(RidePage page, {bool auto = false}) =>
+      _animateTo(rawPageFor(page.index, from: _rawPage), auto: auto);
 
   /// Avance ou recule d'une page, sans se soucier de laquelle : c'est ce que
   /// demandent les bandes du bord, qui parlent en gestes et pas en destinations.
@@ -179,16 +272,28 @@ class _RideShellPageState extends State<RideShellPage>
   /// exactement là.
   void _stepPage(int direction) => _animateTo(_rawPage + direction);
 
-  void _animateTo(int rawPage) {
+  /// [auto] : le déplacement vient de la politique, pas du cycliste. C'est ce
+  /// qui empêche le retour automatique de se prendre lui-même pour une reprise
+  /// en main et de s'annuler à peine déclenché.
+  void _animateTo(int rawPage, {bool auto = false}) {
     if (!_pages.hasClients) return;
-    _pages.animateToPage(
-      rawPage,
-      duration: const Duration(milliseconds: 260),
-      curve: Curves.easeOutCubic,
-    );
+    if (auto) _autoMoves++;
+    _pages
+        .animateToPage(
+          rawPage,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+        )
+        .whenComplete(() {
+      if (auto) _autoMoves--;
+    });
   }
 
   void _onPageChanged(int rawPage) {
+    // Tout ce qui n'a pas été décidé ici l'a été par un doigt : un glissé sur
+    // une page de données ne passe par aucun de nos appels, il ne se voit que
+    // là.
+    if (_autoMoves == 0) _userMoved = true;
     setState(() => _rawPage = rawPage);
     // La page web n'est plus regardée : qu'elle cesse d'animer. Elle continue
     // en revanche de suivre la position, de compter les virages et de publier
@@ -238,6 +343,11 @@ class _RideShellPageState extends State<RideShellPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _tick?.cancel();
+    _nav.removeListener(_decideReturn);
+    _radar.removeListener(_speakRadar);
+    _radar.dispose();
+    _radarSound.dispose();
     // Filet de sécurité : quitter la navigation en veille (bouton retour, page
     // qui plante) ne doit pas laisser l'appareil à 1 % de luminosité sur
     // l'écran des capteurs. La page le demande aussi de son côté, mais elle
@@ -326,20 +436,42 @@ class _RideShellPageState extends State<RideShellPage>
             ),
             // Les bandes des deux bords, seulement sur la carte : ailleurs,
             // tout l'écran fait déjà défiler d'un glissé.
-            if (_page == RidePage.navigation) ...[
+            if (_page == RidePage.navigation)
               Positioned(
                 left: 0,
                 top: 0,
                 bottom: bandHeight,
                 child: MapEdgeHandle(direction: -1, onStep: _stepPage),
               ),
-              Positioned(
-                right: 0,
-                top: 0,
-                bottom: bandHeight,
-                child: MapEdgeHandle(direction: 1, onStep: _stepPage),
+            // La gouttière droite est partagée : la bande de bord n'existe que
+            // sur la carte, la jauge radar sur toutes les pages. Elles sont
+            // empilées plutôt que juxtaposées — se partager vingt-deux points
+            // en donnerait onze à chacune, et onze points ne se visent pas à
+            // vélo.
+            Positioned(
+              right: 0,
+              top: 0,
+              bottom: bandHeight,
+              child: ValueListenableBuilder<RadarView>(
+                valueListenable: _radar,
+                builder: (context, radar, _) => SizedBox(
+                  width: MapEdgeHandle.width,
+                  child: Stack(
+                    children: [
+                      Positioned.fill(child: RadarSideGauge(view: radar)),
+                      if (_page == RidePage.navigation)
+                        Positioned.fill(
+                          child: MapEdgeHandle(
+                            direction: 1,
+                            onStep: _stepPage,
+                            showBar: !radar.isAlerting,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               ),
-            ],
+            ),
             Positioned(
               left: 0,
               right: 0,
@@ -351,6 +483,26 @@ class _RideShellPageState extends State<RideShellPage>
                 riderProfile: widget.riderProfile,
                 page: _page,
                 onGoToPage: _goToPage,
+              ),
+            ),
+            // Le cadre par-dessus tout, bandeau compris : l'alerte n'appartient
+            // pas à la carte, elle appartient à la sortie.
+            Positioned.fill(
+              child: ValueListenableBuilder<RadarView>(
+                valueListenable: _radar,
+                builder: (context, radar, _) =>
+                    RadarFrame(severity: radar.severity),
+              ),
+            ),
+            // Les mètres dans la bande de l'encoche, au-dessus du cadre : c'est
+            // le chiffre qu'on va chercher, il ne doit être recouvert par rien.
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              child: ValueListenableBuilder<RadarView>(
+                valueListenable: _radar,
+                builder: (context, radar, _) => RadarDistanceBadges(view: radar),
               ),
             ),
           ],

@@ -15,7 +15,12 @@ import 'swipe_zone.dart';
 /// et assez peu pour laisser la carte tranquille. La barre claire au milieu
 /// n'est pas décorative — sans elle, rien ne dirait qu'il y a quelque chose là.
 class MapEdgeHandle extends StatelessWidget {
-  const MapEdgeHandle({super.key, required this.direction, required this.onStep});
+  const MapEdgeHandle({
+    super.key,
+    required this.direction,
+    required this.onStep,
+    this.showBar = true,
+  });
 
   /// Ce que vaut un *appui* sur cette bande : `1` pour celle de droite (la page
   /// suivante), `-1` pour celle de gauche. Un *glissé*, lui, garde toujours sa
@@ -26,6 +31,12 @@ class MapEdgeHandle extends StatelessWidget {
   /// Le cycliste demande la page d'à côté, dans le sens donné.
   final void Function(int direction) onStep;
 
+  /// La barre est effacée quand la jauge radar occupe la même gouttière : deux
+  /// signes dans vingt-deux points se liraient mal, et entre « il y a une
+  /// poignée ici » et « une voiture arrive », le choix est vite fait. La bande
+  /// continue de prendre les gestes — seul son repère s'éclipse.
+  final bool showBar;
+
   static const width = 22.0;
 
   @override
@@ -35,16 +46,18 @@ class MapEdgeHandle extends StatelessWidget {
       child: SwipeZone(
         onTap: () => onStep(direction),
         onSwipe: onStep,
-        child: Center(
-          child: Container(
-            width: 4,
-            height: 44,
-            decoration: BoxDecoration(
-              color: Colors.white38,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-        ),
+        child: showBar
+            ? Center(
+                child: Container(
+                  width: 4,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: Colors.white38,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              )
+            : const SizedBox.expand(),
       ),
     );
   }
