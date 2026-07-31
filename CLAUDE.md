@@ -104,6 +104,31 @@ qui permet de distinguer « pas connecté » de « pas de réseau ». Le résult
 dans un cache disque (`RouteCatalogStore`), qui fait autorité pour l'affichage —
 on choisit son tracé au départ, là où le réseau manque.
 
+Le **tracé en cours** voyage avec, par le même WebView : il vit dans le
+`localStorage` du site (clé `sportsScope.navSession`, cf. `navSession.ts`), que
+ce document partage puisqu'il en a l'origine. On n'en extrait que le nom, le
+token et la date (`NavSessionSummary`) — la géométrie pèse des mégaoctets pour
+afficher une ligne de liste, et c'est la page qui la restaurera. **Rien n'en est
+mis en cache sur disque**, contrairement au catalogue : une entrée gardée après
+que la page a fini sa navigation ferait proposer de reprendre un tracé qui
+n'existe plus, et le tap retomberait sans un mot sur la carte nue.
+
+### Les deux `/navigate`
+
+Le même chemin fait deux choses, et **c'est `fresh=1` qui les sépare** :
+
+| URL | Ce que fait la page |
+|---|---|
+| `/navigate?fresh=1` | efface son `localStorage` : carte nue (`NavigationTarget.free()`) |
+| `/navigate` | restaure le tracé mémorisé (`NavigationTarget.resume()`) |
+| `/routes/<token>/navigate` | charge cet itinéraire-là |
+
+Oublier `fresh` fait rouvrir l'itinéraire de tout à l'heure au lieu de la
+navigation libre — c'était le bug. Le paramètre doit aussi survivre au passage
+par `/auth/handoff`, qui recopie `next` tel quel. Un **lien entrant** sans token,
+lui, part toujours à neuf : on ne sait pas ce que la page a en mémoire, et la
+reprise ne s'offre que dans le sélecteur, là où on a vraiment lu le stockage.
+
 ## Le tableau de bord de sortie (`lib/ride/`)
 
 `RideShellPage` est la coquille : plein écran, rétroéclairage, zones obstruées

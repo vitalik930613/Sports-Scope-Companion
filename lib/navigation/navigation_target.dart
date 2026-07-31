@@ -5,15 +5,29 @@ const sportsScopeBaseUrl = String.fromEnvironment(
   defaultValue: 'https://sports.logicraft.ch',
 );
 
-/// Ce qu'on va naviguer : un itinéraire partagé, ou rien (navigation libre).
+/// Ce qu'on va naviguer : un itinéraire partagé, la reprise de celui en cours,
+/// ou rien (navigation libre).
 ///
 /// Le token de partage est la seule clé dont l'appli a besoin : côté Rails la
 /// navigation est adressée par lui et non par l'identifiant interne, ce qui
 /// évite d'avoir à authentifier le téléphone.
 class NavigationTarget {
-  const NavigationTarget({this.shareToken, this.label, this.handoffToken});
+  const NavigationTarget({
+    this.shareToken,
+    this.label,
+    this.handoffToken,
+    this.resume = false,
+  });
 
+  /// Partir sans tracé : la carte nue, et rien de ce qui traînait.
   const NavigationTarget.free() : this();
+
+  /// Repartir sur le tracé que la page a gardé dans son stockage local, à
+  /// l'endroit où on en était. Aucun token à donner : c'est la page qui sait
+  /// quoi restaurer (voir `NavSessionSummary`), y compris une destination ad
+  /// hoc qui n'existe nulle part côté serveur.
+  const NavigationTarget.resume({String? label, String? handoffToken})
+      : this(label: label, handoffToken: handoffToken, resume: true);
 
   final String? shareToken;
 
@@ -31,6 +45,11 @@ class NavigationTarget {
   /// (`SessionsController#handoff`).
   final String? handoffToken;
 
+  /// Reprise du tracé mémorisé par la page, plutôt qu'un départ à neuf. N'a de
+  /// sens que sans [shareToken] : demander un itinéraire précis, c'est déjà dire
+  /// lequel on veut.
+  final bool resume;
+
   bool get isFree => shareToken == null;
 
   Uri url({String baseUrl = sportsScopeBaseUrl}) {
@@ -38,14 +57,25 @@ class NavigationTarget {
     final path = isFree ? '/navigate' : '/routes/$shareToken/navigate';
     final destination = '${base.path}$path'.replaceAll('//', '/');
 
-    if (handoffToken == null) return base.replace(path: destination);
+    // `fresh=1` est ce qui distingue les deux `/navigate`. Sans lui, la page
+    // restaure le tracé de son `localStorage` — c'est le chemin de la reprise
+    // après un rechargement, et c'était le bug de « Navigation libre », qui
+    // rouvrait l'itinéraire de tout à l'heure au lieu de la carte nue.
+    final fresh = isFree && !resume;
+
+    if (handoffToken == null) {
+      return base.replace(path: destination, query: fresh ? 'fresh=1' : null);
+    }
 
     // Ouvrir la session AVANT la page, et pas après : la navigation lit les
     // préférences du compte au chargement (fond de carte, POI, itinéraires).
     // Arriver anonyme puis se connecter demanderait un rechargement.
     return base.replace(
       path: '${base.path}/auth/handoff'.replaceAll('//', '/'),
-      queryParameters: {'token': handoffToken, 'next': destination},
+      queryParameters: {
+        'token': handoffToken,
+        'next': fresh ? '$destination?fresh=1' : destination,
+      },
     );
   }
 
@@ -88,6 +118,11 @@ class NavigationTarget {
         ? segments.sublist(1)
         : segments;
 
+    // Un lien entrant sans token part toujours à neuf, jamais en reprise : on
+    // ne sait pas ce que la page a en mémoire, et rouvrir l'itinéraire de tout
+    // à l'heure parce qu'on a touché un lien serait la surprise qu'on vient de
+    // corriger. La reprise ne s'offre que là où on a vraiment lu le stockage,
+    // c'est-à-dire dans le sélecteur.
     if (path.length == 1 && path.first == 'navigate') {
       return NavigationTarget(handoffToken: handoff);
     }
@@ -101,5 +136,9 @@ class NavigationTarget {
   }
 
   @override
-  String toString() => isFree ? 'NavigationTarget(libre)' : 'NavigationTarget($shareToken)';
+  String toString() => switch ((isFree, resume)) {
+        (true, true) => 'NavigationTarget(reprise)',
+        (true, false) => 'NavigationTarget(libre)',
+        _ => 'NavigationTarget($shareToken)',
+      };
 }

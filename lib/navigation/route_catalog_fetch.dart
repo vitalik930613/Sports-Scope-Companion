@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import 'nav_session.dart';
 import 'navigation_target.dart';
 import 'route_summary.dart';
 
@@ -23,13 +24,21 @@ enum RouteFetchStatus {
 
 @immutable
 class RouteFetchResult {
-  const RouteFetchResult(this.status, [this.routes = const []]);
+  const RouteFetchResult(this.status, [this.routes = const [], this.session]);
 
   final RouteFetchStatus status;
   final List<RouteSummary> routes;
+
+  /// Le tracé en cours dans le stockage de la page, s'il y en a un.
+  ///
+  /// **Indépendant de [status]** : il se lit dans le navigateur, pas sur le
+  /// site. Une session expirée ou un site en panne n'empêchent pas de reprendre
+  /// ce qu'on suivait il y a dix minutes.
+  final NavSessionSummary? session;
 }
 
-/// Va chercher les itinéraires du compte, **par le pot de cookies du WebView**.
+/// Va chercher ce que le site sait de mes itinéraires — la liste du compte et
+/// le tracé en cours — **par le pot de cookies du WebView**.
 ///
 /// L'appli ne détient aucun identifiant, par construction : la session est le
 /// cookie posé par une vraie connexion Keycloak dans un WebView. Un client HTTP
@@ -49,6 +58,15 @@ class RouteFetchResult {
 /// et surtout riche en occasions d'échouer pour des raisons qui n'ont rien à
 /// voir avec ce qu'on demande. Un fichier texte statique n'a ni JavaScript, ni
 /// sous-ressource, ni cycle de vie.
+///
+/// **Le tracé en cours voyage avec.** Il vit dans le `localStorage` du site, que
+/// ce document partage puisqu'il en a l'origine ; le lire ici plutôt que dans un
+/// second WebView épargne un chargement complet au moment précis où le cycliste
+/// attend sa liste. Rien n'en est gardé sur disque : une entrée conservée après
+/// que la page a fini sa navigation ferait proposer de reprendre un tracé qui
+/// n'existe plus, et le tap retomberait sans un mot sur la carte nue. Pas de
+/// réseau, pas de reprise — on choisit alors son itinéraire dans la liste, qui
+/// est en cache, elle.
 class RouteCatalogFetch {
   const RouteCatalogFetch({
     this.baseUrl = sportsScopeBaseUrl,
@@ -78,9 +96,28 @@ class RouteCatalogFetch {
   ///
   /// Le code HTTP est renvoyé même en cas d'échec : c'est la seule chose qui
   /// permette de diagnostiquer depuis un téléphone au bout d'un `adb`.
+  ///
+  /// Le tracé en cours est lu **avant** le `fetch` et joint à *chaque* réponse,
+  /// y compris aux échecs : il ne vient pas du réseau, il n'a aucune raison de
+  /// tomber avec lui.
+  ///
+  /// De la session on n'extrait que le nom, le token et la date. Le reste — la
+  /// géométrie surtout — pèse des mégaoctets qu'il faudrait sérialiser puis
+  /// reparser pour afficher une ligne de liste, alors que c'est la page qui
+  /// restaurera le tracé, pas nous.
   static const _script = '''
     (function () {
+      var session = null;
+      try {
+        var raw = localStorage.getItem('${NavSessionSummary.storageKey}');
+        var saved = raw ? JSON.parse(raw) : null;
+        if (saved && saved.v === 1) {
+          session = { name: saved.name, token: saved.token, t: saved.t };
+        }
+      } catch (e) {}
+
       var send = function (payload) {
+        payload.session = session;
         try { $_channel.postMessage(JSON.stringify(payload)); } catch (e) {}
       };
       try {
@@ -178,7 +215,8 @@ class RouteCatalogFetch {
 
     retries.cancel();
     debugPrint('[itinéraires] ${result.status.name}, '
-        '${result.routes.length} itinéraire(s)');
+        '${result.routes.length} itinéraire(s), '
+        'en cours : ${result.session ?? "aucun"}');
     return result;
   }
 
@@ -189,13 +227,17 @@ class RouteCatalogFetch {
         return const RouteFetchResult(RouteFetchStatus.failed);
       }
 
+      final session = NavSessionSummary.parse(decoded['session']);
+
       return switch (decoded['status']) {
         'ok' => RouteFetchResult(
             RouteFetchStatus.ok,
             RouteSummary.listFromPayload(decoded['body']),
+            session,
           ),
-        'signedOut' => const RouteFetchResult(RouteFetchStatus.signedOut),
-        _ => _failure(decoded),
+        'signedOut' =>
+          RouteFetchResult(RouteFetchStatus.signedOut, const [], session),
+        _ => _failure(decoded, session),
       };
     } catch (e) {
       debugPrint('[itinéraires] réponse illisible : $e');
@@ -203,9 +245,12 @@ class RouteCatalogFetch {
     }
   }
 
-  RouteFetchResult _failure(Map<dynamic, dynamic> decoded) {
+  RouteFetchResult _failure(
+    Map<dynamic, dynamic> decoded,
+    NavSessionSummary? session,
+  ) {
     debugPrint('[itinéraires] échec du fetch : '
         'code=${decoded['code']} raison=${decoded['reason']}');
-    return const RouteFetchResult(RouteFetchStatus.failed);
+    return RouteFetchResult(RouteFetchStatus.failed, const [], session);
   }
 }

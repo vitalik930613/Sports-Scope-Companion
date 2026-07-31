@@ -39,6 +39,14 @@ void main() {
       expect(parse('https://sports.logicraft.ch/fr/navigate')!.isFree, isTrue);
     });
 
+    test('un lien sans token part à neuf, jamais en reprise', () {
+      // On ne sait pas ce que la page a en mémoire : rouvrir l'itinéraire de
+      // tout à l'heure parce qu'on a touché un lien serait la surprise qu'on
+      // vient justement de corriger.
+      expect(parse('https://sports.logicraft.ch/navigate')!.resume, isFalse);
+      expect(parse('sportsscope://navigate')!.resume, isFalse);
+    });
+
     test('ignore les pages qui ne sont pas de la navigation', () {
       // La page de partage d'un itinéraire n'est pas la navigation : l'ouvrir
       // dans l'appli enfermerait l'utilisateur dans un WebView pour rien.
@@ -66,10 +74,30 @@ void main() {
       );
     });
 
-    test('navigation libre', () {
+    test('navigation libre : `fresh` efface le tracé mémorisé', () {
+      // Sans ce paramètre, /navigate restaure le localStorage de la page :
+      // « Navigation libre » rouvrait l'itinéraire de tout à l'heure.
       expect(
         const NavigationTarget.free().url(baseUrl: 'https://sports.logicraft.ch').toString(),
+        'https://sports.logicraft.ch/navigate?fresh=1',
+      );
+    });
+
+    test('reprise : le même chemin, sans `fresh`', () {
+      // C'est l'absence de `fresh` qui fait restaurer le tracé — le seul moyen
+      // de reprendre une destination ad hoc, qui n'a pas de token.
+      expect(
+        const NavigationTarget.resume().url(baseUrl: 'https://sports.logicraft.ch').toString(),
         'https://sports.logicraft.ch/navigate',
+      );
+    });
+
+    test('un itinéraire nommé ne demande jamais `fresh`', () {
+      expect(
+        const NavigationTarget(shareToken: 'abc')
+            .url(baseUrl: 'https://sports.logicraft.ch')
+            .queryParameters,
+        isEmpty,
       );
     });
 
@@ -117,6 +145,24 @@ void main() {
       expect(url.path, '/auth/handoff');
       expect(url.queryParameters['token'], 'jeton');
       expect(url.queryParameters['next'], '/routes/abc/navigate');
+    });
+
+    test('`fresh` survit au passage par la page de session', () {
+      // `next` est recopié tel quel par Rails : si le paramètre s'y perdait, la
+      // navigation libre lancée depuis un lien du site retomberait sur le tracé
+      // mémorisé.
+      final url = const NavigationTarget(handoffToken: 'jeton')
+          .url(baseUrl: 'https://sports.logicraft.ch');
+
+      expect(url.path, '/auth/handoff');
+      expect(url.queryParameters['next'], '/navigate?fresh=1');
+    });
+
+    test('la reprise, elle, passe sans `fresh`', () {
+      final url = const NavigationTarget.resume(handoffToken: 'jeton')
+          .url(baseUrl: 'https://sports.logicraft.ch');
+
+      expect(url.queryParameters['next'], '/navigate');
     });
 
     test('sans jeton, l\'URL reste celle de la page', () {

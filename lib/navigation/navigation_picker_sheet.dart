@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../ui/formats.dart';
+import 'nav_session.dart';
 import 'navigation_target.dart';
 import 'route_catalog_fetch.dart';
 import 'route_catalog_store.dart';
@@ -39,6 +40,10 @@ class _NavigationPickerSheetState extends State<NavigationPickerSheet> {
   bool _refreshing = false;
   String? _linkError;
 
+  /// Le tracé que la page de navigation a laissé derrière elle, lu dans son
+  /// stockage au rafraîchissement. Rien en cache ici : voir [RouteCatalogFetch].
+  NavSessionSummary? _session;
+
   @override
   void initState() {
     super.initState();
@@ -60,6 +65,7 @@ class _NavigationPickerSheetState extends State<NavigationPickerSheet> {
     if (!mounted) return;
     setState(() {
       _status = result.status;
+      _session = result.session;
       _refreshing = false;
     });
   }
@@ -94,6 +100,7 @@ class _NavigationPickerSheetState extends State<NavigationPickerSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (_session != null) _resumeTile(_session!),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.explore),
@@ -141,6 +148,27 @@ class _NavigationPickerSheetState extends State<NavigationPickerSheet> {
           ),
         ],
       ),
+    );
+  }
+
+  /// « Continuer » : le tracé que la page suivait encore il y a peu.
+  ///
+  /// En tête, et pas au milieu de la liste : rouvrir le sélecteur en pleine
+  /// sortie — téléphone rangé, appli revenue à l'accueil — n'a presque jamais
+  /// d'autre but que de reprendre là où on en était. Une destination ad hoc
+  /// (« naviguer ici ») n'est même joignable que par là : elle n'existe nulle
+  /// part côté serveur, donc dans aucune liste.
+  Widget _resumeTile(NavSessionSummary session) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.navigation),
+      title: const Text('Continuer l\'itinéraire en cours'),
+      subtitle: Text(
+        session.label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      onTap: () => _pick(NavigationTarget.resume(label: session.label)),
     );
   }
 

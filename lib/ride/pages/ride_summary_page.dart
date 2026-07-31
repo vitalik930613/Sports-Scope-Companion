@@ -54,7 +54,7 @@ class RideSummaryPage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
-            _startRecording(),
+            _recordingControl(),
             _zones(),
             const SizedBox(height: 12),
             _effort(),
@@ -66,24 +66,36 @@ class RideSummaryPage extends StatelessWidget {
     );
   }
 
-  /// De quoi lancer l'enregistrement sans quitter la sortie.
+  /// Piloter l'enregistrement sans quitter la sortie : démarrer, suspendre,
+  /// reprendre.
   ///
-  /// Il n'y en avait pas : l'enregistrement se décidait au départ, dans la boîte
-  /// de dialogue de l'écran des capteurs, et refuser était sans retour. Or c'est
+  /// Il n'y avait rien : l'enregistrement se décidait au départ, dans la boîte de
+  /// dialogue de l'écran des capteurs, et refuser était sans retour. Or c'est
   /// exactement ici qu'on s'en aperçoit — cette page est vide tant que rien n'est
   /// enregistré, et c'est ce vide qui rappelle qu'on a dit non.
   ///
-  /// Rien pour arrêter ni mettre en pause, en revanche : une sortie s'arrête au
-  /// retour, pas d'un tap au guidon, et un bouton d'arrêt à portée de pouce sur
-  /// une page qu'on consulte en roulant coûterait un jour une sortie entière.
-  Widget _startRecording() => ListenableBuilder(
+  /// **Toujours rien pour arrêter.** Une pause ne perd rien — le fichier reste
+  /// ouvert, la sortie repart d'un tap — alors qu'un arrêt clôt la sortie. Un
+  /// bouton qui termine, à portée de pouce sur une page qu'on consulte en
+  /// roulant, coûterait un jour une sortie entière ; on termine au retour, depuis
+  /// l'écran des capteurs.
+  ///
+  /// Les deux commandes n'ont pas le même poids visuel, et c'est voulu :
+  /// suspendre est discret (on ne le cherche qu'en connaissance de cause),
+  /// reprendre est large et coloré, parce qu'une pause oubliée est la seule
+  /// façon de perdre la fin d'une sortie sans s'en apercevoir.
+  Widget _recordingControl() => ListenableBuilder(
         listenable: recorder,
         builder: (context, _) {
-          if (recorder.isActive) return const SizedBox.shrink();
+          final Widget control = switch (recorder.state) {
+            RecorderState.idle => _StartRecordingButton(recorder: recorder),
+            RecorderState.recording => _PauseButton(recorder: recorder),
+            RecorderState.paused => _ResumeBanner(recorder: recorder),
+          };
 
           return Padding(
             padding: const EdgeInsets.only(bottom: 12),
-            child: _StartRecordingButton(recorder: recorder),
+            child: control,
           );
         },
       );
@@ -282,6 +294,89 @@ class _StartRecordingButtonState extends State<_StartRecordingButton> {
               ? 'Recherche du GPS…'
               : 'Démarrer l\'enregistrement',
           style: const TextStyle(fontSize: 16),
+        ),
+      ),
+    );
+  }
+}
+
+/// Suspendre l'enregistrement : discret, et sans confirmation.
+///
+/// Discret parce qu'on ne le cherche qu'en connaissance de cause — un café, une
+/// crevaison — et qu'un aplat de plus en haut de page attirerait le pouce pour
+/// rien. Sans confirmation parce qu'une pause ne coûte rien : elle se défait
+/// d'un tap, et le bandeau du bas fige son chronomètre, ce qui se voit.
+class _PauseButton extends StatelessWidget {
+  const _PauseButton({required this.recorder});
+
+  final RideRecorder recorder;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.white70,
+          side: const BorderSide(color: Colors.white24),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+        ),
+        onPressed: recorder.pause,
+        icon: const Icon(Icons.pause),
+        label: const Text('Mettre en pause', style: TextStyle(fontSize: 15)),
+      ),
+    );
+  }
+}
+
+/// Reprendre — et surtout **dire qu'on est en pause**.
+///
+/// C'est la seule façon de perdre la fin d'une sortie sans s'en apercevoir : les
+/// compteurs figés se lisent aussi bien comme « en pause » que comme « à
+/// l'arrêt à un feu ». D'où l'aplat orange sur toute la largeur, qui ne laisse
+/// aucun doute et qui est en même temps le bouton de reprise.
+class _ResumeBanner extends StatelessWidget {
+  const _ResumeBanner({required this.recorder});
+
+  final RideRecorder recorder;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFB35300),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: recorder.resume,
+        borderRadius: BorderRadius.circular(12),
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Icon(Icons.pause_circle, color: Colors.white),
+              SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Enregistrement en pause',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      'Rien n\'est écrit — la trace reprend où elle s\'est arrêtée.',
+                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(width: 12),
+              Icon(Icons.play_arrow, color: Colors.white),
+            ],
+          ),
         ),
       ),
     );

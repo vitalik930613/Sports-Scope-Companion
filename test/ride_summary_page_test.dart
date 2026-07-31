@@ -104,14 +104,38 @@ void main() {
     expect(find.text('Démarrer l\'enregistrement'), findsNothing);
   });
 
-  testWidgets('en enregistrement, aucun bouton de départ', (tester) async {
+  testWidgets('en enregistrement, on peut suspendre mais pas terminer',
+      (tester) async {
     await tester.runAsync(() => recorder.start());
 
     await pumpPage(tester);
 
     expect(find.text('Démarrer l\'enregistrement'), findsNothing);
-    // Et surtout rien pour arrêter : une sortie ne se termine pas au guidon.
+    expect(find.text('Mettre en pause'), findsOneWidget);
+    // Une sortie ne se termine pas au guidon : la pause se défait, l'arrêt non.
     expect(find.textContaining('Terminer'), findsNothing);
+  });
+
+  testWidgets('la pause se voit, et se défait d\'un tap', (tester) async {
+    await tester.runAsync(() => recorder.start());
+    await pumpPage(tester);
+
+    await tester.tap(find.text('Mettre en pause'));
+    await tester.pump();
+
+    expect(recorder.state, RecorderState.paused);
+    // Le compteur figé se lit aussi bien comme « à l'arrêt à un feu » : il faut
+    // que la page dise laquelle des deux, sinon on perd la fin de la sortie sans
+    // s'en apercevoir.
+    expect(find.text('Enregistrement en pause'), findsOneWidget);
+    // Les agrégats restent affichés : la sortie n'est pas terminée.
+    expect(find.text('Cardio'), findsOneWidget);
+
+    await tester.tap(find.text('Enregistrement en pause'));
+    await tester.pump();
+
+    expect(recorder.state, RecorderState.recording);
+    expect(find.text('Mettre en pause'), findsOneWidget);
   });
 
   testWidgets('sans seuil du site, la page le dit au lieu d\'inventer',

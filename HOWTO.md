@@ -89,9 +89,16 @@ automatique pour autant — ouvrir la carte deux minutes pour vérifier une rout
 fabriquerait une sortie à chaque fois. Si le GPS se dérobe au moment de démarrer,
 l'appli le dit et ouvre la navigation quand même.
 
-Rien pour arrêter ni mettre en pause sur la page Effort : une sortie se termine
-au retour, depuis l'écran des capteurs. Un bouton d'arrêt à portée de pouce sur
-une page qu'on consulte en roulant coûterait un jour une sortie entière.
+La page Effort sait aussi **suspendre et reprendre** : le bouton *Mettre en
+pause* est discret, et la reprise prend la forme d'un bandeau orange sur toute la
+largeur — une pause oubliée est la seule façon de perdre la fin d'une sortie sans
+s'en apercevoir, les compteurs figés se lisant aussi bien comme « en pause » que
+comme « arrêté à un feu ».
+
+Rien pour **terminer**, en revanche : ça se fait au retour, depuis l'écran des
+capteurs. Une pause ne coûte rien et se défait d'un tap ; un bouton qui clôt la
+sortie, à portée de pouce sur une page qu'on consulte en roulant, coûterait un
+jour une sortie entière.
 
 Démarrer demande la position (et, sur Android 13+, l'autorisation de notifier),
 puis écrit un point par seconde : position, altitude, vitesse GPS, plus le
