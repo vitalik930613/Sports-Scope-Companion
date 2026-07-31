@@ -427,8 +427,11 @@ class _RideShellPageState extends State<RideShellPage>
                     itemBuilder: (context, rawPage) =>
                         switch (RidePage.values[pageOf(rawPage)]) {
                       RidePage.navigation => const SizedBox.shrink(),
-                      RidePage.effort =>
-                        RideSummaryPage(recorder: widget.recorder, nav: _nav),
+                      RidePage.effort => RideSummaryPage(
+                          recorder: widget.recorder,
+                          nav: _nav,
+                          riderProfile: widget.riderProfile,
+                        ),
                     },
                   ),
                 ),

@@ -221,6 +221,46 @@ void main() {
     });
   });
 
+  group('histogrammes', () {
+    test('chaque mesure tombe dans son palier', () {
+      final stats = RideStats();
+      for (var i = 0; i < 10; i++) {
+        stats.add(point(second: i, heartRate: 142, power: 231));
+      }
+
+      // Paliers de 5 bpm et de 25 W, comme le site : 140 et 225.
+      expect(stats.hrHistogram, {140: 10});
+      expect(stats.powerHistogram, {225: 10});
+    });
+
+    test('un zéro n\'est pas une mesure basse', () {
+      // Un capteur qui renvoie zéro n'a rien mesuré. Compté, ce zéro gonflerait
+      // la zone la plus basse d'un temps qu'on n'a pas passé à pédaler doucement.
+      final stats = RideStats();
+      stats.add(point(second: 0, power: 0, heartRate: 0));
+      stats.add(point(second: 1, power: 200, heartRate: 150));
+
+      expect(stats.powerHistogram, {200: 1});
+      expect(stats.hrHistogram, {150: 1});
+    });
+
+    test('rejouer une sortie donne le même histogramme qu\'en direct', () {
+      // Même garantie que pour les moyennes : ce que l'écran montre pendant la
+      // sortie est ce que le `.fit` relu racontera.
+      final points = [
+        for (var i = 0; i < 90; i++)
+          point(second: i, heartRate: 120 + i ~/ 10, power: 180 + i),
+      ];
+      final live = RideStats();
+      for (final p in points) {
+        live.add(p);
+      }
+
+      expect(RideStats.of(points).hrHistogram, live.hrHistogram);
+      expect(RideStats.of(points).powerHistogram, live.powerHistogram);
+    });
+  });
+
   group('reset', () {
     test('une nouvelle sortie repart de zéro', () {
       final stats = RideStats();
@@ -236,6 +276,8 @@ void main() {
       expect(stats.normalizedPowerW, isNull);
       expect(stats.hasPower, isFalse);
       expect(stats.firstLat, isNull);
+      expect(stats.powerHistogram, isEmpty);
+      expect(stats.hrHistogram, isEmpty);
     });
   });
 }

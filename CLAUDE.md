@@ -118,6 +118,14 @@ publiées vers la page, bouton retour, et les pages du tableau de bord.
   navigation en tête. Le `PageView` est infini ; l'état est un index **brut**
   qui monte sans borne, replié par `pageOf()`, et `rawPageFor()` vise une page
   par le chemin court.
+- **La page Effort dit le cumul, le bandeau dit l'instant** : temps passé par
+  zone cardio depuis le départ (barre + légende), moyennes cardio/puissance,
+  cadence, D+. Tout vient de l'enregistreur — **hors enregistrement, elle
+  n'affiche rien** plutôt que des zéros. Le temps par zone se calcule d'un
+  **histogramme** de mesures (`RideStats.hrHistogram`, paliers de 5 bpm comme le
+  site) replié en zones à l'affichage (`zoneSharesOf`, `ride/zone_time.dart`) :
+  un profil qui arrive en pleine sortie recolore alors le temps **déjà écoulé**,
+  là où un compteur par zone ne vaudrait que pour la suite.
 - **Répartition des gestes** — c'est le point délicat :
 
 | Geste | Effet |
@@ -146,6 +154,12 @@ publiées vers la page, bouton retour, et les pages du tableau de bord.
   celle-là même qui sert à ses propres zones, donc l'appli ne peut pas le
   contredire. Un bandeau sans zone cardio veut dire que le site n'a rien : ni
   saisie, ni sortie vélo au cardio dans sa fenêtre de 6 semaines.
+  Le cardio **et** sa zone sont peints aux couleurs de la zone du moment
+  (`ui/zone_colors.dart`, bleu Z1 → rouge Z5) : à 30 km/h on voit « du rouge »
+  avant de déchiffrer « Z5 ». Aplats saturés et non teintés — sur le fond sombre
+  du bandeau, cinq transparences donnent cinq gris — d'où le texte noir sur le
+  jaune. La puissance reste sans fond : sept zones, et aucune palette qui fasse
+  autorité.
 
 ### Retour automatique et radar
 

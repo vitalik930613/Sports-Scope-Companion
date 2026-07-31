@@ -203,11 +203,11 @@ Future<void> openNavigation(
 
 /// Propose de lancer l'enregistrement, juste avant de partir.
 ///
-/// Posée ici et pas dans la coquille, pour deux raisons. D'abord parce que
-/// l'écran de sortie ne pilote pas l'enregistreur et ne doit pas commencer :
-/// une sortie vit au-dessus des écrans, elle ne naît pas de l'un d'eux. Ensuite
-/// parce que c'est le dernier moment où le cycliste a encore ses mains — après,
-/// il roule.
+/// C'est le bon moment pour le demander — le cycliste a encore ses mains, et
+/// une sortie enregistrée depuis le début vaut mieux qu'une sortie rattrapée en
+/// route. Ce n'est plus la *seule* occasion pour autant : la page Effort porte
+/// un bouton de départ tant que rien n'est enregistré, parce que c'est là qu'on
+/// s'aperçoit d'avoir dit non.
 ///
 /// Le démarrage n'est pas automatique : ouvrir la carte pour vérifier une route
 /// avant de partir fabriquerait une sortie de deux minutes à chaque fois, et
@@ -221,16 +221,15 @@ Future<void> _offerRecording(
 ) async {
   final wanted = await showDialog<bool>(
     context: context,
-    // Pas de sortie par le côté : une fois la navigation ouverte, le bandeau
-    // d'enregistrement n'est plus atteignable, donc c'est l'unique occasion de
-    // la sortie. Un tap à côté ne doit pas trancher à la place du cycliste.
+    // Pas de sortie par le côté : la question mérite une réponse, et un tap à
+    // côté ne doit pas trancher à la place du cycliste.
     barrierDismissible: false,
     builder: (dialogContext) => AlertDialog(
       title: const Text('Enregistrer cette sortie ?'),
       content: const Text(
         'La trace, les capteurs et le dénivelé seront écrits pendant toute la '
-        'navigation.\n\nC\'est maintenant ou jamais : l\'écran de sortie n\'a '
-        'pas de bouton d\'enregistrement.',
+        'navigation.\n\nSi tu dis non, la page Effort gardera un bouton pour '
+        'démarrer en route — mais ce qui précède ne sera pas rattrapé.',
       ),
       actions: [
         TextButton(

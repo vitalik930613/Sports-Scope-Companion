@@ -77,16 +77,21 @@ cible par défaut) elle fonctionne.
 
 # Enregistrer une sortie
 
-Deux façons de lancer une sortie. Le bandeau **Enregistrement**, en haut de
-l'écran des capteurs. Et, si vous partez en navigation sans avoir rien lancé,
-l'appli **pose la question avant d'ouvrir la carte** : « Enregistrer cette
-sortie ? ».
+Trois façons de lancer une sortie. Le bandeau **Enregistrement**, en haut de
+l'écran des capteurs. Si vous partez en navigation sans avoir rien lancé, l'appli
+**pose la question avant d'ouvrir la carte** : « Enregistrer cette sortie ? ». Et
+si vous avez répondu *Naviguer seulement*, la page **Effort** du tableau de bord
+garde en tête un bouton **Démarrer l'enregistrement**, tant que rien ne tourne.
 
-Répondre *Naviguer seulement* n'est pas rattrapable : l'écran de sortie est un
-tableau de bord, pas une télécommande, il n'a pas de bouton d'enregistrement. Le
-démarrage n'est pas automatique pour autant — ouvrir la carte deux minutes pour
-vérifier une route fabriquerait une sortie à chaque fois. Si le GPS se dérobe au
-moment de démarrer, l'appli le dit et ouvre la navigation quand même.
+Ce qui précède le démarrage n'est en revanche jamais rattrapé : une sortie lancée
+au bout de dix kilomètres commence au dixième kilomètre. Le démarrage n'est pas
+automatique pour autant — ouvrir la carte deux minutes pour vérifier une route
+fabriquerait une sortie à chaque fois. Si le GPS se dérobe au moment de démarrer,
+l'appli le dit et ouvre la navigation quand même.
+
+Rien pour arrêter ni mettre en pause sur la page Effort : une sortie se termine
+au retour, depuis l'écran des capteurs. Un bouton d'arrêt à portée de pouce sur
+une page qu'on consulte en roulant coûterait un jour une sortie entière.
 
 Démarrer demande la position (et, sur Android 13+, l'autorisation de notifier),
 puis écrit un point par seconde : position, altitude, vitesse GPS, plus le

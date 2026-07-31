@@ -6,6 +6,7 @@ import '../../account/rider_profile_store.dart';
 import '../../ble/sensor_hub.dart';
 import '../../recording/ride_recorder.dart';
 import '../../ui/formats.dart';
+import '../../ui/zone_colors.dart';
 import '../nav_state.dart';
 import '../ride_pages.dart';
 import 'swipe_zone.dart';
@@ -140,8 +141,8 @@ class _RideBottomBandState extends State<RideBottomBand> {
             _sensor(widget.hub.latestPower, 'W'),
           ],
         RideBandSet.effort => [
-            _sensor(widget.hub.latestHeartRate, 'bpm'),
-            _zone(widget.hub.latestHeartRate, 'zone bpm', hr: true),
+            _heartRate(asZone: false),
+            _heartRate(asZone: true),
             _sensor(widget.hub.latestPower, 'W'),
             _zone(widget.hub.latestPower, 'zone W', hr: false),
           ],
@@ -194,6 +195,44 @@ class _RideBottomBandState extends State<RideBottomBand> {
             _BandMetric(value: value?.toString(), label: label),
       );
 
+  /// Le cardio et sa zone, tous deux sur le fond de la zone du moment.
+  ///
+  /// Les deux cases sont peintes, et pas seulement celle de la zone : c'est le
+  /// chiffre qu'on regarde en roulant, et lui donner la couleur évite d'avoir à
+  /// lire la case d'à côté pour savoir si 158 bpm est confortable ou non. Elles
+  /// se calculent ensemble, à partir du même couple mesure + profil, pour ne
+  /// jamais afficher deux zones différentes le temps d'une trame.
+  ///
+  /// Sans zones connues, la case de zone nomme le seuil qui manque (voir [_zone])
+  /// et le cardio reste sur le fond du bandeau : une couleur inventée serait pire
+  /// qu'une couleur absente.
+  Widget _heartRate({required bool asZone}) => ListenableBuilder(
+        listenable: widget.riderProfile,
+        builder: (context, _) => ValueListenableBuilder<int?>(
+          valueListenable: widget.hub.latestHeartRate,
+          builder: (context, bpm, _) {
+            final profile = widget.riderProfile.profile;
+            final zone = bpm == null ? null : profile.hrZoneFor(bpm);
+
+            if (!asZone) {
+              return _BandMetric(
+                value: bpm?.toString(),
+                label: 'bpm',
+                zoneKey: zone?.key,
+              );
+            }
+            if (!profile.hasHrZones) {
+              return const _BandMetric(value: 'LTHR ?', label: 'zone bpm');
+            }
+            return _BandMetric(
+              value: zone?.key.toUpperCase(),
+              label: 'zone bpm',
+              zoneKey: zone?.key,
+            );
+          },
+        ),
+      );
+
   /// La zone d'entraînement où tombe la mesure du moment.
   ///
   /// Deux façons d'être vide, et **pas** le même affichage : un tiret quand le
@@ -239,14 +278,21 @@ class _RideBottomBandState extends State<RideBottomBand> {
 /// [MetricTile], pour que le bandeau et l'écran de diagnostic ne racontent pas
 /// deux histoires différentes du même capteur muet.
 class _BandMetric extends StatelessWidget {
-  const _BandMetric({required this.value, required this.label});
+  const _BandMetric({required this.value, required this.label, this.zoneKey});
 
   final String? value;
   final String label;
 
+  /// `z1`…`z5` pour peindre la case aux couleurs de la zone, `null` pour la
+  /// laisser sur le fond du bandeau.
+  final String? zoneKey;
+
   @override
   Widget build(BuildContext context) {
-    return Column(
+    final background = zoneColorOf(zoneKey);
+    final foreground = background == null ? Colors.white : foregroundOf(background);
+
+    final content = Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         // Les valeurs sont de longueurs très inégales (« 8 » et « 1:12:34 ») et
@@ -257,8 +303,8 @@ class _BandMetric extends StatelessWidget {
           child: Text(
             value ?? '—',
             maxLines: 1,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: foreground,
               fontSize: 24,
               fontWeight: FontWeight.w500,
               height: 1.1,
@@ -268,9 +314,27 @@ class _BandMetric extends StatelessWidget {
         Text(
           label,
           maxLines: 1,
-          style: const TextStyle(color: Colors.white54, fontSize: 11),
+          // Sur un aplat de zone, le libellé passe de « discret » à « lisible » :
+          // le blanc à 54 % disparaît sur le jaune comme sur le rouge.
+          style: TextStyle(
+            color: background == null ? Colors.white54 : foreground.withValues(alpha: 0.75),
+            fontSize: 11,
+          ),
         ),
       ],
+    );
+
+    if (background == null) return content;
+
+    // La marge du haut dégage les pastilles du jeu de valeurs, posées à 3 pt du
+    // bord : sans elle, l'aplat de la case du milieu passerait dessous.
+    return Container(
+      margin: const EdgeInsets.fromLTRB(2, 9, 2, 3),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: content,
     );
   }
 }

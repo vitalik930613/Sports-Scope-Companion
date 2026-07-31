@@ -11,6 +11,19 @@ import 'package:sports_scope_companion/recording/ride_store.dart';
 import 'package:sports_scope_companion/ride/nav_state.dart';
 import 'package:sports_scope_companion/ride/ride_pages.dart';
 import 'package:sports_scope_companion/ride/widgets/ride_bottom_band.dart';
+import 'package:sports_scope_companion/ui/zone_colors.dart';
+
+/// Les fonds peints entre la racine et ce texte : c'est là que se trouve la
+/// couleur de zone, la case étant peinte autour de son chiffre.
+List<Color?> _boxColorsBehind(WidgetTester tester, String text) => [
+      for (final decorated in tester.widgetList<DecoratedBox>(
+        find.ancestor(
+          of: find.text(text),
+          matching: find.byType(DecoratedBox),
+        ),
+      ))
+        if (decorated.decoration case final BoxDecoration box) box.color,
+    ];
 
 /// Le bandeau est la seule partie du tableau de bord qu'on lit en roulant :
 /// ce qu'un glissé y fait, et ce que les zones affichent quand on ne sait rien,
@@ -180,6 +193,53 @@ void main() {
     // La FTP manque, mais pas la LTHR : le bandeau ne signale que le trou réel.
     expect(find.text('FTP ?'), findsOneWidget);
     expect(find.text('LTHR ?'), findsNothing);
+  });
+
+  testWidgets('le cardio et sa zone portent la couleur de la zone',
+      (tester) async {
+    await tester.runAsync(
+      () => profiles.record(
+        const RiderProfile(
+          lthr: 160,
+          hrZones: [
+            TrainingZone(key: 'z1', lo: 0, hi: 130),
+            TrainingZone(key: 'z4', lo: 130, hi: 160),
+            TrainingZone(key: 'z5', lo: 160),
+          ],
+        ),
+      ),
+    );
+    hub.latestHeartRate.value = 140;
+
+    await pumpBand(tester);
+    await tester.fling(find.byType(RideBottomBand), const Offset(-200, 0), 800);
+    await tester.pumpAndSettle();
+
+    // Les deux cases, pas seulement celle de la zone : c'est le chiffre qu'on
+    // regarde en roulant.
+    expect(_boxColorsBehind(tester, '140'), contains(zoneColors['z4']));
+    expect(_boxColorsBehind(tester, 'Z4'), contains(zoneColors['z4']));
+
+    // La couleur suit la mesure sans qu'on redessine quoi que ce soit d'autre.
+    hub.latestHeartRate.value = 175;
+    await tester.pump();
+
+    expect(_boxColorsBehind(tester, '175'), contains(zoneColors['z5']));
+  });
+
+  testWidgets('sans zones connues, aucune case n\'est peinte', (tester) async {
+    hub.latestHeartRate.value = 150;
+
+    await pumpBand(tester);
+    await tester.fling(find.byType(RideBottomBand), const Offset(-200, 0), 800);
+    await tester.pumpAndSettle();
+
+    // Une couleur inventée serait pire qu'une couleur absente : le cycliste la
+    // lirait comme une zone.
+    final painted = _boxColorsBehind(tester, '150')
+        .where(zoneColors.values.contains)
+        .toList();
+    expect(painted, isEmpty);
   });
 
   testWidgets('avec les seuils du site, la zone suit la mesure', (tester) async {

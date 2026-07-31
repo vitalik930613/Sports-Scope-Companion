@@ -30,8 +30,30 @@ class RideStats {
   /// la fenêtre de la définition d'origine.
   static const defaultNormalizedWindow = 30;
 
+  /// Largeur d'un palier des histogrammes, en bpm et en watts.
+  ///
+  /// Les mêmes que le site (`ZoneDistribution::HR_BUCKET`, `POWER_BUCKET`) : les
+  /// deux répartitions se lisent l'une après l'autre, une sortie ne doit pas
+  /// changer de forme selon l'écran qui la montre.
+  static const hrBucketBpm = 5;
+  static const powerBucketW = 25;
+
   final double altitudeNoiseM;
   final int normalizedWindow;
+
+  /// Temps passé par palier de mesure : borne basse du palier → nombre de points.
+  ///
+  /// Un histogramme et pas un cumul par zone, exactement comme le site : ce qu'on
+  /// accumule est **intrinsèque à la sortie**, indépendant des seuils. Les zones
+  /// s'en déduisent à l'affichage (`zoneSecondsOf`), donc un profil qui arrive en
+  /// pleine sortie recolore tout le temps déjà écoulé au lieu de ne valoir que
+  /// pour la suite.
+  ///
+  /// En points, pas en secondes : `RideStats` ne connaît pas la cadence de
+  /// capture. Elle vaut une seconde par construction (cf. `RideRecorder`), et
+  /// c'est l'appelant qui convertit.
+  final Map<int, int> hrHistogram = {};
+  final Map<int, int> powerHistogram = {};
 
   double distanceM = 0;
   double ascentM = 0;
@@ -137,6 +159,7 @@ class RideStats {
       _hrSum += heartRate;
       _hrCount++;
       maxHeartRate = _max(maxHeartRate, heartRate);
+      _bucket(hrHistogram, heartRate, hrBucketBpm);
     }
 
     final cadence = point.cadence;
@@ -153,6 +176,7 @@ class RideStats {
       _powerSum += power;
       _powerCount++;
       maxPower = _max(maxPower, power);
+      _bucket(powerHistogram, power, powerBucketW);
       _addNormalized(power);
     }
 
@@ -164,6 +188,16 @@ class RideStats {
       maxSpeedMps =
           maxSpeedMps == null || speed > maxSpeedMps! ? speed : maxSpeedMps;
     }
+  }
+
+  /// Range une mesure dans son palier. Une mesure nulle ou négative est écartée :
+  /// un capteur qui renvoie zéro n'a rien mesuré, et ce zéro-là ferait grossir la
+  /// zone la plus basse d'un temps qui n'a pas été passé à pédaler doucement.
+  static void _bucket(Map<int, int> histogram, num value, int width) {
+    if (value <= 0) return;
+
+    final low = (value ~/ width) * width;
+    histogram[low] = (histogram[low] ?? 0) + 1;
   }
 
   /// Les trous sans puissance sont sautés, pas comblés par des zéros : un
@@ -203,6 +237,8 @@ class RideStats {
     _npWindowSum = 0;
     _npFourthSum = 0;
     _npCount = 0;
+    hrHistogram.clear();
+    powerHistogram.clear();
   }
 
   static int _max(int? current, int value) =>
