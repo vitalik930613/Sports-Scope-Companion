@@ -260,7 +260,13 @@ class FitWriter {
           0: _semicircles(point.lat),
           1: _semicircles(point.lng),
         },
-        if (summary.hasAltitude) 2: _altitude(point.altitudeM),
+        // Le champ d'altitude du format est unique : on y met la meilleure des
+        // deux mesures, jamais un panachage (cf. RideStats.add). Un point sans
+        // baromètre laisse le champ invalide plutôt que d'y glisser une altitude
+        // GPS décalée de plusieurs mètres, qui se lirait comme une marche.
+        if (summary.hasAltitude)
+          2: _altitude(
+              summary.hasBaroAltitude ? point.baroAltitudeM : point.altitudeM),
         if (summary.hasHeartRate) 3: point.heartRate,
         if (summary.hasCadence) 4: point.cadence?.round(),
         5: _centimetres(point.distanceM),

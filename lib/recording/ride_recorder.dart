@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart';
 import '../ble/samples.dart';
 import '../ble/sensor_hub.dart';
 import '../drivetrain.dart';
+import '../phone/barometric_altitude.dart';
+import '../phone/phone_sensors.dart';
 import 'gps_fix.dart';
 import 'gps_source.dart';
 import 'ride_session.dart';
@@ -32,6 +34,7 @@ class RideRecorder extends ChangeNotifier {
     required this.hub,
     required this.store,
     this.gps = const GeolocatorGpsSource(),
+    this.phone,
     this.drivetrain = Drivetrain.road,
     Duration? tickPeriod,
   }) : tickPeriod = tickPeriod ?? const Duration(seconds: 1);
@@ -39,6 +42,11 @@ class RideRecorder extends ChangeNotifier {
   final SensorHub hub;
   final RideStore store;
   final GpsSource gps;
+
+  /// Les capteurs du téléphone, pour le seul baromètre. Nul sur un appareil qui
+  /// n'en a pas — et l'enregistrement tourne alors exactement comme avant, sur
+  /// l'altitude GPS.
+  final PhoneSensors? phone;
 
   /// La transmission, pour sa seule circonférence de roue : c'est elle qui
   /// traduit les tours du capteur de vitesse en mètres par seconde. Même source
@@ -84,7 +92,13 @@ class RideRecorder extends ChangeNotifier {
   Timer? _timer;
   StreamSubscription<GpsFix>? _gpsSub;
   StreamSubscription<SensorSample>? _samplesSub;
+  StreamSubscription<double>? _pressureSub;
   bool _disposed = false;
+
+  /// L'altimètre barométrique de la sortie en cours. Une instance par sortie :
+  /// sa référence est calée sur le premier point GPS exploitable du jour.
+  final _altimeter = BarometricAltimeter();
+  DateTime? _pressureAt;
 
   double _distanceM = 0;
   int _pointCount = 0;
@@ -150,8 +164,16 @@ class RideRecorder extends ChangeNotifier {
     _referenceFix = null;
     _lastMetaSave = DateTime.now();
 
+    _altimeter.reset();
+    _pressureAt = null;
+
     _samplesSub = hub.samples.listen(handleSample, onError: (Object e) {
       debugPrint('[recorder] capteur en erreur : $e');
+    });
+    // Le baromètre ne tourne que pendant l'enregistrement : hors sortie il n'y a
+    // pas de dénivelé à mesurer, et un capteur branché réveille le processeur.
+    _pressureSub = phone?.pressureHpa().listen(handlePressure, onError: (Object e) {
+      debugPrint('[recorder] baromètre en erreur : $e');
     });
     _gpsSub = gps.watch().listen(handleFix, onError: (Object e) {
       // Un récepteur qui tombe ne doit pas arrêter la sortie : le cardio et la
@@ -191,8 +213,10 @@ class RideRecorder extends ChangeNotifier {
     _timer = null;
     await _gpsSub?.cancel();
     await _samplesSub?.cancel();
+    await _pressureSub?.cancel();
     _gpsSub = null;
     _samplesSub = null;
+    _pressureSub = null;
 
     final sink = _sink;
     _sink = null;
@@ -228,6 +252,15 @@ class RideRecorder extends ChangeNotifier {
   @visibleForTesting
   void handleFix(GpsFix fix) {
     _lastFix = fix;
+
+    // Cale l'altitude barométrique absolue sur le premier point assez précis.
+    // Sans effet passé le premier calage réussi : recaler en route fabriquerait
+    // du dénivelé (cf. BarometricAltimeter.calibrateWith).
+    final altitude = fix.altitudeM;
+    if (altitude != null) {
+      _altimeter.calibrateWith(
+          gpsAltitudeM: altitude, accuracyM: fix.accuracyM);
+    }
 
     // En pause, on suit la position sans la compter : reprendre après dix
     // minutes de café ne doit pas ajouter la ligne droite jusqu'au bar.
@@ -302,6 +335,9 @@ class RideRecorder extends ChangeNotifier {
   @visibleForTesting
   TrackPoint capture(DateTime now) {
     final fix = _fresh(_lastFix, _lastFix?.at, now, fixTtl);
+    // Le baromètre périme comme les autres capteurs : une altitude figée ne se
+    // verrait pas, elle se lirait comme un plateau parfaitement plat.
+    final pressure = _fresh(_altimeter.pressureHpa, _pressureAt, now, sensorTtl);
 
     return TrackPoint(
       at: now,
@@ -309,6 +345,8 @@ class RideRecorder extends ChangeNotifier {
       lat: fix?.lat,
       lng: fix?.lng,
       altitudeM: fix?.altitudeM,
+      baroAltitudeM: pressure == null ? null : _altimeter.altitudeM,
+      pressureHpa: pressure,
       accuracyM: fix?.accuracyM,
       speedMps: fix?.speedMps,
       heartRate: _fresh(_heartRate, _heartRateAt, now, sensorTtl),
@@ -318,6 +356,14 @@ class RideRecorder extends ChangeNotifier {
       gearFront: _gearFront,
       gearRear: _gearRear,
     );
+  }
+
+  /// Une pression vient d'arriver. Le lissage et la conversion en mètres sont
+  /// dans [BarometricAltimeter] — ici on ne fait que dater la mesure.
+  @visibleForTesting
+  void handlePressure(double hpa) {
+    _altimeter.addPressure(hpa);
+    _pressureAt = DateTime.now();
   }
 
   /// Une mesure de capteur vient d'arriver. Retenue avec sa date : c'est elle
@@ -365,6 +411,8 @@ class RideRecorder extends ChangeNotifier {
     _gearRear = null;
     _lastFix = null;
     _referenceFix = null;
+    _altimeter.reset();
+    _pressureAt = null;
   }
 
   void _notify() {
@@ -377,6 +425,7 @@ class RideRecorder extends ChangeNotifier {
     _timer?.cancel();
     unawaited(_gpsSub?.cancel());
     unawaited(_samplesSub?.cancel());
+    unawaited(_pressureSub?.cancel());
     // Le fichier est fermé au mieux : l'appli se termine, les points déjà
     // écrits sont sur le disque et la sortie apparaîtra comme interrompue.
     unawaited(_sink?.close());

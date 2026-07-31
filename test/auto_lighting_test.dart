@@ -12,6 +12,7 @@ void main() {
   LightingContext ctx(
     DateTime at, {
     RadarSample? radar,
+    double? lux,
     FrontLightMode? frontOverride,
     RearLightMode? rearOverride,
     bool located = true,
@@ -20,6 +21,7 @@ void main() {
         at: at,
         latitude: located ? lat : null,
         longitude: located ? lon : null,
+        lux: lux,
         radar: radar,
         frontOverride: frontOverride,
         rearOverride: rearOverride,
@@ -65,6 +67,56 @@ void main() {
       expect(d.front, isNull);
       expect(d.rear, isNull);
       expect(d.isEmpty, isTrue);
+    });
+  });
+
+  group('Lumière mesurée', () {
+    test('un tunnel en plein midi allume les feux', () {
+      // Ce qu'aucun calcul solaire ne saura jamais : le soleil est à 63°, et on
+      // n'y voit rien. C'est toute la raison d'être du capteur.
+      final d = AutoLightingPolicy().decide(ctx(midday, lux: 12));
+      expect(d.front, FrontLightMode.nightLow);
+      expect(d.rear, RearLightMode.nightSteady);
+    });
+
+    test('le tunnel n\'attend PAS l\'hystérésis', () {
+      // Un tunnel de 200 m se traverse en vingt secondes : attendre les 90 s du
+      // maintien reviendrait à en sortir avant que les feux ne s'allument.
+      final policy = AutoLightingPolicy();
+      policy.decide(ctx(midday));
+      final d = policy.decide(ctx(midday.add(const Duration(seconds: 3)), lux: 12));
+      expect(d.front, FrontLightMode.nightLow);
+    });
+
+    test('mais on ressort du tunnel avec le maintien normal', () {
+      // L'asymétrie est délibérée : allumer vite est toujours sûr, éteindre vite
+      // ferait battre les feux à chaque tranchée.
+      final policy = AutoLightingPolicy();
+      policy.decide(ctx(midday, lux: 12));
+      final d = policy.decide(ctx(midday.add(const Duration(seconds: 25)), lux: 40000));
+      expect(d.front, FrontLightMode.nightLow);
+    });
+
+    test('une pénombre ambiguë laisse décider le soleil', () {
+      // Entre les deux seuils (ciel couvert, sous-bois, crépuscule clair) la
+      // mesure ne tranche rien, et on retombe sur la hauteur du soleil.
+      final d = AutoLightingPolicy().decide(ctx(midday, lux: 800));
+      expect(d.front, FrontLightMode.dayRunning);
+      expect(d.rear, RearLightMode.dayFlash);
+    });
+
+    test('un plein soleil mesuré tranche même sans position', () {
+      // Sans position il n'y a pas de hauteur solaire à calculer — mais 40 000
+      // lux ne laissent aucun doute sur le fait qu'il fait jour.
+      final d = AutoLightingPolicy()
+          .decide(ctx(midday, lux: 40000, located: false));
+      expect(d.front, FrontLightMode.dayRunning);
+    });
+
+    test('sans capteur, rien ne change', () {
+      // Le repli : un appareil sans lux-mètre se comporte exactement comme avant.
+      final d = AutoLightingPolicy().decide(ctx(night, lux: null));
+      expect(d.front, FrontLightMode.nightLow);
     });
   });
 

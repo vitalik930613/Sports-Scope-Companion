@@ -14,6 +14,7 @@ class GpsFix {
     required this.lng,
     this.altitudeM,
     this.speedMps,
+    this.headingDeg,
     this.accuracyM,
   });
 
@@ -29,6 +30,14 @@ class GpsFix {
   /// Vitesse instantanée rendue par le GPS (effet Doppler), en m/s. Bien plus
   /// stable que la dérivée des positions, d'où sa conservation à part.
   final double? speedMps;
+
+  /// Direction du déplacement, en degrés depuis le nord géographique.
+  ///
+  /// C'est une **course** et non un cap : elle dit où l'on va, pas où l'on
+  /// regarde, et elle n'existe qu'en mouvement — à l'arrêt un GPS n'a aucun
+  /// déplacement à orienter. C'est exactement le trou que vient combler la
+  /// boussole du téléphone (`CompassHeading`).
+  final double? headingDeg;
 
   /// Rayon d'incertitude horizontale en mètres, à 68 %. C'est lui qui décide si
   /// un déplacement compte dans la distance parcourue ou si c'est du bruit.

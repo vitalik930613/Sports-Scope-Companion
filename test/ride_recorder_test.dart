@@ -9,6 +9,7 @@ import 'package:sports_scope_companion/drivetrain.dart';
 import 'package:sports_scope_companion/recording/gps_fix.dart';
 import 'package:sports_scope_companion/recording/gps_source.dart';
 import 'package:sports_scope_companion/recording/ride_recorder.dart';
+import 'package:sports_scope_companion/phone/phone_sensors.dart';
 import 'package:sports_scope_companion/recording/ride_store.dart';
 
 void main() {
@@ -16,6 +17,7 @@ void main() {
   late RideStore store;
   late SensorHub hub;
   late _FakeGps gps;
+  late _FakePhone phone;
   late RideRecorder recorder;
 
   /// Les positions de test sont datées par rapport à maintenant : [tick] lit
@@ -29,10 +31,12 @@ void main() {
     store = RideStore(Directory(p.join(root.path, 'rides')));
     hub = SensorHub();
     gps = _FakeGps();
+    phone = _FakePhone();
     recorder = RideRecorder(
       hub: hub,
       store: store,
       gps: gps,
+      phone: phone,
       // Les tics sont déclenchés à la main dans les tests : une horloge réelle
       // rendrait chaque assertion dépendante du temps qui passe.
       tickPeriod: const Duration(days: 1),
@@ -43,6 +47,7 @@ void main() {
     recorder.dispose();
     await hub.dispose();
     await gps.close();
+    await phone.close();
     if (await root.exists()) await root.delete(recursive: true);
   });
 
@@ -201,6 +206,112 @@ void main() {
   test('arrêter sans avoir démarré ne fait rien', () async {
     expect(await recorder.stop(), isNull);
   });
+
+  group('baromètre', () {
+    test('écrit l\'altitude barométrique et la pression brute', () async {
+      await recorder.start();
+      recorder.handlePressure(900);
+      recorder.handleFix(fixAt(0, second: 0));
+
+      final point = recorder.capture(DateTime.now());
+      expect(point.pressureHpa, closeTo(900, 0.01));
+      // Calée sur l'altitude GPS du point (400 m) au premier calage.
+      expect(point.baroAltitudeM, closeTo(400, 1));
+      // L'altitude GPS reste écrite à côté : les deux ont des défauts opposés,
+      // et une sortie déjà enregistrée doit rester rejouable avec l'une ou
+      // l'autre.
+      expect(point.altitudeM, 400);
+    });
+
+    test('mesure le dénivelé sans attendre le moindre point GPS', () async {
+      // Sans calage l'altitude absolue est fausse — ses variations, non. C'est
+      // ce qui permet de compter le D+ des premières minutes.
+      await recorder.start();
+      recorder.handlePressure(900);
+      final low = recorder.capture(DateTime.now()).baroAltitudeM!;
+      recorder.handlePressure(890);
+      final high = recorder.capture(DateTime.now()).baroAltitudeM!;
+
+      expect(high, greaterThan(low));
+    });
+
+    test('ne recale JAMAIS l\'altitude en cours de sortie', () async {
+      // La règle non négociable : un recalage déplace tout le profil d'un coup,
+      // et RideStats compte cette marche comme du dénivelé.
+      await recorder.start();
+      recorder.handlePressure(900);
+      recorder.handleFix(fixAt(0, second: 0));
+      final first = recorder.capture(DateTime.now()).baroAltitudeM!;
+
+      // Un point GPS très différent arrive plus tard : sans effet.
+      recorder.handleFix(GpsFix(
+        at: base.add(const Duration(seconds: 30)),
+        lat: 46.5,
+        lng: 6.6,
+        altitudeM: 1800,
+        speedMps: 8,
+        accuracyM: 3,
+      ));
+      expect(recorder.capture(DateTime.now()).baroAltitudeM, closeTo(first, 0.01));
+    });
+
+    test('une pression périmée ne fige pas l\'altitude', () async {
+      // Un baromètre qui décroche laisserait sinon un plateau parfaitement
+      // plat — invisible à la lecture, et zéro dénivelé.
+      await recorder.start();
+      recorder.handlePressure(900);
+
+      final later = DateTime.now().add(RideRecorder.sensorTtl * 2);
+      final point = recorder.capture(later);
+      expect(point.pressureHpa, isNull);
+      expect(point.baroAltitudeM, isNull);
+    });
+
+    test('sans baromètre, le point est celui d\'avant', () async {
+      final plain = RideRecorder(
+        hub: hub,
+        store: store,
+        gps: gps,
+        tickPeriod: const Duration(days: 1),
+      );
+      addTearDown(plain.dispose);
+      await plain.start();
+      plain.handleFix(fixAt(0, second: 0));
+
+      final point = plain.capture(DateTime.now());
+      expect(point.baroAltitudeM, isNull);
+      expect(point.pressureHpa, isNull);
+      expect(point.altitudeM, 400);
+      await plain.stop();
+    });
+  });
+}
+
+/// Des capteurs de téléphone de test : seul le baromètre sert à l'enregistreur.
+class _FakePhone implements PhoneSensors {
+  final _pressure = StreamController<double>.broadcast();
+
+  @override
+  Future<PhoneSensorAvailability> available() async =>
+      const PhoneSensorAvailability(pressure: true, light: true, heading: true);
+
+  @override
+  Stream<double> pressureHpa() => _pressure.stream;
+
+  @override
+  Stream<double> lux() => const Stream.empty();
+
+  @override
+  Stream<double> headingDeg() => const Stream.empty();
+
+  @override
+  Future<void> setLocation({
+    required double lat,
+    required double lng,
+    double altitudeM = 0,
+  }) async {}
+
+  Future<void> close() => _pressure.close();
 }
 
 /// Un GPS de test : rien ne part tant qu'on ne pousse pas soi-même une position.

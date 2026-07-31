@@ -47,6 +47,7 @@ lib/
   devices/               # les appareils appairés (disque) + la page d'appairage
   lighting/              # décision d'éclairage (modes) + envoi au feu
   navigation/            # cible de navigation, pont capteurs→page, luminosité
+  phone/                 # capteurs du téléphone : baromètre, lumière, boussole
   recording/             # enregistreur, magasin de sorties, agrégats, .fit
   ride/                  # le tableau de bord de sortie (la coquille + ses pages)
   ui/                    # tuiles et formats partagés entre écrans
@@ -357,6 +358,47 @@ n'ayant personne à qui répondre.
   panne. La boîte prend une *fonction* et non une connexion, ce qui permet de la
   tester sans Bluetooth.
 
+## Les capteurs du téléphone (`lib/phone/`)
+
+Trois capteurs internes, un seul fichier de plateforme
+(`android/…/PhoneSensors.kt`, un `EventChannel` par capteur). Pas de paquet :
+`sensors_plus` ne couvre que la centrale inertielle, et les greffons qui
+exposent le reste sont peu maintenus. **Chacun est facultatif** — un appareil
+sans baromètre se comporte exactement comme avant.
+
+- **Baromètre → dénivelé.** L'altitude GPS est bruitée de ±6 m, et ce bruit
+  franchit l'hystérésis d'un mètre de `RideStats` à chaque oscillation : une
+  heure de plat « gravissait » des centaines de mètres (le test le mesure). Le
+  baromètre oscille de quelques centimètres, d'où un seuil dix fois plus fin
+  (`baroAltitudeNoiseM`). Deux règles gardées par des tests :
+  **le calage sur le GPS n'a lieu qu'une fois par sortie** — chaque recalage
+  déplace tout le profil d'un coup et cette marche se compte comme du dénivelé —
+  et **le GPS ne reprend jamais la main** une fois qu'une sortie a du baromètre,
+  pas même sur les points où il manque, les deux sources étant décalées de
+  plusieurs mètres. Le JSONL garde `balt` **et** `hpa` : la pression est la seule
+  valeur irrécupérable, l'altitude dépend d'une référence.
+- **Lumière → éclairage.** `AutoLightingPolicy` décidait sur la seule hauteur du
+  soleil, qui ne sait rien d'un tunnel. Sous `nightLux` il fait nuit quoi qu'en
+  dise le soleil, au-dessus de `dayLux` il fait jour ; **entre les deux la mesure
+  ne tranche pas** et le soleil décide, comme avant. La nuit mesurée
+  **court-circuite l'hystérésis** — un tunnel de 200 m se traverse en vingt
+  secondes, on en serait sorti avant les 90 s de maintien — mais pas sa sortie :
+  on entre dans la nuit sans délai, on en ressort avec le délai normal.
+- **Boussole → cap à l'arrêt.** La course GPS se déduit du déplacement : **à
+  l'arrêt elle n'existe pas** et la flèche de la page se figeait, au carrefour
+  précisément. La boussole ne prend la main qu'à l'arrêt, et seulement après
+  s'être **recoupée avec la course GPS en roulant** (`CompassHeading`) : un
+  support aimanté sature le magnétomètre, qui indique alors le nord du support.
+  L'écart moyen sert deux fois — il dit si la boussole est crédible, et il
+  corrige un téléphone monté de travers. Moyenne **circulaire**, sinon 359° et 1°
+  se moyennent à 180°. Le magnétomètre ne tourne que pendant la navigation
+  (`RideShellPage` l'allume et l'éteint) ; il se nourrit de `recorder.lastFix`,
+  donc **hors enregistrement il ne se validera pas** — même compromis assumé que
+  le chien de garde du retour auto. Le cap traverse le pont (`headingDeg` dans la
+  charge utile) et n'est publié **qu'à l'arrêt** : en roulant la page a sa propre
+  course GPS, et deux sources feraient vibrer la flèche. Côté site, il est
+  consommé par `updateBearing` (`RouteNavigation.vue`) — donc **les deux dépôts**.
+
 ## Ajouter un capteur BLE
 
 Une seule entrée à écrire : un `SensorProfile` dans `sensorProfiles`
@@ -387,7 +429,9 @@ rides/2026-07-28T14-03-11Z/points.jsonl   ← un point par seconde, en ajout
 
 Au pire d'une coupure, la dernière ligne est tronquée et tout le reste reste
 lisible. Le `.fit` est **reconstruit depuis le JSONL à chaque export** : le
-JSONL garde ce que le `.fit` ne sait pas porter (positions Di2, précision GPS).
+JSONL garde ce que le `.fit` ne sait pas porter (positions Di2, précision GPS,
+pression brute et altitude GPS quand le baromètre a pris le relais — le format
+n'a qu'un seul champ d'altitude).
 
 Le cadencement est régulier, pas déclenché par le GPS : à l'arrêt ou sous un
 tunnel, la trace continue de porter le cardio et la puissance. Un point sans

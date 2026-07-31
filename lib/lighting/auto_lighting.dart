@@ -60,6 +60,8 @@ class LightingDecision {
 class LightingConfig {
   const LightingConfig({
     this.dayElevationDeg = 6.0,
+    this.nightLux = 30.0,
+    this.dayLux = 5000.0,
     this.minimumDwell = const Duration(seconds: 90),
     this.alertDistanceM = 150,
     this.alertHold = const Duration(seconds: 12),
@@ -73,6 +75,22 @@ class LightingConfig {
   /// 6° et non 0° : au ras de l'horizon la lumière est déjà rasante et le
   /// contraste mauvais. Basculer en mode nuit avant le coucher, pas après.
   final double dayElevationDeg;
+
+  /// En dessous de tant de lux, il fait nuit — quoi que dise le soleil.
+  ///
+  /// C'est le tunnel, la gorge encaissée, le sous-bois noir : le soleil peut
+  /// être à 40° au-dessus de l'horizon, on n'y voit rien et on n'y est pas vu.
+  /// Aucun calcul solaire ne le saura jamais, c'est tout l'intérêt du capteur.
+  /// 30 lux : un tunnel éclairé en donne 10 à 50, une rue de nuit à peine plus.
+  final double nightLux;
+
+  /// Au-dessus de tant de lux, il fait jour, quoi que dise le soleil.
+  ///
+  /// Seuil volontairement très haut (un ciel couvert donne déjà 1 000 à
+  /// 10 000 lux) : se tromper vers « allumé » ne coûte que de la batterie, se
+  /// tromper vers « éteint » coûte d'être invisible. Entre les deux seuils, la
+  /// lumière ne tranche pas et c'est la hauteur du soleil qui décide.
+  final double dayLux;
 
   /// Durée minimale avant d'accepter un nouveau changement jour/nuit.
   ///
@@ -111,6 +129,7 @@ class LightingContext {
     required this.at,
     this.latitude,
     this.longitude,
+    this.lux,
     this.radar,
     this.frontOverride,
     this.rearOverride,
@@ -123,6 +142,16 @@ class LightingContext {
   /// s'abstient plutôt que de deviner.
   final double? latitude;
   final double? longitude;
+
+  /// Luminosité ambiante mesurée par le téléphone, en lux. `null` sur un
+  /// appareil sans capteur, ou quand la mesure a vieilli — auquel cas seule la
+  /// hauteur du soleil décide, comme avant.
+  ///
+  /// Piège connu et assumé : un téléphone rangé dans une poche lit zéro lux en
+  /// plein midi, et fera donc allumer les feux. On l'accepte, parce que l'erreur
+  /// va dans le sens sûr (être vu) et parce qu'un téléphone en poche n'est pas
+  /// en train de naviguer.
+  final double? lux;
 
   final RadarSample? radar;
 
@@ -149,16 +178,18 @@ class AutoLightingPolicy {
   RearLightMode? get currentRear => _rear.current;
 
   LightingDecision decide(LightingContext ctx) {
+    final measuredDark = _isMeasuredDark(ctx);
     final daylight = _isDaylight(ctx);
     final threat = _threatActive(ctx);
 
     return LightingDecision(
-      front: _decideFront(ctx, daylight),
-      rear: _decideRear(ctx, daylight, threat),
+      front: _decideFront(ctx, daylight, measuredDark),
+      rear: _decideRear(ctx, daylight, threat, measuredDark),
     );
   }
 
-  FrontLightMode? _decideFront(LightingContext ctx, bool? daylight) {
+  FrontLightMode? _decideFront(
+      LightingContext ctx, bool? daylight, bool measuredDark) {
     if (ctx.frontOverride != null) {
       return _front.commit(ctx.frontOverride!, ctx.at,
           config.minimumDwell, force: true);
@@ -172,11 +203,12 @@ class AutoLightingPolicy {
         ? (config.frontDayRunning ? FrontLightMode.dayRunning : FrontLightMode.off)
         : FrontLightMode.nightLow;
 
-    return _front.commit(mode, ctx.at, config.minimumDwell);
+    return _front.commit(mode, ctx.at, config.minimumDwell,
+        force: measuredDark);
   }
 
-  RearLightMode? _decideRear(
-      LightingContext ctx, bool? daylight, bool threat) {
+  RearLightMode? _decideRear(LightingContext ctx, bool? daylight, bool threat,
+      bool measuredDark) {
     if (ctx.rearOverride != null) {
       return _rear.commit(ctx.rearOverride!, ctx.at,
           config.minimumDwell, force: true);
@@ -198,11 +230,37 @@ class AutoLightingPolicy {
 
     // On quitte une escalade sans attendre : elle est censée être brève.
     final leavingAlert = _rear.current == RearLightMode.alert;
-    return _rear.commit(mode, ctx.at, config.minimumDwell, force: leavingAlert);
+    return _rear.commit(mode, ctx.at, config.minimumDwell,
+        force: leavingAlert || measuredDark);
   }
 
-  /// `null` si la position est inconnue.
+  /// Fait-il nuit **mesurément** — c'est-à-dire au lux-mètre, pas au calcul ?
+  ///
+  /// Ce booléen ne sert qu'à une chose : court-circuiter l'hystérésis. Un tunnel
+  /// de 200 m se traverse en vingt secondes ; attendre les 90 s de
+  /// [LightingConfig.minimumDwell] pour allumer y ferait sortir avant que les
+  /// feux ne s'allument. L'asymétrie est délibérée — on entre dans la nuit sans
+  /// délai, on en ressort avec le délai normal, si bien que les feux restent
+  /// allumés un moment après le tunnel plutôt que de battre à chaque tranchée.
+  bool _isMeasuredDark(LightingContext ctx) {
+    final lux = ctx.lux;
+    return lux != null && lux < config.nightLux;
+  }
+
+  /// `null` si rien ne permet de trancher (ni lumière mesurée, ni position).
+  ///
+  /// La lumière mesurée passe **avant** le soleil, mais seulement quand elle est
+  /// franche : sous les seuils on est dans un tunnel, au-dessus on est dehors en
+  /// plein jour. Entre les deux — l'essentiel du temps — elle ne dit rien
+  /// d'exploitable (un ciel couvert et un crépuscule clair se ressemblent) et
+  /// c'est la hauteur du soleil qui décide, comme avant le capteur.
   bool? _isDaylight(LightingContext ctx) {
+    final lux = ctx.lux;
+    if (lux != null) {
+      if (lux < config.nightLux) return false;
+      if (lux > config.dayLux) return true;
+    }
+
     final lat = ctx.latitude;
     final lon = ctx.longitude;
     if (lat == null || lon == null) return null;

@@ -11,6 +11,7 @@ TrackPoint point({
   double? lat,
   double? lng,
   double? altitudeM,
+  double? baroAltitudeM,
   double? speedMps,
   int? heartRate,
   int? power,
@@ -23,6 +24,7 @@ TrackPoint point({
     lat: lat,
     lng: lng,
     altitudeM: altitudeM,
+    baroAltitudeM: baroAltitudeM,
     speedMps: speedMps,
     heartRate: heartRate,
     power: power,
@@ -67,6 +69,77 @@ void main() {
 
       expect(stats.ascentM, closeTo(100, 0.001));
       expect(stats.descentM, closeTo(100, 0.001));
+    });
+  });
+
+  group('dénivelé barométrique', () {
+    test('ne gravit rien sur un plat, là où le GPS invente des centaines de mètres', () {
+      // LE gain du baromètre, et il n'est pas celui qu'on croit : l'hystérésis
+      // n'a jamais protégé du bruit RÉEL d'un GPS. Elle absorbe les oscillations
+      // sous le mètre, mais un récepteur oscille de ±6 m — chaque aller-retour
+      // franchit donc le seuil et se compte comme une montée. Une heure de plat
+      // parfait « gravit » ainsi des centaines de mètres.
+      //
+      // Le baromètre oscille de quelques centimètres : le même plat reste plat,
+      // seuil dix fois plus fin compris.
+      final gps = RideStats();
+      final baro = RideStats();
+      final noise = math.Random(7);
+      for (var i = 0; i < 1000; i++) {
+        gps.add(point(second: i, altitudeM: 500 + (noise.nextDouble() - 0.5) * 12));
+        baro.add(point(
+            second: i, baroAltitudeM: 500 + (noise.nextDouble() - 0.5) * 0.2));
+      }
+
+      expect(gps.ascentM, greaterThan(200));
+      expect(baro.ascentM, 0);
+      expect(baro.hasBaroAltitude, isTrue);
+    });
+
+    test('compte une vraie montée sans la gonfler', () {
+      // Le pendant du précédent : la finesse ne doit pas se payer d'un excès.
+      // 500 m gravis restent 500 m, bruit barométrique compris.
+      final stats = RideStats();
+      final noise = math.Random(11);
+      for (var i = 0; i < 1000; i++) {
+        stats.add(point(
+            second: i,
+            baroAltitudeM: 500 + i * 0.5 + (noise.nextDouble() - 0.5) * 0.2));
+      }
+      expect(stats.ascentM, closeTo(500, 5));
+      expect(stats.descentM, lessThan(5));
+    });
+
+    test('préfère le baromètre au GPS quand les deux sont là', () {
+      final stats = RideStats();
+      for (var i = 0; i < 20; i++) {
+        // Le GPS descend, le baromètre monte : seul le second doit compter.
+        stats.add(point(second: i, altitudeM: 500 - i * 2, baroAltitudeM: 500 + i * 2));
+      }
+      expect(stats.ascentM, closeTo(38, 1));
+      expect(stats.descentM, 0);
+    });
+
+    test('un trou de baromètre ne fabrique PAS de marche', () {
+      // Le piège à ne pas rouvrir : les deux sources sont décalées de plusieurs
+      // mètres l'une par rapport à l'autre. Retomber sur le GPS le temps d'un
+      // trou compterait cet écart comme une montée, puis comme une descente.
+      final stats = RideStats();
+      stats.add(point(second: 0, altitudeM: 700, baroAltitudeM: 500));
+      stats.add(point(second: 1, altitudeM: 700)); // baromètre muet
+      stats.add(point(second: 2, altitudeM: 700, baroAltitudeM: 500));
+
+      expect(stats.ascentM, 0);
+      expect(stats.descentM, 0);
+    });
+
+    test('sans baromètre, le dénivelé GPS ne change pas', () {
+      final stats = RideStats();
+      for (var i = 0; i < 10; i++) {
+        stats.add(point(second: i, altitudeM: 500 + i * 3));
+      }
+      expect(stats.hasBaroAltitude, isFalse);
+      expect(stats.ascentM, closeTo(27, 0.1));
     });
   });
 

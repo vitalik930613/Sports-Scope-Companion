@@ -10,6 +10,10 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
+        // Baromètre, luminosité et boussole. Rien ne s'allume ici : chaque capteur
+        // ne démarre qu'au premier abonné, côté Dart.
+        PhoneSensors(applicationContext, flutterEngine.dartExecutor.binaryMessenger)
+
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SCREEN_CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {

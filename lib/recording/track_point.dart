@@ -14,6 +14,8 @@ class TrackPoint {
     this.lat,
     this.lng,
     this.altitudeM,
+    this.baroAltitudeM,
+    this.pressureHpa,
     this.accuracyM,
     this.speedMps,
     this.heartRate,
@@ -34,6 +36,20 @@ class TrackPoint {
   final double? lat;
   final double? lng;
   final double? altitudeM;
+
+  /// Altitude barométrique, quand le téléphone a un baromètre. Gardée **à côté**
+  /// de l'altitude GPS et non à sa place : les deux ont des défauts opposés (le
+  /// GPS est bruité mais ne dérive pas, le baromètre est fin mais suit la
+  /// météo), et une sortie déjà enregistrée doit rester rejouable avec l'une ou
+  /// l'autre. C'est elle qui sert au dénivelé quand elle est là.
+  final double? baroAltitudeM;
+
+  /// Pression atmosphérique brute, en hPa. La seule valeur irrécupérable de la
+  /// paire : [baroAltitudeM] dépend d'une référence calée au départ, alors que
+  /// la pression est la mesure elle-même. Six octets par point, et le profil se
+  /// recalcule autrement le jour où on le voudra.
+  final double? pressureHpa;
+
   final double? accuracyM;
   final double? speedMps;
 
@@ -61,6 +77,8 @@ class TrackPoint {
         if (lat != null) 'lat': _round(lat!, 7),
         if (lng != null) 'lng': _round(lng!, 7),
         if (altitudeM != null) 'alt': _round(altitudeM!, 2),
+        if (baroAltitudeM != null) 'balt': _round(baroAltitudeM!, 2),
+        if (pressureHpa != null) 'hpa': _round(pressureHpa!, 2),
         if (accuracyM != null) 'acc': _round(accuracyM!, 1),
         if (speedMps != null) 'spd': _round(speedMps!, 3),
         if (heartRate != null) 'hr': heartRate,
@@ -89,6 +107,8 @@ class TrackPoint {
       lat: _double(json['lat']),
       lng: _double(json['lng']),
       altitudeM: _double(json['alt']),
+      baroAltitudeM: _double(json['balt']),
+      pressureHpa: _double(json['hpa']),
       accuracyM: _double(json['acc']),
       speedMps: _double(json['spd']),
       heartRate: _int(json['hr']),

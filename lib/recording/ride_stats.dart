@@ -18,12 +18,19 @@ import 'track_point.dart';
 class RideStats {
   RideStats({
     this.altitudeNoiseM = defaultAltitudeNoiseM,
+    this.baroAltitudeNoiseM = defaultBaroAltitudeNoiseM,
     this.normalizedWindow = defaultNormalizedWindow,
   });
 
   /// Seuil de bruit du dénivelé : l'altitude GPS oscille de quelques mètres à
   /// l'arrêt. Sans hystérésis, une pause de dix minutes « gravit » cent mètres.
   static const defaultAltitudeNoiseM = 1.0;
+
+  /// Le même seuil, mais pour une altitude barométrique. Dix fois plus fin,
+  /// parce que le bruit l'est : un baromètre MEMS oscille de quelques
+  /// centimètres là où le GPS oscille de plusieurs mètres. C'est précisément ce
+  /// qui fait qu'un faux plat montant finit enfin par être compté.
+  static const defaultBaroAltitudeNoiseM = 0.3;
 
   /// Fenêtre de la moyenne glissante de la puissance normalisée, en points.
   /// Les points sont capturés une fois par seconde, donc 30 points ≈ 30 s —
@@ -39,6 +46,7 @@ class RideStats {
   static const powerBucketW = 25;
 
   final double altitudeNoiseM;
+  final double baroAltitudeNoiseM;
   final int normalizedWindow;
 
   /// Temps passé par palier de mesure : borne basse du palier → nombre de points.
@@ -66,6 +74,10 @@ class RideStats {
 
   bool hasPosition = false;
   bool hasAltitude = false;
+
+  /// La sortie porte-t-elle une altitude barométrique ? Une fois vrai, ça le
+  /// reste : voir [add] pour ce qui se passe si le baromètre décroche en route.
+  bool hasBaroAltitude = false;
   bool hasHeartRate = false;
   bool hasCadence = false;
   bool hasPower = false;
@@ -140,14 +152,28 @@ class RideStats {
       lastLng = point.lng;
     }
 
-    final altitude = point.altitudeM;
-    if (altitude != null) {
+    if (point.altitudeM != null || point.baroAltitudeM != null) {
       hasAltitude = true;
+    }
+    if (point.baroAltitudeM != null) hasBaroAltitude = true;
+
+    // Dès qu'une sortie a du baromètre, le GPS ne reprend JAMAIS la main sur
+    // l'altitude — pas même sur les points où le baromètre manque. Les deux
+    // sources sont décalées l'une par rapport à l'autre de plusieurs mètres
+    // (référence calée au départ d'un côté, géoïde de l'autre) : alterner ferait
+    // compter cet écart comme une montée puis une descente, à chaque trou.
+    // Un trou vaut mieux qu'une marche : la référence est conservée, et le
+    // dénivelé reprend exactement où il s'était arrêté.
+    final altitude = hasBaroAltitude ? point.baroAltitudeM : point.altitudeM;
+    if (altitude != null) {
+      // Le baromètre mesure au décimètre, le GPS à ±10 m : leur laisser le même
+      // seuil de bruit reviendrait à jeter la précision qu'on est allé chercher.
+      final noise = hasBaroAltitude ? baroAltitudeNoiseM : altitudeNoiseM;
       _altitudeReference ??= altitude;
-      if (altitude - _altitudeReference! > altitudeNoiseM) {
+      if (altitude - _altitudeReference! > noise) {
         ascentM += altitude - _altitudeReference!;
         _altitudeReference = altitude;
-      } else if (_altitudeReference! - altitude > altitudeNoiseM) {
+      } else if (_altitudeReference! - altitude > noise) {
         descentM += _altitudeReference! - altitude;
         _altitudeReference = altitude;
       }
@@ -222,7 +248,7 @@ class RideStats {
     ascentM = 0;
     descentM = 0;
     firstLat = firstLng = lastLat = lastLng = null;
-    hasPosition = hasAltitude = hasHeartRate = false;
+    hasPosition = hasAltitude = hasBaroAltitude = hasHeartRate = false;
     hasCadence = hasPower = hasSpeed = false;
     maxHeartRate = maxCadence = maxPower = null;
     maxSpeedMps = null;

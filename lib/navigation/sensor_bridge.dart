@@ -8,6 +8,7 @@ import '../ble/sensor_connection.dart';
 import '../ble/sensor_hub.dart';
 import '../ble/sensor_profile.dart';
 import '../drivetrain.dart';
+import '../phone/rider_compass.dart';
 
 /// Pousse les mesures des capteurs BLE dans la page de navigation.
 ///
@@ -24,10 +25,16 @@ class SensorBridge {
   SensorBridge({
     required this.hub,
     required this.send,
+    this.compass,
     this.drivetrain = Drivetrain.road,
   });
 
   final SensorHub hub;
+
+  /// La boussole du téléphone. Elle n'a rien d'un capteur BLE, mais elle voyage
+  /// par le même pont et pour la même raison : le navigateur ne sait pas la
+  /// lire. Nulle sur un appareil sans magnétomètre.
+  final RiderCompass? compass;
 
   /// La transmission sert à traduire une position Di2 en dents et en
   /// développement. Le Di2 ne publie que des positions, et la page web n'a
@@ -107,10 +114,15 @@ class SensorBridge {
   Map<String, dynamic> snapshot() {
     final radar = hub.latestRadar.value;
     final gears = hub.latestGears.value;
+    // Envoyé **seulement à l'arrêt** : en roulant la page a sa propre course
+    // GPS, meilleure que n'importe quelle boussole, et lui pousser un cap
+    // concurrent ne ferait que faire vibrer la flèche entre deux sources.
+    final standstillHeading = compass?.standstillHeadingDeg;
 
     return {
       'at': DateTime.now().toIso8601String(),
       'source': 'sports-scope-companion',
+      if (standstillHeading != null) 'headingDeg': standstillHeading,
       'heartRate': hub.latestHeartRate.value,
       'power': hub.latestPower.value,
       'cadence': hub.latestCadence.value,

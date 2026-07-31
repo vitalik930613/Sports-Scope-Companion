@@ -5,6 +5,9 @@ import 'package:sports_scope_companion/ble/decoders/di2.dart';
 import 'package:sports_scope_companion/ble/samples.dart';
 import 'package:sports_scope_companion/ble/sensor_hub.dart';
 import 'package:sports_scope_companion/navigation/sensor_bridge.dart';
+import 'package:sports_scope_companion/phone/compass_heading.dart';
+import 'package:sports_scope_companion/phone/rider_compass.dart';
+import 'package:sports_scope_companion/recording/gps_fix.dart';
 
 void main() {
   late SensorHub hub;
@@ -144,5 +147,67 @@ void main() {
     final payload = lastPayload();
     expect(payload['heartRate'], 120);
     expect(payload['power'], 200);
+  });
+
+  group('boussole', () {
+    /// Une boussole déjà vérifiée contre la course GPS, arrêtée face au sud.
+    RiderCompass stoppedFacing(double deg) {
+      final heading = CompassHeading();
+      for (var i = 0; i < 40; i++) {
+        heading.addCompass(90);
+        heading.addCourse(courseDeg: 90, speedMps: 8);
+      }
+      heading.addCourse(courseDeg: 90, speedMps: 0);
+      heading.addCompass(deg);
+      return RiderCompass(heading: heading);
+    }
+
+    test('publie le cap à l\'arrêt', () {
+      final bridge = SensorBridge(
+        hub: hub,
+        compass: stoppedFacing(180),
+        send: (js) async {},
+      );
+      expect(bridge.snapshot()['headingDeg'], closeTo(180, 2));
+    });
+
+    test('ne publie RIEN en roulant', () {
+      // La page a déjà sa course GPS, meilleure que n'importe quelle boussole :
+      // lui pousser un cap concurrent ferait vibrer la flèche entre deux sources.
+      final heading = CompassHeading();
+      for (var i = 0; i < 40; i++) {
+        heading.addCompass(90);
+        heading.addCourse(courseDeg: 90, speedMps: 8);
+      }
+      final bridge = SensorBridge(
+        hub: hub,
+        compass: RiderCompass(heading: heading),
+        send: (js) async {},
+      );
+      expect(bridge.snapshot().containsKey('headingDeg'), isFalse);
+    });
+
+    test('ne publie rien sans boussole du tout', () {
+      expect(bridge.snapshot().containsKey('headingDeg'), isFalse);
+    });
+
+    test('la boussole se nourrit des positions de l\'enregistreur', () {
+      // C'est la course GPS qui la valide : sans elle on ne saurait pas qu'un
+      // support aimanté la fausse.
+      final heading = CompassHeading();
+      final compass = RiderCompass(heading: heading);
+      for (var i = 0; i < 40; i++) {
+        // Ce que ferait le flux du magnétomètre, que ce test n'a pas.
+        heading.addCompass(90);
+        compass.addFix(GpsFix(
+          at: DateTime.utc(2026, 1, 1).add(Duration(seconds: i)),
+          lat: 46.5,
+          lng: 6.6,
+          speedMps: 8,
+          headingDeg: 90,
+        ));
+      }
+      expect(compass.isTrusted, isTrue);
+    });
   });
 }

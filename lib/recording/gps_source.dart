@@ -114,6 +114,13 @@ class GeolocatorGpsSource implements GpsSource {
         speedMps: position.speed.isFinite && position.speed >= 0
             ? position.speed
             : null,
+        // `heading` vaut 0 quand le récepteur n'a pas de course à donner (à
+        // l'arrêt) — indiscernable d'un vrai plein nord. On ne le retient donc
+        // que strictement positif : perdre le nord exact une fois par sortie
+        // coûte moins qu'annoncer « nord » à chaque feu rouge.
+        headingDeg: position.heading.isFinite && position.heading > 0
+            ? position.heading
+            : null,
         accuracyM: position.accuracy > 0 ? position.accuracy : null,
       );
 }

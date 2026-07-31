@@ -9,6 +9,7 @@ import '../account/site_session.dart';
 import '../ble/sensor_hub.dart';
 import '../navigation/navigation_target.dart';
 import '../navigation/sensor_bridge.dart';
+import '../phone/rider_compass.dart';
 
 /// La page de navigation du site, et rien d'autre.
 ///
@@ -30,6 +31,7 @@ import '../navigation/sensor_bridge.dart';
 class NavigationWebController {
   NavigationWebController({
     required this.hub,
+    this.compass,
     required NavigationTarget target,
     required this.baseUrl,
     required this.onMessage,
@@ -42,6 +44,11 @@ class NavigationWebController {
   }
 
   final SensorHub hub;
+
+  /// Passée telle quelle au pont : le cap à l'arrêt est une mesure de plus à
+  /// pousser dans la page, au même titre qu'un cardio.
+  final RiderCompass? compass;
+
   final String baseUrl;
 
   NavigationTarget _target;
@@ -96,7 +103,11 @@ class NavigationWebController {
       debugPrint('[web] ${message.level.name}: ${message.message}');
     });
 
-    bridge = SensorBridge(hub: hub, send: webView.runJavaScript)..start();
+    bridge = SensorBridge(
+      hub: hub,
+      compass: compass,
+      send: webView.runJavaScript,
+    )..start();
 
     _configureAndroid();
     load();

@@ -18,6 +18,8 @@ import 'drivetrain.dart';
 import 'navigation/navigation_picker_sheet.dart';
 import 'navigation/navigation_target.dart';
 import 'navigation/route_catalog_store.dart';
+import 'phone/phone_sensors.dart';
+import 'phone/rider_compass.dart';
 import 'ride/radar_debug_page.dart';
 import 'ride/ride_shell_page.dart';
 import 'recording/gps_source.dart';
@@ -82,10 +84,21 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
   /// ouvrir la navigation sans repasser par la page des capteurs.
   final _hub = SensorHub();
 
+  /// Les capteurs du téléphone lui-même : baromètre (dénivelé), luminosité
+  /// (éclairage) et boussole (cap à l'arrêt). Une seule façade, partagée — rien
+  /// ne s'allume tant que personne ne s'abonne.
+  final _phone = const AndroidPhoneSensors();
+
   /// L'enregistreur vit au même étage que le hub, et pour la même raison : une
   /// sortie commencée sur l'écran des capteurs doit continuer pendant toute la
   /// navigation, et survivre au retour en arrière.
-  late final _recorder = RideRecorder(hub: _hub, store: widget.rides);
+  late final _recorder =
+      RideRecorder(hub: _hub, store: widget.rides, phone: _phone);
+
+  /// La boussole vit au niveau de l'application comme le hub, mais ne tourne
+  /// que pendant la navigation : c'est la coquille de sortie qui l'allume et
+  /// l'éteint (`RideShellPage`).
+  late final _compass = RiderCompass(phone: _phone);
 
   /// Le rattachement des capteurs, au même étage encore : son balayage doit
   /// continuer pendant la sortie, là où un capteur qui décroche est le plus
@@ -127,6 +140,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
       target: target,
       hub: _hub,
       recorder: _recorder,
+      compass: _compass,
       session: widget.session,
       riderProfile: widget.riderProfile,
       routes: widget.routes,
@@ -137,6 +151,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
   void dispose() {
     _linkSub?.cancel();
     _linker.dispose();
+    unawaited(_compass.stop());
     _recorder.dispose();
     _hub.dispose();
     super.dispose();
@@ -156,6 +171,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
         hub: _hub,
         linker: _linker,
         recorder: _recorder,
+        compass: _compass,
         rides: widget.rides,
         session: widget.session,
         riderProfile: widget.riderProfile,
@@ -176,6 +192,7 @@ Future<void> openNavigation(
   required NavigationTarget target,
   required SensorHub hub,
   required RideRecorder recorder,
+  required RiderCompass compass,
   required SiteSession session,
   required RiderProfileStore riderProfile,
   required RouteCatalogStore routes,
@@ -203,6 +220,7 @@ Future<void> openNavigation(
       target: target,
       hub: hub,
       recorder: recorder,
+      compass: compass,
       session: session,
       riderProfile: riderProfile,
       routes: routes,
@@ -301,6 +319,7 @@ class HomePage extends StatefulWidget {
     required this.hub,
     required this.linker,
     required this.recorder,
+    required this.compass,
     required this.rides,
     required this.session,
     required this.riderProfile,
@@ -322,6 +341,10 @@ class HomePage extends StatefulWidget {
 
   /// L'enregistreur, pour la même raison que le hub.
   final RideRecorder recorder;
+
+  /// La boussole, pour la même raison encore — et parce qu'elle ne s'allume
+  /// qu'une fois la navigation ouverte.
+  final RiderCompass compass;
 
   final RideStore rides;
 
@@ -443,6 +466,7 @@ class _HomePageState extends State<HomePage> {
       target: target,
       hub: _hub,
       recorder: widget.recorder,
+      compass: widget.compass,
       session: widget.session,
       riderProfile: widget.riderProfile,
       routes: widget.routes,

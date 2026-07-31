@@ -11,6 +11,7 @@ import '../navigation/navigation_picker_sheet.dart';
 import '../navigation/navigation_target.dart';
 import '../navigation/route_catalog_store.dart';
 import '../navigation/screen_dimmer.dart';
+import '../phone/rider_compass.dart';
 import '../recording/ride_recorder.dart';
 import '../ui/power_calibration_dialog.dart';
 import 'auto_return_policy.dart';
@@ -56,6 +57,7 @@ class RideShellPage extends StatefulWidget {
     required this.target,
     required this.hub,
     required this.recorder,
+    this.compass,
     required this.session,
     required this.riderProfile,
     required this.routes,
@@ -73,6 +75,12 @@ class RideShellPage extends StatefulWidget {
   /// L'enregistrement en cours, pour le bandeau et la page d'effort. La coquille
   /// ne le pilote pas — il vit au-dessus des écrans et survit à la navigation.
   final RideRecorder recorder;
+
+  /// La boussole du téléphone. La coquille est la SEULE à l'allumer, et
+  /// seulement le temps de la sortie : un magnétomètre branché en permanence
+  /// réveille le processeur pour une flèche que personne ne regarde. Nulle sur
+  /// un appareil sans magnétomètre, ou dans un test.
+  final RiderCompass? compass;
 
   /// Pas pour authentifier la page — le cookie du WebView s'en charge — mais
   /// pour tenir à jour ce que l'appli affiche de la session : la navigation est
@@ -178,8 +186,13 @@ class _RideShellPageState extends State<RideShellPage>
     // d'ouvrir des fichiers.
     unawaited(_radarSound.warmUp());
 
+    // La boussole ne sert qu'ici, et ne mesure rien tant qu'on n'a pas comparé
+    // ses caps à la course GPS : c'est le tic ci-dessous qui la nourrit.
+    widget.compass?.start();
+
     _web = NavigationWebController(
       hub: widget.hub,
+      compass: widget.compass,
       target: widget.target,
       baseUrl: widget.baseUrl,
       onMessage: _onPageMessage,
@@ -194,6 +207,12 @@ class _RideShellPageState extends State<RideShellPage>
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       _decideReturn();
       _updateRadarWake();
+      // Même source que le chien de garde (`recorder.lastFix`) et même
+      // conséquence assumée : hors enregistrement la boussole n'a aucune course
+      // à laquelle se comparer, donc elle ne se validera pas et la page gardera
+      // sa flèche GPS. Ouvrir un second flux GPS pour ça coûterait plus cher que
+      // le service rendu.
+      widget.compass?.addFix(widget.recorder.lastFix);
     });
   }
 
@@ -467,6 +486,9 @@ class _RideShellPageState extends State<RideShellPage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _tick?.cancel();
+    // Le magnétomètre s'éteint avec la sortie : c'est le seul capteur de ce
+    // dossier qui coûterait de la batterie une fois l'écran refermé.
+    unawaited(widget.compass?.stop());
     _nav.removeListener(_decideReturn);
     _radar.removeListener(_onRadar);
     _radar.dispose();
