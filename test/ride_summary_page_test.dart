@@ -14,6 +14,7 @@ import 'package:sports_scope_companion/recording/ride_store.dart';
 import 'package:sports_scope_companion/recording/track_point.dart';
 import 'package:sports_scope_companion/ride/nav_state.dart';
 import 'package:sports_scope_companion/ride/pages/ride_summary_page.dart';
+import 'package:sports_scope_companion/ui/zone_colors.dart';
 
 /// La page Effort dit le cumul, là où le bandeau dit l'instant. Ce qui se
 /// vérifie ici : elle ne montre rien quand elle ne sait rien, et la répartition
@@ -204,6 +205,77 @@ void main() {
 
     expect(find.text('00:30'), findsOneWidget);
     expect(find.text('100 %'), findsOneWidget);
+  });
+
+  /// La ligne de la zone du moment est peinte de sa couleur : c'est ce qui
+  /// rattache le cumul à ce qu'on ressent en pédalant.
+  group('zone courante', () {
+    /// Le fond de la ligne d'une zone — le [Container] le plus proche du texte
+    /// de sa clé, la pastille de couleur n'étant pas un ancêtre de ce texte.
+    Color? lineColor(WidgetTester tester, String key) {
+      final line = tester.widget<Container>(
+        find
+            .ancestor(
+              of: find.text(key),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      return (line.decoration as BoxDecoration?)?.color;
+    }
+
+    Future<void> riding(WidgetTester tester) async {
+      await tester.runAsync(() => profiles.record(const RiderProfile(
+            lthr: 160,
+            hrZones: zones,
+          )));
+      await tester.runAsync(() => recorder.start());
+      for (var i = 0; i < 30; i++) {
+        recorder.stats.add(_point(heartRate: 135, second: i));
+      }
+    }
+
+    testWidgets('la ligne de la zone du moment porte sa couleur',
+        (tester) async {
+      await riding(tester);
+      hub.latestHeartRate.value = 155; // z4
+
+      await pumpPage(tester);
+
+      expect(lineColor(tester, 'Z4'), zoneColors['z4']);
+      // Une seule ligne peinte : deux aplats ne diraient plus où l'on est.
+      expect(lineColor(tester, 'Z2'), Colors.transparent);
+      expect(find.byIcon(Icons.favorite), findsOneWidget);
+    });
+
+    testWidgets('elle suit le cardio sans attendre l\'histogramme',
+        (tester) async {
+      await riding(tester);
+      hub.latestHeartRate.value = 155;
+      await pumpPage(tester);
+
+      // Le cumul, lui, n'a pas bougé : la zone courante est l'instant, et c'est
+      // le hub qui la donne — pas le dernier palier rempli, qui peut dater du
+      // col d'il y a une heure.
+      hub.latestHeartRate.value = 135;
+      await tester.pump();
+
+      expect(lineColor(tester, 'Z2'), zoneColors['z2']);
+      expect(lineColor(tester, 'Z4'), Colors.transparent);
+    });
+
+    testWidgets('sans cardio, aucune ligne n\'est peinte', (tester) async {
+      await riding(tester);
+
+      await pumpPage(tester);
+
+      // Le capteur s'est tu : peindre la dernière zone connue laisserait croire
+      // qu'on y est encore, alors que le cardio ne dit plus rien.
+      for (final key in ['Z1', 'Z2', 'Z3', 'Z4', 'Z5']) {
+        expect(lineColor(tester, key), Colors.transparent);
+      }
+      expect(find.byIcon(Icons.favorite), findsNothing);
+    });
   });
 
   /// Changer de tracé en pleine sortie : on part sur un itinéraire, on décide de

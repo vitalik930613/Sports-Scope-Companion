@@ -178,6 +178,10 @@ class RideSummaryPage extends StatelessWidget {
   /// zones arrivent du site en cours de sortie, et le temps déjà écoulé doit se
   /// recolorer d'un coup — c'est tout l'intérêt de garder un histogramme plutôt
   /// qu'un compteur par zone.
+  ///
+  /// La seule chose que cette carte emprunte à l'instant, c'est **où l'on se
+  /// trouve** : la ligne de la zone courante est peinte de sa couleur, faute de
+  /// quoi le cumul ne se rattache à rien de ce qu'on ressent en pédalant.
   Widget _zones() => ListenableBuilder(
         listenable: Listenable.merge([recorder, riderProfile]),
         builder: (context, _) {
@@ -205,7 +209,19 @@ class RideSummaryPage extends StatelessWidget {
               ],
             );
           }
-          return _ZoneBreakdown(shares: shares);
+          // La zone du moment vient du hub, comme celle du bandeau, et non de
+          // l'histogramme : celui-ci ne dit pas *quand* une mesure est tombée,
+          // et son dernier palier rempli peut dater du col d'il y a une heure.
+          // Même source des deux côtés, donc jamais deux zones différentes à
+          // l'écran au même instant.
+          return ValueListenableBuilder<int?>(
+            valueListenable: recorder.hub.latestHeartRate,
+            builder: (context, bpm, _) => _ZoneBreakdown(
+              shares: shares,
+              current:
+                  bpm == null ? null : riderProfile.profile.hrZoneFor(bpm)?.key,
+            ),
+          );
         },
       );
 
@@ -458,9 +474,18 @@ class _ResumeBanner extends StatelessWidget {
 /// proportion se lit dans une longueur partagée, pas dans cinq longueurs à
 /// comparer de tête.
 class _ZoneBreakdown extends StatelessWidget {
-  const _ZoneBreakdown({required this.shares});
+  const _ZoneBreakdown({required this.shares, this.current});
 
   final List<ZoneShare> shares;
+
+  /// La zone où bat le cœur en ce moment, `null` sans cardio.
+  ///
+  /// Sa ligne est peinte de sa couleur, tout le long : la légende énumère un
+  /// cumul, et sans repère il faut lire le chiffre du bandeau puis retrouver la
+  /// ligne correspondante pour savoir où l'on ajoute du temps. L'aplat répond
+  /// à la question d'un coup d'œil — « je suis dans celle-là, et ça fait
+  /// 12 minutes qu'elle dure ».
+  final String? current;
 
   /// Hauteur de la barre. Généreuse : c'est aussi la surface de lecture des
   /// couleurs, et un liseré de 6 pt ne se distingue plus sous la pluie.
@@ -516,7 +541,7 @@ class _ZoneBreakdown extends StatelessWidget {
           for (final share in shares)
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
-              child: _ZoneLine(share: share),
+              child: _ZoneLine(share: share, current: share.key == current),
             ),
         ],
       ),
@@ -525,57 +550,87 @@ class _ZoneBreakdown extends StatelessWidget {
 }
 
 class _ZoneLine extends StatelessWidget {
-  const _ZoneLine({required this.share});
+  const _ZoneLine({required this.share, this.current = false});
 
   final ZoneShare share;
+
+  /// Celle où l'on se trouve : la ligne passe sur l'aplat de sa zone.
+  final bool current;
 
   @override
   Widget build(BuildContext context) {
     final color = zoneColorOf(share.key) ?? Colors.white24;
     final empty = share.share <= 0;
 
-    return Row(
-      children: [
-        Container(
-          width: 12,
-          height: 12,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(3),
+    // Sur l'aplat, le texte reprend la règle du bandeau — le jaune de Z3 veut
+    // du noir, sans quoi c'est justement la zone qu'on surveille qui devient
+    // illisible.
+    final ink = current
+        ? foregroundOf(color)
+        : (empty ? Colors.white38 : Colors.white);
+    final faded = current
+        ? ink.withValues(alpha: 0.8)
+        : (empty ? Colors.white38 : Colors.white70);
+
+    // Le rembourrage est le même sur toutes les lignes, peintes ou non : la
+    // zone courante change en roulant, et une ligne qui s'élargirait au passage
+    // ferait sauter toute la légende sous les yeux.
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: current ? color : Colors.transparent,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        children: [
+          // La pastille disparaîtrait dans l'aplat de sa propre couleur : sur la
+          // ligne courante, elle cède la place au cœur, qui dit « c'est ici que
+          // ça bat en ce moment » plutôt que de répéter la couleur.
+          SizedBox(
+            width: 12,
+            height: 12,
+            child: current
+                ? Icon(Icons.favorite, size: 12, color: ink)
+                : DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: color,
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
           ),
-        ),
-        const SizedBox(width: 10),
-        Text(
-          share.key.toUpperCase(),
-          style: TextStyle(
-            color: empty ? Colors.white38 : Colors.white,
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const Spacer(),
-        Text(
-          formatDuration(share.time),
-          style: TextStyle(
-            color: empty ? Colors.white38 : Colors.white,
-            fontSize: 15,
-            fontFeatures: const [FontFeature.tabularFigures()],
-          ),
-        ),
-        const SizedBox(width: 12),
-        SizedBox(
-          width: 44,
-          child: Text(
-            '${(share.share * 100).round()} %',
-            textAlign: TextAlign.right,
+          const SizedBox(width: 10),
+          Text(
+            share.key.toUpperCase(),
             style: TextStyle(
-              color: empty ? Colors.white38 : Colors.white70,
-              fontSize: 14,
+              color: ink,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const Spacer(),
+          Text(
+            formatDuration(share.time),
+            style: TextStyle(
+              color: ink,
+              fontSize: 15,
               fontFeatures: const [FontFeature.tabularFigures()],
             ),
           ),
-        ),
-      ],
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 44,
+            child: Text(
+              '${(share.share * 100).round()} %',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: faded,
+                fontSize: 14,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
