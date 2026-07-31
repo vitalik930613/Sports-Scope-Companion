@@ -29,8 +29,9 @@ class RadarDistanceBadges extends StatelessWidget {
   static const _approaching = Color(0xFFFFA726);
 
   /// Hauteur minimale de la bande, pour les écrans sans encoche : sans plancher,
-  /// le chiffre se collerait au bord.
-  static const _minHeight = 30.0;
+  /// le chiffre se collerait au bord. Relevée avec la pastille — un fond plein
+  /// a besoin d'un peu d'air, sinon il touche le haut de l'écran.
+  static const _minHeight = 46.0;
 
   @override
   Widget build(BuildContext context) {
@@ -58,10 +59,21 @@ class RadarDistanceBadges extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               for (var i = 0; i < 2; i++)
-                _Badge(
-                  count: view.count,
-                  distanceM: nearest,
-                  color: color,
+                // Les deux pastilles ont grossi jusqu'à occuper presque toute
+                // la largeur : sur un écran étroit, on préfère les réduire un
+                // peu que déborder. Elles restent entières, jamais rognées.
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: i == 0
+                        ? Alignment.centerLeft
+                        : Alignment.centerRight,
+                    child: _Badge(
+                      count: view.count,
+                      distanceM: nearest,
+                      color: color,
+                    ),
+                  ),
                 ),
             ],
           ),
@@ -82,43 +94,54 @@ class _Badge extends StatelessWidget {
   final int distanceM;
   final Color color;
 
-  /// La bande du haut peut tomber sur n'importe quoi — un ciel clair, un lac, un
-  /// champ de neige. L'ombre porte le chiffre quelle que soit la carte dessous.
-  static const _shadows = [
-    Shadow(color: Colors.black, blurRadius: 4),
-    Shadow(color: Colors.black, blurRadius: 8),
-  ];
+  /// **Un aplat de la couleur de l'alerte, pas du texte coloré.** La bande du
+  /// haut peut tomber sur n'importe quoi — un ciel clair, un lac, un champ de
+  /// neige, une route grise — et un chiffre orange posé dessus était illisible
+  /// à vélo, ombres portées comprises. La pastille, elle, apporte son propre
+  /// fond : le contraste ne dépend plus de la carte. Elle porte du même coup la
+  /// gravité **sans qu'on lise le chiffre**, comme le cadre et les gouttières.
+  ///
+  /// Encre noire sur les deux couleurs : le rouge et l'orange du radar sont
+  /// clairs (contraste ~7 avec le noir, ~3 avec le blanc). Même raison que le
+  /// jaune de la zone 4 dans le bandeau du bas.
+  static const _ink = Colors.black;
+
+  /// Un liseré sombre autour de la pastille : sur une carte sombre, un aplat
+  /// saturé bave et perd son bord.
+  static const _outline = Color(0x66000000);
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Le pictogramme dit de quoi on parle sans un mot : sans lui, deux
-        // nombres côte à côte se liraient comme une seule mesure.
-        Icon(
-          Icons.directions_car,
-          size: 18,
-          color: color,
-          shadows: _shadows,
-        ),
-        const SizedBox(width: 3),
-        _number('$count', color),
-        const SizedBox(width: 10),
-        _number('$distanceM m', color),
-      ],
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _outline, width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Le pictogramme dit de quoi on parle sans un mot : sans lui, deux
+          // nombres côte à côte se liraient comme une seule mesure.
+          const Icon(Icons.directions_car, size: 22, color: _ink),
+          const SizedBox(width: 4),
+          _number('$count'),
+          const SizedBox(width: 12),
+          _number('$distanceM m'),
+        ],
+      ),
     );
   }
 
-  Widget _number(String value, Color color) => Text(
+  Widget _number(String value) => Text(
         value,
         maxLines: 1,
-        style: TextStyle(
-          color: color,
-          fontSize: 20,
-          fontWeight: FontWeight.w700,
+        style: const TextStyle(
+          color: _ink,
+          fontSize: 24,
+          fontWeight: FontWeight.w800,
           height: 1,
-          shadows: _shadows,
         ),
       );
 }

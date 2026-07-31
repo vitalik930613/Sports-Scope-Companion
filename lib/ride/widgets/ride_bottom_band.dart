@@ -138,13 +138,13 @@ class _RideBottomBandState extends State<RideBottomBand> {
             _duration(),
             _distance(),
             _speed(),
-            _sensor(widget.hub.latestPower, 'W'),
+            _power(asZone: false),
           ],
         RideBandSet.effort => [
             _heartRate(asZone: false),
             _heartRate(asZone: true),
-            _sensor(widget.hub.latestPower, 'W'),
-            _zone(widget.hub.latestPower, 'zone W', hr: false),
+            _power(asZone: false),
+            _power(asZone: true),
           ],
       };
 
@@ -188,64 +188,56 @@ class _RideBottomBandState extends State<RideBottomBand> {
         ),
       );
 
-  Widget _sensor(ValueListenable<int?> listenable, String label) =>
-      ValueListenableBuilder<int?>(
-        valueListenable: listenable,
-        builder: (context, value, _) =>
-            _BandMetric(value: value?.toString(), label: label),
+  Widget _heartRate({required bool asZone}) => _effortMetric(
+        listenable: widget.hub.latestHeartRate,
+        unit: 'bpm',
+        threshold: 'LTHR ?',
+        hasZones: (profile) => profile.hasHrZones,
+        zoneOf: (profile, value) => profile.hrZoneFor(value),
+        asZone: asZone,
       );
 
-  /// Le cardio et sa zone, tous deux sur le fond de la zone du moment.
+  /// La puissance se lit exactement comme le cardio, zone comprise.
+  ///
+  /// Elle est restée longtemps sans couleur, faute de palette qui fasse
+  /// autorité sur sept zones. Mais un bandeau à moitié peint se lit mal :
+  /// l'œil, habitué à trouver l'intensité dans la couleur, ne la cherche plus
+  /// dans le chiffre gris d'à côté. Le dégradé prolongé (cf. `zone_colors.dart`)
+  /// vaut mieux que cette asymétrie.
+  Widget _power({required bool asZone}) => _effortMetric(
+        listenable: widget.hub.latestPower,
+        unit: 'W',
+        threshold: 'FTP ?',
+        hasZones: (profile) => profile.hasPowerZones,
+        zoneOf: (profile, value) => profile.powerZoneFor(value),
+        asZone: asZone,
+      );
+
+  /// Une mesure d'effort, ou sa zone, sur le fond de la zone du moment.
   ///
   /// Les deux cases sont peintes, et pas seulement celle de la zone : c'est le
   /// chiffre qu'on regarde en roulant, et lui donner la couleur évite d'avoir à
   /// lire la case d'à côté pour savoir si 158 bpm est confortable ou non. Elles
-  /// se calculent ensemble, à partir du même couple mesure + profil, pour ne
-  /// jamais afficher deux zones différentes le temps d'une trame.
+  /// se calculent à partir du même couple mesure + profil, pour ne jamais
+  /// afficher deux zones différentes le temps d'une trame.
   ///
-  /// Sans zones connues, la case de zone nomme le seuil qui manque (voir [_zone])
-  /// et le cardio reste sur le fond du bandeau : une couleur inventée serait pire
-  /// qu'une couleur absente.
-  Widget _heartRate({required bool asZone}) => ListenableBuilder(
-        listenable: widget.riderProfile,
-        builder: (context, _) => ValueListenableBuilder<int?>(
-          valueListenable: widget.hub.latestHeartRate,
-          builder: (context, bpm, _) {
-            final profile = widget.riderProfile.profile;
-            final zone = bpm == null ? null : profile.hrZoneFor(bpm);
-
-            if (!asZone) {
-              return _BandMetric(
-                value: bpm?.toString(),
-                label: 'bpm',
-                zoneKey: zone?.key,
-              );
-            }
-            if (!profile.hasHrZones) {
-              return const _BandMetric(value: 'LTHR ?', label: 'zone bpm');
-            }
-            return _BandMetric(
-              value: zone?.key.toUpperCase(),
-              label: 'zone bpm',
-              zoneKey: zone?.key,
-            );
-          },
-        ),
-      );
-
-  /// La zone d'entraînement où tombe la mesure du moment.
+  /// Deux façons pour la zone d'être vide, et **pas** le même affichage : un
+  /// tiret quand le capteur se tait — même règle que partout ailleurs — mais
+  /// « LTHR ? » ou « FTP ? » quand c'est le seuil qui manque. Le tiret seul se
+  /// lisait comme un capteur débranché, et cachait la seule des deux causes que
+  /// le cycliste puisse corriger, sur le site, avant de partir. Le nom du seuil
+  /// manquant tient dans la case, ce qui n'était pas acquis : [_BandMetric]
+  /// réduit sa valeur jusqu'à ce qu'elle rentre.
   ///
-  /// Deux façons d'être vide, et **pas** le même affichage : un tiret quand le
-  /// capteur se tait — même règle que partout ailleurs — mais « LTHR ? » ou
-  /// « FTP ? » quand c'est le seuil qui manque. Le tiret seul se lisait comme un
-  /// capteur débranché, et cachait la seule des deux causes que le cycliste
-  /// puisse corriger, sur le site, avant de partir. Le nom du seuil manquant
-  /// tient dans la case, ce qui n'était pas acquis : [_BandMetric] réduit sa
-  /// valeur jusqu'à ce qu'elle rentre.
-  Widget _zone(
-    ValueListenable<int?> listenable,
-    String label, {
-    required bool hr,
+  /// Sans zones connues, la mesure reste sur le fond du bandeau : une couleur
+  /// inventée serait pire qu'une couleur absente.
+  Widget _effortMetric({
+    required ValueListenable<int?> listenable,
+    required String unit,
+    required String threshold,
+    required bool Function(RiderProfile profile) hasZones,
+    required TrainingZone? Function(RiderProfile profile, int value) zoneOf,
+    required bool asZone,
   }) =>
       ListenableBuilder(
         listenable: widget.riderProfile,
@@ -253,19 +245,25 @@ class _RideBottomBandState extends State<RideBottomBand> {
           valueListenable: listenable,
           builder: (context, value, _) {
             final profile = widget.riderProfile.profile;
+            final zone = value == null ? null : zoneOf(profile, value);
+
+            if (!asZone) {
+              return _BandMetric(
+                value: value?.toString(),
+                label: unit,
+                zoneKey: zone?.key,
+              );
+            }
             // Le seuil passe avant le capteur : sans zones, aucune mesure ne
             // donnera jamais de zone, et c'est ça qu'il faut dire — y compris
             // quand le capteur, lui, est muet.
-            if (!(hr ? profile.hasHrZones : profile.hasPowerZones)) {
-              return _BandMetric(value: hr ? 'LTHR ?' : 'FTP ?', label: label);
+            if (!hasZones(profile)) {
+              return _BandMetric(value: threshold, label: 'zone $unit');
             }
-
-            final TrainingZone? zone = value == null
-                ? null
-                : (hr ? profile.hrZoneFor(value) : profile.powerZoneFor(value));
             return _BandMetric(
               value: zone?.key.toUpperCase(),
-              label: label,
+              label: 'zone $unit',
+              zoneKey: zone?.key,
             );
           },
         ),
@@ -283,7 +281,7 @@ class _BandMetric extends StatelessWidget {
   final String? value;
   final String label;
 
-  /// `z1`…`z5` pour peindre la case aux couleurs de la zone, `null` pour la
+  /// `z1`…`z7` pour peindre la case aux couleurs de la zone, `null` pour la
   /// laisser sur le fond du bandeau.
   final String? zoneKey;
 

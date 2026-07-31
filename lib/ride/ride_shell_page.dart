@@ -18,6 +18,7 @@ import 'navigation_web_view.dart';
 import 'pages/ride_summary_page.dart';
 import 'radar_alert_sound.dart';
 import 'radar_severity.dart';
+import 'radar_wake_policy.dart';
 import 'ride_pages.dart';
 import 'screen_policy.dart';
 import 'turn_proximity.dart';
@@ -25,6 +26,7 @@ import 'widgets/map_edge_handle.dart';
 import 'widgets/radar_distance_badges.dart';
 import 'widgets/radar_frame.dart';
 import 'widgets/radar_side_gauge.dart';
+import 'widgets/radar_wake_page.dart';
 import 'widgets/ride_bottom_band.dart';
 
 /// La coquille d'une sortie : ce qui appartient à l'écran, pas à la page web.
@@ -142,6 +144,10 @@ class _RideShellPageState extends State<RideShellPage>
   final _radarVoice = RadarAlertVoice();
   final _radarSound = RadarAlertPlayer();
 
+  /// Ce qui décide de rallumer l'écran pour une voiture, et de le rendre à la
+  /// veille ensuite.
+  final _radarWake = RadarWakePolicy();
+
   /// La carte a-t-elle la main sur les gestes ? Vrai seulement quand elle est
   /// affichée et posée. Le [PageView] est alors entièrement hors du test de
   /// touche — sans quoi son détecteur, qui couvre toute la surface, volerait à
@@ -166,7 +172,7 @@ class _RideShellPageState extends State<RideShellPage>
     WidgetsBinding.instance.addObserver(this);
 
     _radar = RadarViewNotifier(widget.hub.latestRadar);
-    _radar.addListener(_speakRadar);
+    _radar.addListener(_onRadar);
     // Chargés maintenant : quand une voiture arrivera, il ne sera plus temps
     // d'ouvrir des fichiers.
     unawaited(_radarSound.warmUp());
@@ -180,9 +186,14 @@ class _RideShellPageState extends State<RideShellPage>
     );
 
     // Deux déclencheurs pour une seule décision : le pont pour les fronts, le
-    // temps pour les délais.
+    // temps pour les délais. Le tic sert aussi au maintien du réveil radar :
+    // route redevenue libre, plus aucune trame ne change, donc plus personne
+    // pour rendre l'écran à la veille.
     _nav.addListener(_decideReturn);
-    _tick = Timer.periodic(const Duration(seconds: 1), (_) => _decideReturn());
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
+      _decideReturn();
+      _updateRadarWake();
+    });
   }
 
   void _onPageFinished() {
@@ -205,11 +216,31 @@ class _RideShellPageState extends State<RideShellPage>
     _checkSession();
   }
 
-  /// Le radar vient de changer d'état : y a-t-il quelque chose à dire ?
-  void _speakRadar() {
+  /// Le radar vient de changer d'état : y a-t-il quelque chose à dire, et
+  /// quelque chose à montrer ?
+  void _onRadar() {
     if (_radarVoice.read(_radar.value.severity) case final cue?) {
       _radarSound.play(cue);
     }
+    _updateRadarWake();
+  }
+
+  /// Rallumer l'écran pour une voiture, et le rendre à la veille ensuite.
+  ///
+  /// Le rétroéclairage ne bouge que si la page dormait ([ScreenPolicy] arbitre) ;
+  /// le [setState], lui, est toujours nécessaire — la page radar apparaît sur
+  /// une condition qui ne vit dans aucun `ValueListenable`.
+  void _updateRadarWake() {
+    if (!mounted) return;
+
+    final changed = _radarWake.update(
+      now: DateTime.now(),
+      alerting: _radar.value.isAlerting,
+    );
+    if (!changed) return;
+
+    _applyScreen(_screenPolicy.radarAwake(_radarWake.awake));
+    setState(() {});
   }
 
   /// Faut-il ramener le cycliste sur la carte, ou lui rendre sa page ?
@@ -422,7 +453,7 @@ class _RideShellPageState extends State<RideShellPage>
     WidgetsBinding.instance.removeObserver(this);
     _tick?.cancel();
     _nav.removeListener(_decideReturn);
-    _radar.removeListener(_speakRadar);
+    _radar.removeListener(_onRadar);
     _radar.dispose();
     _radarSound.dispose();
     // Filet de sécurité : quitter la navigation en veille (bouton retour, page
@@ -516,6 +547,22 @@ class _RideShellPageState extends State<RideShellPage>
                 ),
               ),
             ),
+            // La page radar : le seul écran qui s'invite. Elle ne paraît que
+            // pendant la veille, là où la page web est sous son voile noir et
+            // n'a rien à dire d'une voiture qu'elle ne voit pas. Sous les
+            // gouttières et les mètres, qui continuent de se peindre par-dessus
+            // comme sur n'importe quelle page.
+            if (_screenPolicy.radarWake)
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                bottom: bandHeight,
+                child: ValueListenableBuilder<RadarView>(
+                  valueListenable: _radar,
+                  builder: (context, radar, _) => RadarWakePage(view: radar),
+                ),
+              ),
             _gutter(RadarGaugeSide.left, bandHeight),
             _gutter(RadarGaugeSide.right, bandHeight),
             Positioned(
@@ -565,6 +612,11 @@ class _RideShellPageState extends State<RideShellPage>
   /// donnerait onze à chacune, et onze points ne se visent pas à vélo. Quand le
   /// radar alerte, c'est lui qu'on voit : la bande garde ses gestes et efface
   /// son repère.
+  ///
+  /// La jauge est **plus large que la bande** depuis que son dégradé déborde sur
+  /// la page. La bande de gestes, elle, garde ses vingt-deux points collés au
+  /// bord : l'élargir prendrait à MapLibre un tiers de sa surface de glissé,
+  /// alors que la jauge ne prend aucun geste.
   Widget _gutter(RadarGaugeSide side, double bandHeight) {
     final left = side == RadarGaugeSide.left;
 
@@ -576,12 +628,16 @@ class _RideShellPageState extends State<RideShellPage>
       child: ValueListenableBuilder<RadarView>(
         valueListenable: _radar,
         builder: (context, radar, _) => SizedBox(
-          width: MapEdgeHandle.width,
+          width: RadarSideGauge.width,
           child: Stack(
             children: [
               Positioned.fill(child: RadarSideGauge(view: radar, side: side)),
               if (_page == RidePage.navigation)
-                Positioned.fill(
+                Positioned(
+                  left: left ? 0 : null,
+                  right: left ? null : 0,
+                  top: 0,
+                  bottom: 0,
                   child: MapEdgeHandle(
                     direction: left ? -1 : 1,
                     onStep: _stepPage,

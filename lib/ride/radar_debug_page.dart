@@ -6,10 +6,11 @@ import '../ble/samples.dart';
 import 'radar_alert_sound.dart';
 import 'radar_severity.dart';
 import 'radar_simulator.dart';
-import 'widgets/map_edge_handle.dart';
+import 'radar_wake_policy.dart';
 import 'widgets/radar_distance_badges.dart';
 import 'widgets/radar_frame.dart';
 import 'widgets/radar_side_gauge.dart';
+import 'widgets/radar_wake_page.dart';
 
 /// Le banc d'essai du radar : voir et entendre l'alerte sans radar, sans vélo et
 /// sans voiture.
@@ -21,8 +22,8 @@ import 'widgets/radar_side_gauge.dart';
 /// celle-ci prouve celle de la sortie.
 ///
 /// Le fond n'est pas décoratif non plus : il passe du blanc au sombre pour que
-/// le halo des pastilles et l'ombre des chiffres soient jugés sur le pire cas —
-/// une carte enneigée en haut, une forêt en bas.
+/// le dégradé des gouttières, le halo des marques et les pastilles de mètres
+/// soient jugés sur le pire cas — une carte enneigée en haut, une forêt en bas.
 class RadarDebugPage extends StatefulWidget {
   const RadarDebugPage({super.key});
 
@@ -48,6 +49,18 @@ class _RadarDebugPageState extends State<RadarDebugPage> {
   int _cars = 1;
   double _approachMps = 14;
 
+  /// La veille de la page web, simulée : son voile noir, et l'écran à 1 % qu'on
+  /// ne peut évidemment pas reproduire ici. Ce qui s'essaie, c'est la seule
+  /// chose qui compte — qu'une voiture qui remonte fasse paraître la page radar,
+  /// et que la voie libre la fasse repartir.
+  bool _asleep = false;
+  final _wake = RadarWakePolicy();
+
+  /// Le maintien du réveil se compte en secondes, pas en trames : le simulateur
+  /// arrêté n'en publie plus une seule, et c'est précisément le cas qu'on vient
+  /// essayer ici.
+  Timer? _wakeTick;
+
   /// Cadence de rafraîchissement. Le vrai radar publie autour d'une trame par
   /// seconde ; on va plus vite ici pour juger le mouvement de la jauge, pas pour
   /// tricher — la sévérité, elle, ne dépend que des distances.
@@ -62,12 +75,25 @@ class _RadarDebugPageState extends State<RadarDebugPage> {
   void initState() {
     super.initState();
     _radar = RadarViewNotifier(_samples);
-    _radar.addListener(_speak);
+    _radar.addListener(_onRadar);
+    _wakeTick = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _updateWake(),
+    );
     unawaited(_sound.warmUp());
   }
 
-  void _speak() {
+  void _onRadar() {
     if (_voice.read(_radar.value.severity) case final cue?) _sound.play(cue);
+    _updateWake();
+  }
+
+  void _updateWake() {
+    final changed = _wake.update(
+      now: DateTime.now(),
+      alerting: _radar.value.isAlerting,
+    );
+    if (changed && mounted) setState(() {});
   }
 
   void _toggle() {
@@ -95,7 +121,8 @@ class _RadarDebugPageState extends State<RadarDebugPage> {
   @override
   void dispose() {
     _timer?.cancel();
-    _radar.removeListener(_speak);
+    _wakeTick?.cancel();
+    _radar.removeListener(_onRadar);
     _radar.dispose();
     _sound.dispose();
     _samples.dispose();
@@ -113,6 +140,14 @@ class _RadarDebugPageState extends State<RadarDebugPage> {
         builder: (context, radar, _) => Stack(
           children: [
             const Positioned.fill(child: _Backdrop()),
+            // En veille, la carte a disparu sous le voile de la page web : c'est
+            // du noir qu'on recouvre, jamais un fond utile.
+            if (_asleep)
+              Positioned.fill(
+                child: _wake.awake
+                    ? RadarWakePage(view: radar)
+                    : const ColoredBox(color: Colors.black),
+              ),
             for (final side in RadarGaugeSide.values)
               Positioned(
                 left: side == RadarGaugeSide.left ? 0 : null,
@@ -120,7 +155,7 @@ class _RadarDebugPageState extends State<RadarDebugPage> {
                 top: 0,
                 bottom: 0,
                 child: SizedBox(
-                  width: MapEdgeHandle.width,
+                  width: RadarSideGauge.width,
                   child: RadarSideGauge(view: radar, side: side),
                 ),
               ),
@@ -140,6 +175,8 @@ class _RadarDebugPageState extends State<RadarDebugPage> {
                 cars: _cars,
                 approachMps: _approachMps,
                 running: _running,
+                asleep: _asleep,
+                onAsleep: (asleep) => setState(() => _asleep = asleep),
                 onCars: (cars) {
                   setState(() => _cars = cars);
                   if (_running) _emit();
@@ -185,6 +222,8 @@ class _Controls extends StatelessWidget {
     required this.cars,
     required this.approachMps,
     required this.running,
+    required this.asleep,
+    required this.onAsleep,
     required this.onCars,
     required this.onSpeed,
     required this.onToggle,
@@ -195,6 +234,8 @@ class _Controls extends StatelessWidget {
   final int cars;
   final double approachMps;
   final bool running;
+  final bool asleep;
+  final ValueChanged<bool> onAsleep;
   final ValueChanged<int> onCars;
   final ValueChanged<double> onSpeed;
   final VoidCallback onToggle;
@@ -221,6 +262,16 @@ class _Controls extends StatelessWidget {
         children: [
           _readout(),
           const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilterChip(
+              avatar: const Icon(Icons.nightlight_round, size: 18),
+              label: const Text('Simuler la veille'),
+              selected: asleep,
+              onSelected: onAsleep,
+            ),
+          ),
+          const SizedBox(height: 8),
           SegmentedButton<int>(
             segments: const [
               ButtonSegment(value: 0, label: Text('Aucune')),

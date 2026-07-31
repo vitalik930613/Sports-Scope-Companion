@@ -217,13 +217,39 @@ Le chien de garde lit `recorder.lastFix` plutôt que d'ouvrir un flux GPS à lui
 conséquence assumée, **hors enregistrement il n'a pas de position** et le retour
 auto repose entièrement sur le pont.
 
+### Le radar réveille l'écran
+
+En veille (page web sous son voile, rétroéclairage à 1 %), le cadre et les
+gouttières sont bien peints mais ne se voient pas — au soleil, pas du tout. Une
+voiture qui remonte **rallume donc l'écran** et fait paraître `RadarWakePage`
+(`ride/widgets/radar_wake_page.dart`) : les mètres en très gros sur du noir, avec
+les gouttières et les pastilles par-dessus. La voiture passée, l'écran retourne
+tout seul à 1 %.
+
+- La décision est dans `RadarWakePolicy`, pure et testée, avec un **maintien de
+  5 s** après extinction : un capteur qui hésite au bout de sa portée ferait
+  sinon battre le rétroéclairage. Le maintien sert aussi à afficher la
+  résolution — « Voie libre », qui dit *pourquoi* l'écran s'éteint. Radar perdu
+  en pleine alerte, la page dit « Radar perdu » : `absent` n'est pas `clear`,
+  et c'est ici qu'on le croirait le plus.
+- L'arbitrage reste dans `ScreenPolicy` (`dimmed`, et `radarWake` pour
+  l'affichage) : la demande de veille de la page est **retenue**, jamais
+  annulée, donc la veille revient sans que la page ait à la redemander — elle
+  n'a jamais su qu'on l'avait interrompue. Une page qui se réveille d'elle-même
+  (virage) reprend l'écran et efface la page radar : c'est la carte qu'il faut
+  alors regarder.
+- La page radar **n'est pas dans le catalogue** `RidePage` : elle ne se fait pas
+  défiler, ne prend aucun geste (le tap de réveil appartient à la page web), et
+  s'arrête au-dessus du bandeau, qui garde ses mesures.
+
 **Pour essayer le radar sans radar** : l'icône ◎ de la barre du haut, sur l'écran
 des capteurs, ouvre `RadarDebugPage` — jusqu'à trois véhicules qui remontent en
 boucle (`RadarSimulator`, pur et testé), avec la vitesse d'approche réglable.
 Elle monte **les widgets de la sortie**, pas des copies : ce qu'on y voit et
 entend est ce qui sortira sur la route. « Débrancher le radar » y coupe les
 trames pour vérifier que la perte du capteur ne s'annonce pas comme une voie
-libre.
+libre, et « Simuler la veille » pose le voile noir pour juger le réveil radar de
+bout en bout (le rétroéclairage, lui, ne bouge pas sur le banc).
 
 ## Ajouter un capteur BLE
 

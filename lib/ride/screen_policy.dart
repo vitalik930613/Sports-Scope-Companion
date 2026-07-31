@@ -10,17 +10,36 @@
 /// D'où l'arbitrage ici : la demande de la page est **retenue** plutôt que
 /// refusée. Revenir sur la carte rend la veille sans que la page ait à la
 /// redemander — elle se croit déjà endormie et ne redira rien.
+///
+/// Le radar suspend la veille de la même façon, et pour la même raison : la page
+/// web ignore qu'une voiture remonte, et une alerte à 1 % de rétroéclairage est
+/// une alerte que personne ne voit. La demande de veille survit au passage de la
+/// voiture, donc l'écran se rendort tout seul.
 class ScreenPolicy {
   bool _requested = false;
   int _page = 0;
+  bool _radarAwake = false;
   bool _dimmed = false;
 
   /// L'écran doit-il être assombri, tout compte fait ?
   bool get dimmed => _dimmed;
 
+  /// La veille est-elle interrompue par le radar, et par lui seul ? C'est ce qui
+  /// met la page radar à l'écran : sous le voile noir de la page web, il n'y a
+  /// rien d'autre à regarder. Hors veille, la carte et ses gouttières disent
+  /// déjà tout, et il n'y a rien à recouvrir.
+  bool get radarWake => _requested && _page == 0 && _radarAwake;
+
   /// La page entre ou sort de sa veille.
   bool pageRequested(bool dim) {
     _requested = dim;
+    return _settle();
+  }
+
+  /// Le radar réveille l'écran, ou rend la veille (voir [RadarWakePolicy], qui
+  /// tient le délai).
+  bool radarAwake(bool awake) {
+    _radarAwake = awake;
     return _settle();
   }
 
@@ -41,7 +60,7 @@ class ScreenPolicy {
   /// Rend vrai quand l'état effectif vient de changer — la coquille n'appelle le
   /// réglage de luminosité que sur les transitions, pas à chaque message.
   bool _settle() {
-    final next = _requested && _page == 0;
+    final next = _requested && _page == 0 && !_radarAwake;
     if (next == _dimmed) return false;
     _dimmed = next;
     return true;

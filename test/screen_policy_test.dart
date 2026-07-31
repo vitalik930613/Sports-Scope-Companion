@@ -77,4 +77,66 @@ void main() {
     expect(policy.pageReloaded(), isFalse);
     expect(policy.dimmed, isFalse);
   });
+
+  group('réveil radar', () {
+    test('une voiture rallume l\'écran en pleine veille', () {
+      policy.pageRequested(true);
+
+      expect(policy.radarAwake(true), isTrue);
+      expect(policy.dimmed, isFalse);
+      // …et il y a alors quelque chose à afficher : sous le voile de la page
+      // web, rien ne dit ce qui remonte.
+      expect(policy.radarWake, isTrue);
+    });
+
+    test('la voiture passée, la veille revient d\'elle-même', () {
+      // C'est le point : la demande de la page survit au passage de la voiture.
+      // Elle se croit endormie depuis le début et ne redira rien.
+      policy.pageRequested(true);
+      policy.radarAwake(true);
+
+      expect(policy.radarAwake(false), isTrue);
+      expect(policy.dimmed, isTrue);
+      expect(policy.radarWake, isFalse);
+    });
+
+    test('hors veille, le radar ne recouvre rien', () {
+      // La carte est allumée, ses gouttières et ses mètres disent déjà tout :
+      // une page radar par-dessus prendrait l'itinéraire au cycliste.
+      policy.radarAwake(true);
+
+      expect(policy.radarWake, isFalse);
+      expect(policy.dimmed, isFalse);
+    });
+
+    test('sur une page de données, le radar ne change rien non plus', () {
+      policy.pageRequested(true);
+      policy.movedTo(1);
+
+      expect(policy.radarAwake(true), isFalse);
+      expect(policy.radarWake, isFalse);
+      expect(policy.dimmed, isFalse);
+    });
+
+    test('la page qui se réveille pendant l\'alerte reprend l\'écran', () {
+      // Un virage approche : la page sort de sa veille et redemande la pleine
+      // luminosité. La carte revient, la page radar s'efface — c'est bien la
+      // navigation qu'il faut regarder, gouttières comprises.
+      policy.pageRequested(true);
+      policy.radarAwake(true);
+
+      expect(policy.pageRequested(false), isFalse);
+      expect(policy.radarWake, isFalse);
+      expect(policy.dimmed, isFalse);
+    });
+
+    test('la voiture passée, une page réveillée ne se rendort pas', () {
+      policy.pageRequested(true);
+      policy.radarAwake(true);
+      policy.pageRequested(false);
+
+      expect(policy.radarAwake(false), isFalse);
+      expect(policy.dimmed, isFalse);
+    });
+  });
 }
