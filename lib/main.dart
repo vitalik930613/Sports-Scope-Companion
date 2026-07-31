@@ -125,6 +125,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
       recorder: _recorder,
       session: widget.session,
       riderProfile: widget.riderProfile,
+      routes: widget.routes,
     );
   }
 
@@ -171,6 +172,7 @@ Future<void> openNavigation(
   required RideRecorder recorder,
   required SiteSession session,
   required RiderProfileStore riderProfile,
+  required RouteCatalogStore routes,
 }) async {
   if (context == null || !context.mounted) return;
 
@@ -197,6 +199,7 @@ Future<void> openNavigation(
       recorder: recorder,
       session: session,
       riderProfile: riderProfile,
+      routes: routes,
     ),
   ));
 }
@@ -538,6 +541,7 @@ class _SensorsPageState extends State<SensorsPage> {
       recorder: widget.recorder,
       session: widget.session,
       riderProfile: widget.riderProfile,
+      routes: widget.routes,
     );
   }
 

@@ -7,7 +7,9 @@ import '../account/rider_profile.dart';
 import '../account/rider_profile_store.dart';
 import '../account/site_session.dart';
 import '../ble/sensor_hub.dart';
+import '../navigation/navigation_picker_sheet.dart';
 import '../navigation/navigation_target.dart';
+import '../navigation/route_catalog_store.dart';
 import '../navigation/screen_dimmer.dart';
 import '../recording/ride_recorder.dart';
 import 'auto_return_policy.dart';
@@ -53,11 +55,17 @@ class RideShellPage extends StatefulWidget {
     required this.recorder,
     required this.session,
     required this.riderProfile,
+    required this.routes,
     this.baseUrl = sportsScopeBaseUrl,
   });
 
   final NavigationTarget target;
   final SensorHub hub;
+
+  /// Les itinéraires du compte, pour en choisir un autre en pleine sortie. Le
+  /// même magasin que l'écran des capteurs : son cache est ce qui rend le choix
+  /// possible là où le réseau manque, c'est-à-dire sur la route.
+  final RouteCatalogStore routes;
 
   /// L'enregistrement en cours, pour le bandeau et la page d'effort. La coquille
   /// ne le pilote pas — il vit au-dessus des écrans et survit à la navigation.
@@ -239,6 +247,75 @@ class _RideShellPageState extends State<RideShellPage>
 
   Future<void> _checkSession() async {
     await widget.session.record(await _web.probeSession());
+  }
+
+  /// Changer de tracé sans quitter la sortie.
+  ///
+  /// Le besoin est celui de la route : on part sur un itinéraire, on décide de
+  /// couper, de rallonger, ou de rentrer. Jusqu'ici il fallait sortir de la
+  /// navigation et tout relancer — donc perdre la carte et son démarrage.
+  ///
+  /// La même feuille qu'au départ : elle sait déjà lire le catalogue en cache,
+  /// coller un lien, et proposer la reprise. Le sélecteur ne fait que rendre
+  /// une cible ; l'ouvrir appartient à la coquille, qui possède le WebView.
+  Future<void> _chooseRoute() async {
+    final target = await showModalBottomSheet<NavigationTarget>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => NavigationPickerSheet(catalog: widget.routes),
+    );
+
+    if (target == null || !mounted) return;
+    _openTarget(target);
+  }
+
+  /// Retirer le tracé : la carte reste, la navigation repart sans itinéraire.
+  ///
+  /// Avec confirmation, contrairement au choix d'un autre tracé — celui-là passe
+  /// déjà par une feuille qu'on ne traverse pas par mégarde. Retirer, en
+  /// revanche, est sans retour : `fresh=1` efface la session de la page, donc la
+  /// progression avec elle. On ne la retrouve pas en rechoisissant l'itinéraire,
+  /// on la refait.
+  Future<void> _clearRoute() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Retirer l\'itinéraire ?'),
+        content: const Text(
+          'La carte et la position restent. La progression sur le tracé, elle, '
+          'est perdue : le reprendre repartira du début.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Retirer'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+    _openTarget(const NavigationTarget.free());
+  }
+
+  /// Charge un autre tracé dans la page déjà montée.
+  ///
+  /// L'état de navigation est remis à zéro tout de suite : celui du tracé qu'on
+  /// quitte ne dit plus rien de celui qui arrive, et le laisser en place ferait
+  /// afficher un virage périmé — voire proposer de retirer un itinéraire qui
+  /// n'existe plus — pendant les secondes du chargement. Les alertes et le
+  /// retour automatique, eux, sont déjà repris à la fin du chargement
+  /// (`_onPageFinished`).
+  void _openTarget(NavigationTarget target) {
+    _nav.reset();
+    _web.openTarget(target);
+    // Sur la carte : c'est là que le chargement se voit, et c'est ce qu'on veut
+    // regarder juste après avoir choisi où aller.
+    _goToPage(RidePage.navigation);
   }
 
   /// Republie les zones obstruées de l'écran vers la page.
@@ -431,6 +508,8 @@ class _RideShellPageState extends State<RideShellPage>
                           recorder: widget.recorder,
                           nav: _nav,
                           riderProfile: widget.riderProfile,
+                          onChooseRoute: _chooseRoute,
+                          onClearRoute: _clearRoute,
                         ),
                     },
                   ),

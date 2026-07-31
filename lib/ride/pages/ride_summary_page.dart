@@ -30,11 +30,22 @@ class RideSummaryPage extends StatelessWidget {
     required this.recorder,
     required this.nav,
     required this.riderProfile,
+    this.onChooseRoute,
+    this.onClearRoute,
   });
 
   final RideRecorder recorder;
   final ValueListenable<NavState?> nav;
   final RiderProfileStore riderProfile;
+
+  /// Changer de tracé, ou retirer celui qu'on suit. Confiés à la coquille, qui
+  /// possède le WebView : la page ne sait pas naviguer, elle sait demander.
+  ///
+  /// Facultatifs : sans eux le menu ne s'affiche pas. La page se monte aussi
+  /// hors d'une sortie (tests, futurs écrans), et un menu qui ne mènerait nulle
+  /// part vaut moins que pas de menu.
+  final VoidCallback? onChooseRoute;
+  final VoidCallback? onClearRoute;
 
   @override
   Widget build(BuildContext context) {
@@ -45,14 +56,7 @@ class RideSummaryPage extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
           children: [
-            const Text(
-              'Effort',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 26,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+            _title(),
             const SizedBox(height: 16),
             _recordingControl(),
             _zones(),
@@ -65,6 +69,70 @@ class RideSummaryPage extends StatelessWidget {
       ),
     );
   }
+
+  /// Le titre, et le menu de l'itinéraire au bout.
+  ///
+  /// Ici et pas sur la carte : la carte est faite pour être regardée en
+  /// roulant, et tout ce qu'on y pose vole des pixels à ce qu'on y cherche.
+  /// Cette page-ci se consulte à l'arrêt — c'est déjà l'endroit où l'on pilote
+  /// l'enregistrement, le menu y est chez lui.
+  Widget _title() {
+    return Row(
+      children: [
+        const Expanded(
+          child: Text(
+            'Effort',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 26,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        if (onChooseRoute != null || onClearRoute != null) _routeMenu(),
+      ],
+    );
+  }
+
+  /// Choisir un autre tracé, ou retirer celui en cours.
+  ///
+  /// Un menu et pas deux boutons : ce sont des actions rares — on part avec son
+  /// itinéraire — et deux aplats de plus en tête de page attireraient le pouce
+  /// au détriment de l'enregistrement, qui est la commande qu'on vient
+  /// réellement chercher ici.
+  ///
+  /// « Retirer » n'apparaît que s'il y a quelque chose à retirer, et c'est la
+  /// page web qui le dit : elle seule sait ce qu'elle suit vraiment, y compris
+  /// un tracé restauré depuis son stockage ou une destination posée à la main
+  /// sur la carte. Sans état reçu, on ne prétend pas savoir.
+  Widget _routeMenu() => ValueListenableBuilder<NavState?>(
+        valueListenable: nav,
+        builder: (context, state, _) => PopupMenuButton<VoidCallback>(
+          icon: const Icon(Icons.more_vert, color: Colors.white70),
+          tooltip: 'Itinéraire',
+          onSelected: (action) => action(),
+          itemBuilder: (context) => [
+            if (onChooseRoute case final choose?)
+              PopupMenuItem(
+                value: choose,
+                child: const ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.route),
+                  title: Text('Choisir un autre itinéraire'),
+                ),
+              ),
+            if (onClearRoute case final clear? when state?.onRoute == true)
+              PopupMenuItem(
+                value: clear,
+                child: const ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.layers_clear),
+                  title: Text('Retirer l\'itinéraire'),
+                ),
+              ),
+          ],
+        ),
+      );
 
   /// Piloter l'enregistrement sans quitter la sortie : démarrer, suspendre,
   /// reprendre.

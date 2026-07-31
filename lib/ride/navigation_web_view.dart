@@ -30,17 +30,25 @@ import '../navigation/sensor_bridge.dart';
 class NavigationWebController {
   NavigationWebController({
     required this.hub,
-    required this.target,
+    required NavigationTarget target,
     required this.baseUrl,
     required this.onMessage,
     required this.onPageFinished,
-  }) {
+    // Le champ est privé parce qu'il change (`openTarget`), et un paramètre
+    // nommé ne peut pas l'être : `this._target` serait refusé par le langage.
+    // ignore: prefer_initializing_formals
+  }) : _target = target {
     _build();
   }
 
   final SensorHub hub;
-  final NavigationTarget target;
   final String baseUrl;
+
+  NavigationTarget _target;
+
+  /// Ce que la page affiche en ce moment. Change en pleine sortie quand le
+  /// cycliste choisit un autre tracé ou retire le sien.
+  NavigationTarget get target => _target;
 
   /// Messages venus de la page, déjà décodés. Le tri par `type` appartient à la
   /// coquille : c'est elle qui possède l'écran, la veille et les pages.
@@ -118,7 +126,23 @@ class NavigationWebController {
 
   void load() {
     error.value = null;
-    webView.loadRequest(target.url(baseUrl: baseUrl));
+    webView.loadRequest(_target.url(baseUrl: baseUrl));
+  }
+
+  /// Change de tracé en pleine sortie, **sur le contrôleur existant**.
+  ///
+  /// C'est un chargement de page, forcément : le tracé est choisi par l'URL et
+  /// le site n'a pas d'autre porte d'entrée. Ce qui survit, c'est tout le reste
+  /// — l'instance MapLibre et ses tuiles en mémoire, le pot de cookies, le pont
+  /// des capteurs, le service worker. Reconstruire un [NavigationWebController]
+  /// pour ça reviendrait à démonter la vue plateforme, donc à repayer un
+  /// démarrage complet de la carte au bord de la route.
+  ///
+  /// L'enregistrement n'y touche pas : il vit au-dessus de la navigation et
+  /// continue d'écrire pendant le chargement.
+  void openTarget(NavigationTarget next) {
+    _target = next;
+    load();
   }
 
   Future<bool> canGoBack() => webView.canGoBack();

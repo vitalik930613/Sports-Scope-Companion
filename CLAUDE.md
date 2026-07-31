@@ -139,6 +139,15 @@ publiées vers la page, bouton retour, et les pages du tableau de bord.
   plateforme démontée, ou seulement sortie de la liste de peinture, cesse de
   suivre le cycliste. `setOccluded` prévient la page de couper ses animations
   sans rien endormir.
+- **Changer de tracé en pleine sortie** passe par
+  `NavigationWebController.openTarget()`, jamais par un contrôleur neuf : le
+  tracé est choisi par l'URL, donc la page recharge — mais l'instance MapLibre,
+  le pot de cookies, le pont des capteurs et le service worker, eux, survivent.
+  Les commandes sont dans le menu de la page Effort (choisir un autre
+  itinéraire, retirer celui en cours), pas sur la carte, qui n'a pas de pixels à
+  donner. Retirer demande confirmation : `fresh=1` efface la session de la page,
+  donc la progression avec elle. L'enregistrement, lui, n'est pas concerné — il
+  vit au-dessus de la navigation.
 - **Catalogue circulaire** : `RidePage` (`ride_pages.dart`) liste les pages,
   navigation en tête. Le `PageView` est infini ; l'état est un index **brut**
   qui monte sans borne, replié par `pageOf()`, et `rawPageFor()` vise une page

@@ -63,12 +63,19 @@ void main() {
     await root.delete(recursive: true);
   });
 
-  Future<void> pumpPage(WidgetTester tester) => tester.pumpWidget(
+  Future<void> pumpPage(
+    WidgetTester tester, {
+    VoidCallback? onChooseRoute,
+    VoidCallback? onClearRoute,
+  }) =>
+      tester.pumpWidget(
         MaterialApp(
           home: RideSummaryPage(
             recorder: recorder,
             nav: nav,
             riderProfile: profiles,
+            onChooseRoute: onChooseRoute,
+            onClearRoute: onClearRoute,
           ),
         ),
       );
@@ -197,6 +204,78 @@ void main() {
 
     expect(find.text('00:30'), findsOneWidget);
     expect(find.text('100 %'), findsOneWidget);
+  });
+
+  /// Changer de tracé en pleine sortie : on part sur un itinéraire, on décide de
+  /// couper ou de rentrer. La page ne navigue pas elle-même — elle demande à la
+  /// coquille, qui possède le WebView.
+  group('menu de l\'itinéraire', () {
+    /// L'état de navigation est partagé par tout le fichier : le rendre à son
+    /// silence évite qu'un test d'ici décide de ce que voit le suivant.
+    void onRoute(bool following) {
+      addTearDown(() => nav.value = null);
+      nav.value = following
+          ? NavState(
+              at: DateTime.now(),
+              onRoute: true,
+              offRoute: false,
+              arrived: false,
+            )
+          : null;
+    }
+
+    Future<void> openMenu(WidgetTester tester) async {
+      await tester.tap(find.byIcon(Icons.more_vert));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('sans commandes, pas de menu', (tester) async {
+      // La page se monte aussi hors d'une sortie : un menu qui ne mènerait
+      // nulle part vaut moins que pas de menu.
+      await pumpPage(tester);
+
+      expect(find.byIcon(Icons.more_vert), findsNothing);
+    });
+
+    testWidgets('on peut choisir un autre itinéraire', (tester) async {
+      var chosen = 0;
+      onRoute(true);
+      await pumpPage(tester, onChooseRoute: () => chosen++);
+
+      await openMenu(tester);
+      await tester.tap(find.text('Choisir un autre itinéraire'));
+      await tester.pumpAndSettle();
+
+      expect(chosen, 1);
+    });
+
+    testWidgets('sur un tracé, on peut le retirer', (tester) async {
+      var cleared = 0;
+      onRoute(true);
+      await pumpPage(tester, onClearRoute: () => cleared++);
+
+      await openMenu(tester);
+      await tester.tap(find.text('Retirer l\'itinéraire'));
+      await tester.pumpAndSettle();
+
+      expect(cleared, 1);
+    });
+
+    testWidgets('sans tracé, il n\'y a rien à retirer', (tester) async {
+      // En navigation libre — ou tant que la page n'a rien dit — proposer de
+      // retirer un itinéraire laisserait croire qu'il y en a un.
+      onRoute(false);
+      await pumpPage(
+        tester,
+        onChooseRoute: () {},
+        onClearRoute: () {},
+      );
+
+      await openMenu(tester);
+
+      expect(find.text('Choisir un autre itinéraire'), findsOneWidget);
+      expect(find.text('Retirer l\'itinéraire'), findsNothing);
+    });
   });
 }
 
