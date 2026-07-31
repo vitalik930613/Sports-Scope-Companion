@@ -114,7 +114,7 @@ void main() {
     expect(find.text('durée'), findsOneWidget);
   });
 
-  testWidgets('sans seuils connus, la zone est un tiret et pas une invention',
+  testWidgets('sans seuils connus, la zone nomme le seuil qui manque',
       (tester) async {
     hub.latestHeartRate.value = 150;
     hub.latestPower.value = 210;
@@ -128,10 +128,58 @@ void main() {
 
     expect(find.text('150'), findsOneWidget);
     expect(find.text('210'), findsOneWidget);
-    // Les deux capteurs parlent, les deux zones se taisent : un profil vide ne
-    // doit jamais faire apparaître un « Z1 » par défaut — le cycliste le lirait
-    // comme une mesure.
+    // Les deux capteurs parlent, les deux zones ne peuvent pas se calculer :
+    // aucun « Z1 » par défaut — le cycliste le lirait comme une mesure — mais
+    // pas un tiret muet non plus, qui se lit comme un capteur débranché alors
+    // que le trou est côté site.
+    expect(find.text('LTHR ?'), findsOneWidget);
+    expect(find.text('FTP ?'), findsOneWidget);
+    expect(find.text('—'), findsNothing);
+  });
+
+  testWidgets('seuil manquant : le nom du seuil passe avant le capteur muet',
+      (tester) async {
+    // Capteurs muets *et* seuils inconnus : c'est le seuil qu'on annonce.
+    // Attendre une mesure pour le dire retarderait l'information jusqu'au
+    // moment où le cycliste a les mains prises.
+    await pumpBand(tester);
+    await tester.fling(
+      find.byType(RideBottomBand),
+      const Offset(-200, 0),
+      800,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('LTHR ?'), findsOneWidget);
+    expect(find.text('FTP ?'), findsOneWidget);
+    // Les deux mesures, elles, gardent leur tiret.
     expect(find.text('—'), findsNWidgets(2));
+  });
+
+  testWidgets('un seul seuil connu : l\'autre zone reste un tiret',
+      (tester) async {
+    await tester.runAsync(
+      () => profiles.record(
+        const RiderProfile(
+          lthr: 160,
+          hrZones: [TrainingZone(key: 'z1', lo: 0)],
+        ),
+      ),
+    );
+    hub.latestHeartRate.value = 120;
+
+    await pumpBand(tester);
+    await tester.fling(
+      find.byType(RideBottomBand),
+      const Offset(-200, 0),
+      800,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Z1'), findsOneWidget);
+    // La FTP manque, mais pas la LTHR : le bandeau ne signale que le trou réel.
+    expect(find.text('FTP ?'), findsOneWidget);
+    expect(find.text('LTHR ?'), findsNothing);
   });
 
   testWidgets('avec les seuils du site, la zone suit la mesure', (tester) async {

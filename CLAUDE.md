@@ -135,8 +135,15 @@ publiées vers la page, bouton retour, et les pages du tableau de bord.
   seul**, qui bascule à mi-glissé et couperait le geste en deux.
 
 - `RideBottomBand` porte les jeux de valeurs (`RideBandSet`), qui bouclent eux
-  aussi. Les zones viennent de `RiderProfileStore`, donc du site : **sans seuils
-  connus, un tiret, jamais une zone calculée sur un seuil par défaut.**
+  aussi. Les zones viennent de `RiderProfileStore`, donc du site : **jamais une
+  zone calculée sur un seuil par défaut.** Sans seuil, la case zone affiche
+  `LTHR ?` ou `FTP ?` — pas le tiret des mesures absentes, qui se lirait comme un
+  capteur débranché alors que le trou est côté site et se comble avant de partir.
+  Le même trou est annoncé en toutes lettres sur l'écran d'accueil
+  (`ThresholdGap`, `account/threshold_gap.dart`), seul endroit où le cycliste a
+  encore les mains libres. Attention : côté Rails, seule une **LTHR saisie à la
+  main** (`lthr_manual`) produit des zones cardio — la LTHR estimée depuis les
+  sorties, elle, n'en crée aucune.
 
 ### Retour automatique et radar
 

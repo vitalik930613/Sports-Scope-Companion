@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'account/account_page.dart';
 import 'account/rider_profile_store.dart';
 import 'account/site_session.dart';
+import 'account/threshold_gap.dart';
 import 'ble/samples.dart';
 import 'ble/sensor_connection.dart';
 import 'ble/sensor_hub.dart';
@@ -315,7 +316,8 @@ class SensorsPage extends StatefulWidget {
   final SiteSession session;
 
   /// Les seuils du cycliste, transmis à la navigation qui les tient à jour
-  /// depuis le site. Cet écran ne s'en sert pas lui-même.
+  /// depuis le site. Cet écran ne les affiche pas, il signale seulement ce qui
+  /// leur manque pour que les zones du bandeau de sortie existent.
   final RiderProfileStore riderProfile;
 
   @override
@@ -652,6 +654,15 @@ class _SensorsPageState extends State<SensorsPage> {
                 ),
               ),
             ),
+          // Sans seuils, le bandeau de sortie n'affiche qu'un tiret à la place
+          // des zones, et rien sur la route ne dit d'où vient le trou. Le seul
+          // moment où l'on peut encore le combler, c'est ici — le geste se fait
+          // sur le site, pas au guidon.
+          //
+          // Pas affiché en session anonyme : le bandeau juste au-dessus dit
+          // déjà que rien n'est connecté, ce qui est la vraie cause. Deux cartes
+          // pour un seul problème se lisent comme deux problèmes.
+          if (widget.session.signedIn != false) _thresholdGapCard(),
           // L'enregistrement passe avant les valeurs en direct : c'est le geste
           // qu'on cherche avant de partir, les mesures ne sont qu'un contrôle.
           RecordingCard(recorder: _recorder, store: widget.rides),
@@ -687,6 +698,32 @@ class _SensorsPageState extends State<SensorsPage> {
       ),
     );
   }
+
+  /// Dit ce qui manque aux seuils, quand il manque quelque chose.
+  ///
+  /// Reconstruit sur le magasin plutôt que sur un `setState` : le profil arrive
+  /// pendant la navigation, donc pendant que cet écran est empilé dessous et ne
+  /// se redessine pas de lui-même.
+  Widget _thresholdGapCard() => ListenableBuilder(
+        listenable: widget.riderProfile,
+        builder: (context, _) {
+          final gap = ThresholdGap.of(
+            widget.riderProfile.profile,
+            everReceived: widget.riderProfile.updatedAt != null,
+          );
+          if (gap == null) return const SizedBox.shrink();
+
+          return Card(
+            color: Theme.of(context).colorScheme.tertiaryContainer,
+            child: ListTile(
+              leading: const Icon(Icons.stacked_bar_chart),
+              title: Text(gap.title),
+              subtitle: Text(gap.detail),
+              isThreeLine: true,
+            ),
+          );
+        },
+      );
 
   Widget _sectionTitle(String text) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),

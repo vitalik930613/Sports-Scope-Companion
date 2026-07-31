@@ -196,9 +196,13 @@ class _RideBottomBandState extends State<RideBottomBand> {
 
   /// La zone d'entraînement où tombe la mesure du moment.
   ///
-  /// Deux façons d'être vide, et le même tiret pour les deux : capteur muet, ou
-  /// seuils inconnus du site. Les distinguer demanderait un mot, et le bandeau
-  /// n'a la place que pour un chiffre — la page Effort dira laquelle.
+  /// Deux façons d'être vide, et **pas** le même affichage : un tiret quand le
+  /// capteur se tait — même règle que partout ailleurs — mais « LTHR ? » ou
+  /// « FTP ? » quand c'est le seuil qui manque. Le tiret seul se lisait comme un
+  /// capteur débranché, et cachait la seule des deux causes que le cycliste
+  /// puisse corriger, sur le site, avant de partir. Le nom du seuil manquant
+  /// tient dans la case, ce qui n'était pas acquis : [_BandMetric] réduit sa
+  /// valeur jusqu'à ce qu'elle rentre.
   Widget _zone(
     ValueListenable<int?> listenable,
     String label, {
@@ -210,6 +214,13 @@ class _RideBottomBandState extends State<RideBottomBand> {
           valueListenable: listenable,
           builder: (context, value, _) {
             final profile = widget.riderProfile.profile;
+            // Le seuil passe avant le capteur : sans zones, aucune mesure ne
+            // donnera jamais de zone, et c'est ça qu'il faut dire — y compris
+            // quand le capteur, lui, est muet.
+            if (!(hr ? profile.hasHrZones : profile.hasPowerZones)) {
+              return _BandMetric(value: hr ? 'LTHR ?' : 'FTP ?', label: label);
+            }
+
             final TrainingZone? zone = value == null
                 ? null
                 : (hr ? profile.hrZoneFor(value) : profile.powerZoneFor(value));
