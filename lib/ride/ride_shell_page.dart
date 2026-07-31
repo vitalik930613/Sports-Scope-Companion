@@ -12,6 +12,7 @@ import '../navigation/navigation_target.dart';
 import '../navigation/route_catalog_store.dart';
 import '../navigation/screen_dimmer.dart';
 import '../recording/ride_recorder.dart';
+import '../ui/power_calibration_dialog.dart';
 import 'auto_return_policy.dart';
 import 'nav_state.dart';
 import 'navigation_web_view.dart';
@@ -333,6 +334,20 @@ class _RideShellPageState extends State<RideShellPage>
     _openTarget(const NavigationTarget.free());
   }
 
+  /// Calibrer le capteur de puissance sans quitter la sortie.
+  ///
+  /// C'est en roulant qu'on voit une puissance dériver — au départ elle a l'air
+  /// juste. Sortir de la navigation pour aller chercher l'écran des capteurs
+  /// coûterait la carte et son démarrage, donc on ne le ferait pas : on
+  /// finirait la sortie avec des watts faux, et une sortie fausse dans
+  /// l'historique.
+  ///
+  /// La calibration demande un vélo arrêté, ce que la boîte de dialogue dit ;
+  /// rien n'est bloqué pour autant, un capteur sous charge répond « échec » et
+  /// c'est un message plus clair qu'un bouton grisé.
+  Future<void> _calibratePower() =>
+      showPowerCalibration(context, hub: widget.hub);
+
   /// Charge un autre tracé dans la page déjà montée.
   ///
   /// L'état de navigation est remis à zéro tout de suite : celui du tracé qu'on
@@ -541,6 +556,12 @@ class _RideShellPageState extends State<RideShellPage>
                           riderProfile: widget.riderProfile,
                           onChooseRoute: _chooseRoute,
                           onClearRoute: _clearRoute,
+                          // La commande n'apparaît que si un capteur connecté
+                          // sait effectivement se calibrer : évalué à chaque
+                          // rendu, donc juste dès que le capteur répond.
+                          onCalibratePower: powerCalibrationAvailable(widget.hub)
+                              ? _calibratePower
+                              : null,
                         ),
                     },
                   ),

@@ -40,11 +40,11 @@ Cible par défaut : `https://sports.logicraft.ch`
 
 ```
 lib/
-  main.dart              # écran des capteurs (l'accueil) + amorçage des magasins
+  main.dart              # l'accueil (naviguer, état des capteurs) + amorçage
   drivetrain.dart        # dents et circonférence : traduit une position Di2
   account/               # session du site, seuils du cycliste, écran Compte
   ble/                   # scan, connexion, décodeurs GATT, hub d'échantillons
-  devices/               # les appareils appairés, sur disque
+  devices/               # les appareils appairés (disque) + la page d'appairage
   lighting/              # décision d'éclairage (modes) + envoi au feu
   navigation/            # cible de navigation, pont capteurs→page, luminosité
   recording/             # enregistreur, magasin de sorties, agrégats, .fit
@@ -54,6 +54,33 @@ assets/sounds/           # tonalités d'alerte radar — GÉNÉRÉES, ne pas éd
 tool/fit_sample.dart     # génère un .fit de test (voir HOWTO.md)
 tool/radar_tones.dart    # (re)génère assets/sounds/ : dart run tool/radar_tones.dart
 ```
+
+## L'accueil et la page des capteurs
+
+`HomePage` (`main.dart`) est l'écran de départ : **« Naviguer »**, l'état des
+capteurs, et les cartes qui disent ce qui manquera sur la route (session,
+seuils, enregistrement, valeurs en direct). L'appairage, lui, est une sous-page
+(`devices/sensors_page.dart`) — on appaire un capteur une fois, on part rouler
+tous les jours ; le scan et les listes n'ont pas à occuper l'écran qu'on ouvre
+avant chaque sortie.
+
+Ce qui en reste sur l'accueil est `SensorStatusStrip` : **une icône par capteur
+connu, verte s'il est connecté, orange sinon**. La forme dit quel capteur, la
+couleur dit s'il mesurera quelque chose. Deux couleurs et pas trois
+(`sensorLinkColor`, `devices/sensor_link_status.dart`) : « hors ligne », « en
+cours » et « échec » se ressemblent trop pour qu'on les distingue d'un coup
+d'œil, et le détail est en toutes lettres sur la sous-page. La rangée se
+reconstruit sur `KnownDevicesStore` — c'est `remember()`, appelé au passage à
+*connecté*, qui la fait verdir — et chaque pastille s'abonne en plus à
+`connection.status`, pour le capteur qui décroche en route.
+
+`DeviceLinker` (`devices/device_linker.dart`) porte le geste commun aux deux
+écrans : connecter, puis **mémoriser à la connexion, jamais au tap** — tant que
+l'appareil n'a pas répondu, on ne connaît ni son nom ni ses capacités. La
+reconnexion des capteurs connus reste sur l'accueil, déclenchée par l'état de
+l'adaptateur et non par `initState` : au lancement `adapterStateNow` vaut encore
+`unknown`, et un scan est de toute façon inutile pour se rattacher à une adresse
+déjà connue.
 
 ## Le WebView de navigation
 
@@ -153,13 +180,19 @@ publiées vers la page, bouton retour, et les pages du tableau de bord.
   qui monte sans borne, replié par `pageOf()`, et `rawPageFor()` vise une page
   par le chemin court.
 - **La page Effort dit le cumul, le bandeau dit l'instant** : temps passé par
-  zone cardio depuis le départ (barre + légende), moyennes cardio/puissance,
-  cadence, D+. Tout vient de l'enregistreur — **hors enregistrement, elle
-  n'affiche rien** plutôt que des zéros. Le temps par zone se calcule d'un
-  **histogramme** de mesures (`RideStats.hrHistogram`, paliers de 5 bpm comme le
+  zone depuis le départ (barre + légende, **une carte pour le cardio et une pour
+  la puissance**), moyennes cardio/puissance, cadence, D+. Tout vient de
+  l'enregistreur — **hors enregistrement, elle n'affiche rien** plutôt que des
+  zéros. Le temps par zone se calcule d'un **histogramme** de mesures
+  (`RideStats.hrHistogram` et `powerHistogram`, paliers de 5 bpm et 25 W comme le
   site) replié en zones à l'affichage (`zoneSharesOf`, `ride/zone_time.dart`) :
   un profil qui arrive en pleine sortie recolore alors le temps **déjà écoulé**,
-  là où un compteur par zone ne vaudrait que pour la suite.
+  là où un compteur par zone ne vaudrait que pour la suite. Les deux cartes sont
+  le même code à deux jeux d'arguments près, l'icône de la ligne courante
+  comprise (cœur / éclair) : elles se ressemblent trop pour qu'on les distingue
+  autrement. Empilées et non commutées par un sélecteur — le cardio traîne
+  derrière l'effort et lisse les relances, la puissance les compte toutes, et
+  c'est cet écart qu'on vient lire.
 - **Répartition des gestes** — c'est le point délicat :
 
 | Geste | Effet |
@@ -188,12 +221,16 @@ publiées vers la page, bouton retour, et les pages du tableau de bord.
   celle-là même qui sert à ses propres zones, donc l'appli ne peut pas le
   contredire. Un bandeau sans zone cardio veut dire que le site n'a rien : ni
   saisie, ni sortie vélo au cardio dans sa fenêtre de 6 semaines.
-  Le cardio **et** sa zone sont peints aux couleurs de la zone du moment
-  (`ui/zone_colors.dart`, bleu Z1 → rouge Z5) : à 30 km/h on voit « du rouge »
-  avant de déchiffrer « Z5 ». Aplats saturés et non teintés — sur le fond sombre
-  du bandeau, cinq transparences donnent cinq gris — d'où le texte noir sur le
-  jaune. La puissance reste sans fond : sept zones, et aucune palette qui fasse
-  autorité.
+  La mesure **et** sa zone sont peintes aux couleurs de la zone du moment
+  (`ui/zone_colors.dart`, bleu Z1 → rouge Z5), cardio comme puissance, y compris
+  dans le jeu « sortie » où les watts n'ont pas de case de zone à côté d'eux : à
+  30 km/h on voit « du rouge » avant de déchiffrer « Z5 ». Aplats saturés et non
+  teintés — sur le fond sombre du bandeau, cinq transparences donnent cinq gris —
+  d'où le texte noir sur le jaune. **Une seule table pour les deux mesures** :
+  `z4` est le seuil des deux côtés, deux palettes obligeraient à apprendre deux
+  codes pour une seule sensation. La puissance prolonge simplement le dégradé
+  au-delà du rouge, dans deux violets (`z6`, `z7`) que le cardio, trop lent, ne
+  sait pas distinguer et n'atteint donc jamais.
 
 ### Retour automatique et radar
 
@@ -250,6 +287,35 @@ entend est ce qui sortira sur la route. « Débrancher le radar » y coupe les
 trames pour vérifier que la perte du capteur ne s'annonce pas comme une voie
 libre, et « Simuler la veille » pose le voile noir pour juger le réveil radar de
 bout en bout (le rétroéclairage, lui, ne bouge pas sur le banc).
+
+## Calibrer un capteur de puissance
+
+C'est le **seul endroit où l'appli écrit** sur un capteur : tout le reste est en
+lecture. La procédure est *Start Offset Compensation* du Cycling Power Control
+Point (0x2A66) — s'abonner aux indications, écrire `0x0C`, attendre la réponse ;
+l'abonnement **d'abord**, sinon la plupart des capteurs refusent l'écriture,
+n'ayant personne à qui répondre.
+
+- Le protocole est isolé dans `ble/power_calibration.dart`, pur et testé.
+  `calibrationResponseOf` rend `null` quand la trame ne nous concerne pas : le
+  Control Point est partagé par toutes les procédures du profil, et la réponse
+  d'une autre demande ne doit ni conclure ni faire échouer la nôtre. L'offset
+  est **signé** — une jauge dérive dans les deux sens, et un sint16 lu en uint16
+  sort un 65 000 absurde.
+- `SensorConnection.calibratePower()` **ne lève jamais** : tout ressort en
+  `PowerCalibrationResult`, parce que l'appelant est une boîte de dialogue
+  ouverte au bord de la route. Le délai (15 s) est long à dessein, une jauge met
+  plusieurs secondes à se stabiliser.
+- La même boîte (`ui/power_calibration_dialog.dart`) sert **à l'arrêt et en
+  sortie** : menu d'une ligne de la page Capteurs, et menu de la page Effort.
+  C'est en roulant qu'on voit une puissance dériver ; s'il fallait quitter la
+  navigation — donc perdre la carte et son démarrage — on finirait la sortie
+  avec des watts faux.
+- La commande n'apparaît que si `canCalibratePower` est vrai (le Control Point a
+  été découvert) **et** le capteur connecté : un boîtier qui ne se calibre que
+  par l'appli du constructeur ferait passer un refus de protocole pour une
+  panne. La boîte prend une *fonction* et non une connexion, ce qui permet de la
+  tester sans Bluetooth.
 
 ## Ajouter un capteur BLE
 

@@ -6,6 +6,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'decoders/di2.dart';
 import 'samples.dart';
 import 'sensor_connection.dart';
+import 'sensor_profile.dart';
 
 /// Agrège plusieurs capteurs en un seul flux d'échantillons.
 ///
@@ -33,6 +34,15 @@ class SensorHub {
   /// vide = route dégagée. La distinction compte : on n'affiche pas la même
   /// chose dans les deux cas.
   final latestRadar = ValueNotifier<RadarSample?>(null);
+
+  /// Les connexions qui portent cette capacité, dans l'ordre d'ajout.
+  ///
+  /// Sur les capacités *détectées*, jamais sur ce que l'appareil annonçait au
+  /// scan : c'est la découverte des services qui fait foi.
+  List<SensorConnection> connectionsWith(SensorKind kind) => [
+        for (final connection in _connections)
+          if (connection.detectedKinds.value.contains(kind)) connection,
+      ];
 
   /// Une connexion déjà ouverte vers cet appareil, s'il y en a une.
   SensorConnection? connectionFor(DeviceIdentifier remoteId) {

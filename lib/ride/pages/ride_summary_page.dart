@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../account/rider_profile.dart';
 import '../../account/rider_profile_store.dart';
 import '../../recording/gps_source.dart';
 import '../../recording/ride_recorder.dart';
@@ -32,6 +33,7 @@ class RideSummaryPage extends StatelessWidget {
     required this.riderProfile,
     this.onChooseRoute,
     this.onClearRoute,
+    this.onCalibratePower,
   });
 
   final RideRecorder recorder;
@@ -47,6 +49,11 @@ class RideSummaryPage extends StatelessWidget {
   final VoidCallback? onChooseRoute;
   final VoidCallback? onClearRoute;
 
+  /// Calibrer le capteur de puissance. Fourni par la coquille seulement quand
+  /// un capteur connecté sait le faire — le menu ne montre pas une commande qui
+  /// n'aurait que « non » à répondre.
+  final VoidCallback? onCalibratePower;
+
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
@@ -59,9 +66,7 @@ class RideSummaryPage extends StatelessWidget {
             _title(),
             const SizedBox(height: 16),
             _recordingControl(),
-            _hrZones(),
-            const SizedBox(height: 12),
-            _powerZones(),
+            _zoneBreakdowns(),
             const SizedBox(height: 12),
             _effort(),
             const SizedBox(height: 12),
@@ -91,27 +96,31 @@ class RideSummaryPage extends StatelessWidget {
             ),
           ),
         ),
-        if (onChooseRoute != null || onClearRoute != null) _routeMenu(),
+        if (onChooseRoute != null ||
+            onClearRoute != null ||
+            onCalibratePower != null)
+          _actionsMenu(),
       ],
     );
   }
 
-  /// Choisir un autre tracé, ou retirer celui en cours.
+  /// Les actions rares de la sortie : changer de tracé, le retirer, calibrer la
+  /// puissance.
   ///
-  /// Un menu et pas deux boutons : ce sont des actions rares — on part avec son
-  /// itinéraire — et deux aplats de plus en tête de page attireraient le pouce
-  /// au détriment de l'enregistrement, qui est la commande qu'on vient
-  /// réellement chercher ici.
+  /// Un menu et pas des boutons : ce sont des actions rares — on part avec son
+  /// itinéraire et un capteur qu'on croit juste — et des aplats de plus en tête
+  /// de page attireraient le pouce au détriment de l'enregistrement, qui est la
+  /// commande qu'on vient réellement chercher ici.
   ///
   /// « Retirer » n'apparaît que s'il y a quelque chose à retirer, et c'est la
   /// page web qui le dit : elle seule sait ce qu'elle suit vraiment, y compris
   /// un tracé restauré depuis son stockage ou une destination posée à la main
   /// sur la carte. Sans état reçu, on ne prétend pas savoir.
-  Widget _routeMenu() => ValueListenableBuilder<NavState?>(
+  Widget _actionsMenu() => ValueListenableBuilder<NavState?>(
         valueListenable: nav,
         builder: (context, state, _) => PopupMenuButton<VoidCallback>(
           icon: const Icon(Icons.more_vert, color: Colors.white70),
-          tooltip: 'Itinéraire',
+          tooltip: 'Actions',
           onSelected: (action) => action(),
           itemBuilder: (context) => [
             if (onChooseRoute case final choose?)
@@ -130,6 +139,15 @@ class RideSummaryPage extends StatelessWidget {
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(Icons.layers_clear),
                   title: Text('Retirer l\'itinéraire'),
+                ),
+              ),
+            if (onCalibratePower case final calibrate?)
+              PopupMenuItem(
+                value: calibrate,
+                child: const ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.bolt),
+                  title: Text('Calibrer la puissance'),
                 ),
               ),
           ],
@@ -170,62 +188,123 @@ class RideSummaryPage extends StatelessWidget {
         },
       );
 
-  /// Le temps passé dans chaque zone cardio depuis le départ.
+  /// Les deux répartitions du temps, cardio puis puissance.
   ///
-  /// Cardio seulement : la puissance a sept zones et aucune palette qui fasse
-  /// autorité (cf. `zone_colors.dart`), et une barre en nuances de gris ne se
-  /// lit pas. Ses chiffres sont dans la carte d'en dessous.
+  /// Écoute pour les deux : les histogrammes grossissent à chaque point capturé
+  /// et les zones arrivent du site en cours de sortie, donc le temps déjà écoulé
+  /// doit pouvoir se recolorer d'un coup — c'est tout l'intérêt de garder un
+  /// histogramme plutôt qu'un compteur par zone.
   ///
-  /// Reconstruit sur les deux sources, l'enregistreur **et** le profil : les
-  /// zones arrivent du site en cours de sortie, et le temps déjà écoulé doit se
-  /// recolorer d'un coup — c'est tout l'intérêt de garder un histogramme plutôt
-  /// qu'un compteur par zone.
-  ///
-  /// La seule chose que cette carte emprunte à l'instant, c'est **où l'on se
-  /// trouve** : la ligne de la zone courante est peinte de sa couleur, faute de
-  /// quoi le cumul ne se rattache à rien de ce qu'on ressent en pédalant.
-  Widget _zones() => ListenableBuilder(
+  /// Hors enregistrement, **une seule carte pour les deux** : le message serait
+  /// identique, et deux fois de suite il se lirait comme un bégaiement de
+  /// l'appli plutôt que comme deux répartitions qui attendent leur premier
+  /// point.
+  Widget _zoneBreakdowns() => ListenableBuilder(
         listenable: Listenable.merge([recorder, riderProfile]),
         builder: (context, _) {
           if (!recorder.isActive) {
             return const _Card(
-              title: 'Temps par zone cardio',
+              title: 'Temps par zone',
               lines: ['La répartition se remplit dès le départ.'],
             );
           }
-
-          final shares = zoneSharesOf(
-            recorder.stats.hrHistogram,
-            bucket: RideStats.hrBucketBpm,
-            zones: riderProfile.profile.hrZones,
-            perPoint: recorder.tickPeriod,
-          );
-
-          if (shares.isEmpty) {
-            return _Card(
-              title: 'Temps par zone cardio',
-              lines: [
-                riderProfile.profile.hasHrZones
-                    ? 'Pas encore de cardio mesuré.'
-                    : 'Seuil cardiaque inconnu du site : pas de zones.',
-              ],
-            );
-          }
-          // La zone du moment vient du hub, comme celle du bandeau, et non de
-          // l'histogramme : celui-ci ne dit pas *quand* une mesure est tombée,
-          // et son dernier palier rempli peut dater du col d'il y a une heure.
-          // Même source des deux côtés, donc jamais deux zones différentes à
-          // l'écran au même instant.
-          return ValueListenableBuilder<int?>(
-            valueListenable: recorder.hub.latestHeartRate,
-            builder: (context, bpm, _) => _ZoneBreakdown(
-              shares: shares,
-              current:
-                  bpm == null ? null : riderProfile.profile.hrZoneFor(bpm)?.key,
-            ),
+          return Column(
+            children: [
+              _hrZones(),
+              const SizedBox(height: 12),
+              _powerZones(),
+            ],
           );
         },
       );
+
+  /// Le temps passé dans chaque zone cardio depuis le départ.
+  Widget _hrZones() => _zones(
+        title: 'Temps par zone cardio',
+        histogram: recorder.stats.hrHistogram,
+        bucket: RideStats.hrBucketBpm,
+        zones: riderProfile.profile.hrZones,
+        noMeasure: 'Pas encore de cardio mesuré.',
+        noThreshold: 'Seuil cardiaque inconnu du site : pas de zones.',
+        latest: recorder.hub.latestHeartRate,
+        zoneOf: (value) => riderProfile.profile.hrZoneFor(value)?.key,
+        currentIcon: Icons.favorite,
+      );
+
+  /// Le même cumul, côté puissance.
+  ///
+  /// Deux cartes plutôt qu'une à bascule : les deux répartitions ne racontent
+  /// pas la même sortie — le cardio traîne derrière l'effort et lisse les
+  /// relances, la puissance les compte toutes. Les mettre l'une au-dessus de
+  /// l'autre, c'est justement pouvoir lire cet écart ; un sélecteur obligerait
+  /// à mémoriser la première pour la comparer à la seconde.
+  ///
+  /// Sept zones ici contre cinq là, sans que rien ne le déclare : la liste vient
+  /// du site, et [zoneSharesOf] dessine ce qu'on lui donne.
+  Widget _powerZones() => _zones(
+        title: 'Temps par zone de puissance',
+        histogram: recorder.stats.powerHistogram,
+        bucket: RideStats.powerBucketW,
+        zones: riderProfile.profile.powerZones,
+        noMeasure: 'Pas encore de puissance mesurée.',
+        noThreshold: 'FTP inconnue du site : pas de zones.',
+        latest: recorder.hub.latestPower,
+        zoneOf: (value) => riderProfile.profile.powerZoneFor(value)?.key,
+        currentIcon: Icons.bolt,
+      );
+
+  /// La répartition du temps d'une mesure dans les zones du cycliste.
+  ///
+  /// N'écoute rien elle-même : [_zoneBreakdowns] la reconstruit à chaque point
+  /// et à chaque profil reçu. Elle n'est donc appelée qu'en enregistrement, et
+  /// n'a pas à redire ce qui se passe avant le départ.
+  ///
+  /// La seule chose que cette carte emprunte à l'instant, c'est **où l'on se
+  /// trouve** : la ligne de la zone courante est peinte de sa couleur, faute de
+  /// quoi le cumul ne se rattache à rien de ce qu'on ressent en pédalant.
+  Widget _zones({
+    required String title,
+    required Map<int, int> histogram,
+    required int bucket,
+    required List<TrainingZone> zones,
+    required String noMeasure,
+    required String noThreshold,
+    required ValueListenable<int?> latest,
+    required String? Function(int value) zoneOf,
+    required IconData currentIcon,
+  }) {
+    final shares = zoneSharesOf(
+      histogram,
+      bucket: bucket,
+      zones: zones,
+      perPoint: recorder.tickPeriod,
+    );
+
+    // Deux façons d'être vide, et pas le même message : sans zones, aucune
+    // mesure n'en donnera jamais, et c'est le site qu'il faut aller voir — pas
+    // le capteur.
+    if (shares.isEmpty) {
+      return _Card(
+        title: title,
+        lines: [zones.isEmpty ? noThreshold : noMeasure],
+      );
+    }
+
+    // La zone du moment vient du hub, comme celle du bandeau, et non de
+    // l'histogramme : celui-ci ne dit pas *quand* une mesure est tombée, et son
+    // dernier palier rempli peut dater du col d'il y a une heure. Même source
+    // des deux côtés, donc jamais deux zones différentes à l'écran au même
+    // instant.
+    return ValueListenableBuilder<int?>(
+      valueListenable: latest,
+      builder: (context, value, _) => _ZoneBreakdown(
+        title: title,
+        shares: shares,
+        current: value == null ? null : zoneOf(value),
+        currentIcon: currentIcon,
+      ),
+    );
+  }
 
   /// Les moyennes de la sortie, cardio et puissance côte à côte.
   Widget _effort() => ListenableBuilder(
@@ -476,11 +555,18 @@ class _ResumeBanner extends StatelessWidget {
 /// proportion se lit dans une longueur partagée, pas dans cinq longueurs à
 /// comparer de tête.
 class _ZoneBreakdown extends StatelessWidget {
-  const _ZoneBreakdown({required this.shares, this.current});
+  const _ZoneBreakdown({
+    required this.title,
+    required this.shares,
+    required this.currentIcon,
+    this.current,
+  });
+
+  final String title;
 
   final List<ZoneShare> shares;
 
-  /// La zone où bat le cœur en ce moment, `null` sans cardio.
+  /// La zone où l'on se trouve en ce moment, `null` sans mesure.
   ///
   /// Sa ligne est peinte de sa couleur, tout le long : la légende énumère un
   /// cumul, et sans repère il faut lire le chiffre du bandeau puis retrouver la
@@ -488,6 +574,11 @@ class _ZoneBreakdown extends StatelessWidget {
   /// à la question d'un coup d'œil — « je suis dans celle-là, et ça fait
   /// 12 minutes qu'elle dure ».
   final String? current;
+
+  /// Ce qui remplace la pastille sur la ligne courante : un cœur ou un éclair.
+  /// Les deux cartes se ressemblent trait pour trait — c'est cette icône, autant
+  /// que le titre, qui dit laquelle on est en train de lire.
+  final IconData currentIcon;
 
   /// Hauteur de la barre. Généreuse : c'est aussi la surface de lecture des
   /// couleurs, et un liseré de 6 pt ne se distingue plus sous la pluie.
@@ -510,9 +601,9 @@ class _ZoneBreakdown extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Temps par zone cardio',
-            style: TextStyle(color: Colors.white70, fontSize: 13),
+          Text(
+            title,
+            style: const TextStyle(color: Colors.white70, fontSize: 13),
           ),
           const SizedBox(height: 12),
           ClipRRect(
@@ -543,7 +634,11 @@ class _ZoneBreakdown extends StatelessWidget {
           for (final share in shares)
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
-              child: _ZoneLine(share: share, current: share.key == current),
+              child: _ZoneLine(
+                share: share,
+                current: share.key == current,
+                currentIcon: currentIcon,
+              ),
             ),
         ],
       ),
@@ -552,12 +647,18 @@ class _ZoneBreakdown extends StatelessWidget {
 }
 
 class _ZoneLine extends StatelessWidget {
-  const _ZoneLine({required this.share, this.current = false});
+  const _ZoneLine({
+    required this.share,
+    required this.currentIcon,
+    this.current = false,
+  });
 
   final ZoneShare share;
 
   /// Celle où l'on se trouve : la ligne passe sur l'aplat de sa zone.
   final bool current;
+
+  final IconData currentIcon;
 
   @override
   Widget build(BuildContext context) {
@@ -586,13 +687,13 @@ class _ZoneLine extends StatelessWidget {
       child: Row(
         children: [
           // La pastille disparaîtrait dans l'aplat de sa propre couleur : sur la
-          // ligne courante, elle cède la place au cœur, qui dit « c'est ici que
-          // ça bat en ce moment » plutôt que de répéter la couleur.
+          // ligne courante, elle cède la place à l'icône, qui dit « c'est ici
+          // que ça se passe en ce moment » plutôt que de répéter la couleur.
           SizedBox(
             width: 12,
             height: 12,
             child: current
-                ? Icon(Icons.favorite, size: 12, color: ink)
+                ? Icon(currentIcon, size: 12, color: ink)
                 : DecoratedBox(
                     decoration: BoxDecoration(
                       color: color,

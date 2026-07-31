@@ -45,6 +45,12 @@ class BleCharacteristics {
   static final heartRateMeasurement = Guid(uuid128(0x2A37));
   static final cyclingPowerMeasurement = Guid(uuid128(0x2A63));
   static final cscMeasurement = Guid(uuid128(0x2A5B));
+
+  /// Cycling Power Control Point : le seul canal où l'appli *écrit*. Il porte
+  /// la calibration (compensation d'offset) — voir `power_calibration.dart`.
+  /// Facultatif dans le profil : un capteur peut publier sa puissance sans
+  /// l'exposer.
+  static final cyclingPowerControlPoint = Guid(uuid128(0x2A66));
   static final batteryLevel = Guid(uuid128(0x2A19));
 
   /// Position des vitesses Di2. Format non documenté par Shimano, décodé par

@@ -9,12 +9,11 @@ import 'account/account_page.dart';
 import 'account/rider_profile_store.dart';
 import 'account/site_session.dart';
 import 'account/threshold_gap.dart';
-import 'ble/samples.dart';
-import 'ble/sensor_connection.dart';
 import 'ble/sensor_hub.dart';
-import 'ble/sensor_profile.dart';
-import 'devices/known_device.dart';
+import 'devices/device_linker.dart';
 import 'devices/known_devices_store.dart';
+import 'devices/sensor_status_strip.dart';
+import 'devices/sensors_page.dart';
 import 'drivetrain.dart';
 import 'navigation/navigation_picker_sheet.dart';
 import 'navigation/navigation_target.dart';
@@ -28,7 +27,6 @@ import 'recording/ride_store.dart';
 import 'recording/rides_page.dart';
 import 'ui/metric_tile.dart';
 import 'ui/radar_card.dart';
-import 'ui/sensor_icons.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -146,7 +144,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
         useMaterial3: true,
       ),
-      home: SensorsPage(
+      home: HomePage(
         devices: widget.devices,
         hub: _hub,
         recorder: _recorder,
@@ -281,14 +279,15 @@ Future<void> _tellRecordingFailed(BuildContext context, String message) async {
   );
 }
 
-/// Écran de diagnostic des capteurs : scanner, connecter, afficher en direct.
+/// L'accueil : partir rouler, et voir avant de partir que tout répond.
 ///
-/// Ce n'est pas l'écran de sortie — la navigation, elle, est dans
-/// [RideShellPage]. Celui-ci reste l'outil de dépannage : voir qui répond, ce
-/// qu'on décode, et les trames brutes pour finir de décoder les octets Di2
-/// encore inconnus (offset 3, offset 15).
-class SensorsPage extends StatefulWidget {
-  const SensorsPage({
+/// Ce n'est ni l'écran de sortie — la navigation est dans [RideShellPage] — ni
+/// l'écran d'appairage, qui est une sous-page ([SensorsPage]). Ici on trouve le
+/// bouton « Naviguer », l'état des capteurs connus en une rangée d'icônes, et
+/// les quelques cartes qui disent ce qui manquera sur la route (session du
+/// site, seuils, enregistrement).
+class HomePage extends StatefulWidget {
+  const HomePage({
     super.key,
     required this.devices,
     required this.hub,
@@ -323,24 +322,25 @@ class SensorsPage extends StatefulWidget {
   final RiderProfileStore riderProfile;
 
   @override
-  State<SensorsPage> createState() => _SensorsPageState();
+  State<HomePage> createState() => _HomePageState();
 }
 
-class _SensorsPageState extends State<SensorsPage> {
+class _HomePageState extends State<HomePage> {
   final _drivetrain = Drivetrain.road;
-  final _recentFrames = <RawFrame>[];
 
-  List<ScanResult> _results = const [];
-  bool _scanning = false;
   var _adapterState = BluetoothAdapterState.unknown;
-  StreamSubscription<List<ScanResult>>? _scanSub;
-  StreamSubscription<bool>? _scanStateSub;
   StreamSubscription<BluetoothAdapterState>? _adapterSub;
-  StreamSubscription<RawFrame>? _frameSub;
 
   KnownDevicesStore get _devices => widget.devices;
   SensorHub get _hub => widget.hub;
   RideRecorder get _recorder => widget.recorder;
+  late final _linker = DeviceLinker(hub: _hub, devices: _devices);
+
+  void _openSensors() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => SensorsPage(devices: _devices, hub: _hub),
+    ));
+  }
 
   void _openRides() {
     Navigator.of(context).push(MaterialPageRoute(
@@ -368,17 +368,9 @@ class _SensorsPageState extends State<SensorsPage> {
   void initState() {
     super.initState();
 
-    _devices.addListener(_onDevicesChanged);
     // La navigation, elle aussi, constate l'état de la session : revenir d'une
     // sortie doit rafraîchir le bandeau ici.
     widget.session.addListener(_onSessionChanged);
-
-    _scanSub = FlutterBluePlus.onScanResults.listen((results) {
-      if (mounted) setState(() => _results = results);
-    });
-    _scanStateSub = FlutterBluePlus.isScanning.listen((scanning) {
-      if (mounted) setState(() => _scanning = scanning);
-    });
 
     // La reconnexion est déclenchée par l'état de l'adaptateur, pas par
     // `initState` : au lancement, `adapterStateNow` vaut encore `unknown` — il
@@ -390,128 +382,22 @@ class _SensorsPageState extends State<SensorsPage> {
     _adapterSub = FlutterBluePlus.adapterState.listen((state) {
       if (!mounted) return;
       setState(() => _adapterState = state);
-      if (state == BluetoothAdapterState.on) _reconnectKnownDevices();
-    });
-
-    // Les dernières trames brutes restent à l'écran : c'est l'outil de reverse,
-    // et ça montre immédiatement si un capteur n'émet que du silence.
-    _frameSub = _hub.rawFrames.listen((frame) {
-      if (!mounted) return;
-      setState(() {
-        _recentFrames.insert(0, frame);
-        if (_recentFrames.length > 12) _recentFrames.removeLast();
-      });
+      // Rien à rafraîchir à la main derrière : la rangée de capteurs se
+      // reconstruit sur le magasin, et un capteur qui répond y est réécrit
+      // (`remember`) au moment même où il passe à « connecté ».
+      if (state == BluetoothAdapterState.on) unawaited(_linker.reconnectKnown());
     });
   }
 
   @override
   void dispose() {
-    _devices.removeListener(_onDevicesChanged);
     widget.session.removeListener(_onSessionChanged);
-    _scanSub?.cancel();
-    _scanStateSub?.cancel();
     _adapterSub?.cancel();
-    _frameSub?.cancel();
     // Le hub n'est pas fermé ici : il survit à cet écran.
     super.dispose();
   }
 
-  void _onDevicesChanged() {
-    if (mounted) setState(() {});
-  }
-
   void _onSessionChanged() {
-    if (mounted) setState(() {});
-  }
-
-  /// Reprend contact avec les capteurs connus, sans scan préalable.
-  ///
-  /// Un scan est inutile pour se rattacher à une adresse déjà connue. Les
-  /// demandes partent toutes en même temps : elles rendent la main aussitôt,
-  /// le système rattachant chaque capteur au fur et à mesure qu'il réapparaît.
-  ///
-  /// Idempotent : le hub renvoie la connexion existante si l'appareil est déjà
-  /// suivi, ce qui permet de rappeler la méthode à chaque allumage du
-  /// Bluetooth.
-  Future<void> _reconnectKnownDevices() async {
-    if (!await FlutterBluePlus.isSupported) return;
-
-    for (final known in _devices.devices) {
-      if (!known.autoConnect) continue;
-      unawaited(_connect(
-        BluetoothDevice.fromId(known.remoteId),
-        label: known.name.isEmpty ? null : known.name,
-        announce: false,
-      ));
-    }
-  }
-
-  Future<void> _startScan() async {
-    if (!await FlutterBluePlus.isSupported) {
-      _toast('Bluetooth non supporté sur cet appareil');
-      return;
-    }
-    if (_adapterState != BluetoothAdapterState.on) {
-      try {
-        await FlutterBluePlus.turnOn();
-      } catch (_) {
-        _toast('Active le Bluetooth pour scanner');
-        return;
-      }
-    }
-
-    setState(() => _results = const []);
-    // Scan large, sans filtre de service : le Di2 n'annonce pas forcément son
-    // service propriétaire dans ses trames de publicité.
-    await FlutterBluePlus.startScan(timeout: const Duration(seconds: 15));
-  }
-
-  /// Connecte un appareil et le retient dès qu'il a répondu.
-  ///
-  /// [announce] distingue le geste explicite (tap sur un résultat de scan, où
-  /// un échec mérite un message) de la reconnexion silencieuse au démarrage.
-  Future<void> _connect(
-    BluetoothDevice device, {
-    String? label,
-    bool announce = true,
-  }) async {
-    if (announce) await FlutterBluePlus.stopScan();
-
-    try {
-      final connection = await _hub.add(device, label: label);
-      _rememberOnConnect(connection);
-      if (mounted) setState(() {});
-    } catch (e) {
-      if (announce) _toast('Connexion échouée : $e');
-    }
-  }
-
-  /// Écrit l'appareil au catalogue à chaque fois qu'il passe à *connecté*.
-  ///
-  /// À la connexion, pas au tap : tant que l'appareil n'a pas répondu on ne
-  /// connaît ni son nom ni ses capacités, et mémoriser une adresse qui ne
-  /// répond jamais encombrerait la liste. Les reconnexions repassent par là,
-  /// ce qui rafraîchit la date et suffit à trier la liste par usage.
-  void _rememberOnConnect(SensorConnection connection) {
-    void persist() {
-      if (connection.status.value != SensorStatus.connected) return;
-      _devices.remember(
-        connection.device.remoteId.str,
-        name: connection.name,
-        kinds: connection.detectedKinds.value,
-      );
-    }
-
-    connection.status.addListener(persist);
-    // Les capacités arrivent à la découverte des services, parfois après le
-    // passage à « connecté » : les deux notifications déclenchent l'écriture.
-    connection.detectedKinds.addListener(persist);
-    persist();
-  }
-
-  Future<void> _forget(KnownDevice known) async {
-    await _hub.remove(DeviceIdentifier(known.remoteId));
-    await _devices.forget(known.remoteId);
     if (mounted) setState(() {});
   }
 
@@ -545,34 +431,11 @@ class _SensorsPageState extends State<SensorsPage> {
     );
   }
 
-  void _toast(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
-  }
-
   @override
   Widget build(BuildContext context) {
-    final known = _devices.devices;
-    // Un capteur déjà connu n'a rien à faire dans les résultats de scan : il
-    // est déjà listé au-dessus, avec son état réel.
-    final knownIds = {for (final device in known) device.remoteId};
-    final discovered = [
-      for (final result in _results)
-        if (!knownIds.contains(result.device.remoteId.str)) result,
-    ];
-
-    // Un appareil qu'on vient de taper n'est pas encore au catalogue — il n'y
-    // entre qu'une fois connecté. Sans cette section, la connexion en cours
-    // n'aurait aucun retour visuel.
-    final pending = [
-      for (final connection in _hub.connections)
-        if (!knownIds.contains(connection.device.remoteId.str)) connection,
-    ];
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Capteurs'),
+        title: const Text('Sports Scope'),
         actions: [
           IconButton(
             onPressed: _openAccount,
@@ -599,9 +462,9 @@ class _SensorsPageState extends State<SensorsPage> {
             tooltip: 'Simuler le radar',
           ),
           IconButton(
-            onPressed: _scanning ? FlutterBluePlus.stopScan : _startScan,
-            icon: Icon(_scanning ? Icons.stop : Icons.search),
-            tooltip: _scanning ? 'Arrêter' : 'Scanner',
+            onPressed: _openSensors,
+            icon: const Icon(Icons.sensors),
+            tooltip: 'Capteurs',
           ),
         ],
       ),
@@ -666,6 +529,16 @@ class _SensorsPageState extends State<SensorsPage> {
           // déjà que rien n'est connecté, ce qui est la vraie cause. Deux cartes
           // pour un seul problème se lisent comme deux problèmes.
           if (widget.session.signedIn != false) _thresholdGapCard(),
+          // L'état des capteurs passe avant tout le reste : c'est la question
+          // qu'on se pose au moment de partir, et la seule à laquelle il faut
+          // répondre avant de rouler — un capteur oublié sur le vélo d'à côté
+          // ne se rattrape pas en route.
+          SensorStatusStrip(
+            devices: _devices,
+            hub: _hub,
+            onTap: _openSensors,
+          ),
+          const SizedBox(height: 12),
           // L'enregistrement passe avant les valeurs en direct : c'est le geste
           // qu'on cherche avant de partir, les mesures ne sont qu'un contrôle.
           RecordingCard(recorder: _recorder, store: widget.rides),
@@ -673,30 +546,6 @@ class _SensorsPageState extends State<SensorsPage> {
           LiveValuesCard(hub: _hub, drivetrain: _drivetrain),
           const SizedBox(height: 12),
           RadarCard(hub: _hub),
-          const SizedBox(height: 16),
-          if (known.isNotEmpty) ...[
-            _sectionTitle('Mes capteurs'),
-            for (final device in known) _knownTile(device),
-            const SizedBox(height: 16),
-          ],
-          if (pending.isNotEmpty) ...[
-            _sectionTitle('Connexion en cours'),
-            for (final connection in pending) _connectionTile(connection),
-            const SizedBox(height: 16),
-          ],
-          _sectionTitle(_scanning ? 'Scan en cours…' : 'Appareils détectés'),
-          if (discovered.isEmpty && !_scanning)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: Text('Réveille tes capteurs puis lance un scan.',
-                  textAlign: TextAlign.center),
-            ),
-          for (final result in discovered) _scanTile(result),
-          if (_recentFrames.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            _sectionTitle('Trames brutes'),
-            for (final frame in _recentFrames) _frameTile(frame),
-          ],
         ],
       ),
     );
@@ -727,149 +576,4 @@ class _SensorsPageState extends State<SensorsPage> {
           );
         },
       );
-
-  Widget _sectionTitle(String text) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Text(text, style: Theme.of(context).textTheme.titleMedium),
-      );
-
-  /// Un capteur mémorisé, connecté ou non.
-  ///
-  /// La ligne existe même quand l'appareil est éteint : c'est tout l'intérêt de
-  /// s'en souvenir, on voit ce qui manque avant de partir.
-  Widget _knownTile(KnownDevice known) {
-    final connection = _hub.connectionFor(DeviceIdentifier(known.remoteId));
-
-    Widget tile(SensorStatus? status) {
-      final connected = status == SensorStatus.connected;
-      // L'icône dit *ce qu'est* le capteur, la couleur dit s'il répond : deux
-      // informations dans un seul point de l'écran, lisible en roulant.
-      final color = connected
-          ? Colors.teal
-          : (status == null ? Colors.grey : Colors.orange);
-
-      return ListTile(
-        dense: true,
-        leading: Icon(iconForDevice(known.kinds), color: color),
-        title: Text(known.name.isEmpty ? '(sans nom)' : known.name),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SensorKindIcons(known.kinds),
-            Text(_statusLabel(status, known)),
-          ],
-        ),
-        isThreeLine: true,
-        trailing: PopupMenuButton<String>(
-          onSelected: (action) => switch (action) {
-            'forget' => _forget(known),
-            'auto' => _devices.setAutoConnect(known.remoteId, !known.autoConnect),
-            'connect' => _connect(
-                BluetoothDevice.fromId(known.remoteId),
-                label: known.name.isEmpty ? null : known.name,
-              ),
-            _ => null,
-          },
-          itemBuilder: (context) => [
-            if (connection == null)
-              const PopupMenuItem(value: 'connect', child: Text('Connecter')),
-            PopupMenuItem(
-              value: 'auto',
-              child: Text(known.autoConnect
-                  ? 'Ne plus connecter automatiquement'
-                  : 'Connecter automatiquement'),
-            ),
-            const PopupMenuItem(value: 'forget', child: Text('Oublier')),
-          ],
-        ),
-      );
-    }
-
-    if (connection == null) return tile(null);
-    return ValueListenableBuilder<SensorStatus>(
-      valueListenable: connection.status,
-      builder: (context, status, _) => tile(status),
-    );
-  }
-
-  String _statusLabel(SensorStatus? status, KnownDevice? known) {
-    // Pas de connexion ouverte : l'appareil est simplement absent, ou on a
-    // décidé de ne plus le solliciter.
-    if (status == null) {
-      return known?.autoConnect == false
-          ? 'connexion auto désactivée'
-          : 'hors ligne';
-    }
-    return switch (status) {
-      SensorStatus.connected => 'connecté',
-      SensorStatus.connecting => 'connexion…',
-      SensorStatus.reconnecting => 'reconnexion…',
-      SensorStatus.disconnected => 'déconnecté',
-      SensorStatus.failed => 'échec',
-    };
-  }
-
-  Widget _connectionTile(SensorConnection connection) {
-    return ValueListenableBuilder<SensorStatus>(
-      valueListenable: connection.status,
-      builder: (context, status, _) => ValueListenableBuilder<Set<SensorKind>>(
-        // Les capacités n'arrivent qu'à la découverte des services : l'icône
-        // passe donc du bluetooth générique au capteur reconnu en cours de
-        // connexion.
-        valueListenable: connection.detectedKinds,
-        builder: (context, kinds, _) => ListTile(
-          dense: true,
-          leading: Icon(
-            iconForDevice(kinds),
-            color:
-                status == SensorStatus.connected ? Colors.teal : Colors.orange,
-          ),
-          title: Text(connection.name.isEmpty ? '(sans nom)' : connection.name),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (kinds.isNotEmpty) SensorKindIcons(kinds),
-              Text(_statusLabel(status, null)),
-            ],
-          ),
-          isThreeLine: kinds.isNotEmpty,
-        ),
-      ),
-    );
-  }
-
-  Widget _scanTile(ScanResult result) {
-    final name = result.advertisementData.advName.isNotEmpty
-        ? result.advertisementData.advName
-        : result.device.platformName;
-    // Ce que l'appareil annonce savoir faire — indicatif seulement, plusieurs
-    // capteurs (dont le Di2) n'annoncent pas leur service propriétaire.
-    final kinds = kindsFromServices(result.advertisementData.serviceUuids);
-
-    return ListTile(
-      dense: true,
-      leading: Icon(iconForDevice(kinds), color: Colors.grey),
-      title: Text(name.isEmpty ? '(sans nom)' : name),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('${result.device.remoteId} · ${result.rssi} dBm'),
-          if (kinds.isNotEmpty) SensorKindIcons(kinds),
-        ],
-      ),
-      isThreeLine: kinds.isNotEmpty,
-      trailing: const Icon(Icons.link),
-      onTap: () => _connect(result.device, label: name),
-    );
-  }
-
-  Widget _frameTile(RawFrame frame) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Text(
-        frame.hex,
-        style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
-      ),
-    );
-  }
 }

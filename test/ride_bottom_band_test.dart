@@ -227,6 +227,58 @@ void main() {
     expect(_boxColorsBehind(tester, '175'), contains(zoneColors['z5']));
   });
 
+  testWidgets('la puissance et sa zone portent la couleur de la zone',
+      (tester) async {
+    await tester.runAsync(
+      () => profiles.record(
+        const RiderProfile(
+          ftpWatts: 250,
+          powerZones: [
+            TrainingZone(key: 'z1', lo: 0, hi: 150),
+            TrainingZone(key: 'z6', lo: 150, hi: 400),
+            TrainingZone(key: 'z7', lo: 400),
+          ],
+        ),
+      ),
+    );
+    hub.latestPower.value = 300;
+
+    await pumpBand(tester);
+    await tester.fling(find.byType(RideBottomBand), const Offset(-200, 0), 800);
+    await tester.pumpAndSettle();
+
+    // Les deux dernières zones sont celles que le cardio n'a pas : c'est là que
+    // le dégradé prolongé se vérifie, pas sur les cinq premières qu'il partage.
+    expect(_boxColorsBehind(tester, '300'), contains(zoneColors['z6']));
+    expect(_boxColorsBehind(tester, 'Z6'), contains(zoneColors['z6']));
+
+    hub.latestPower.value = 600;
+    await tester.pump();
+
+    expect(_boxColorsBehind(tester, '600'), contains(zoneColors['z7']));
+  });
+
+  testWidgets('les watts sont peints jusque dans le jeu de la sortie',
+      (tester) async {
+    // Le jeu « sortie » n'a pas de case de zone : sans couleur sur le chiffre,
+    // la seule mesure d'intensité de l'écran qu'on regarde le plus ne dirait
+    // rien de l'effort.
+    await tester.runAsync(
+      () => profiles.record(
+        const RiderProfile(
+          ftpWatts: 250,
+          powerZones: [TrainingZone(key: 'z5', lo: 0)],
+        ),
+      ),
+    );
+    hub.latestPower.value = 300;
+
+    await pumpBand(tester);
+
+    expect(find.text('durée'), findsOneWidget);
+    expect(_boxColorsBehind(tester, '300'), contains(zoneColors['z5']));
+  });
+
   testWidgets('sans zones connues, aucune case n\'est peinte', (tester) async {
     hub.latestHeartRate.value = 150;
 

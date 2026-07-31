@@ -34,6 +34,19 @@ void main() {
     TrainingZone(key: 'z5', lo: 160),
   ];
 
+  // Sept zones là où le cardio en a cinq : les deux répartitions n'ont ni la
+  // même longueur ni le même palier, et rien dans la page ne le déclare — la
+  // liste vient du site.
+  const powerZones = [
+    TrainingZone(key: 'z1', lo: 0, hi: 138),
+    TrainingZone(key: 'z2', lo: 138, hi: 188),
+    TrainingZone(key: 'z3', lo: 188, hi: 225),
+    TrainingZone(key: 'z4', lo: 225, hi: 263),
+    TrainingZone(key: 'z5', lo: 263, hi: 300),
+    TrainingZone(key: 'z6', lo: 300, hi: 375),
+    TrainingZone(key: 'z7', lo: 375),
+  ];
+
   late _FakeGps gps;
 
   setUp(() async {
@@ -68,6 +81,7 @@ void main() {
     WidgetTester tester, {
     VoidCallback? onChooseRoute,
     VoidCallback? onClearRoute,
+    VoidCallback? onCalibratePower,
   }) =>
       tester.pumpWidget(
         MaterialApp(
@@ -77,6 +91,7 @@ void main() {
             riderProfile: profiles,
             onChooseRoute: onChooseRoute,
             onClearRoute: onClearRoute,
+            onCalibratePower: onCalibratePower,
           ),
         ),
       );
@@ -207,6 +222,97 @@ void main() {
     expect(find.text('100 %'), findsOneWidget);
   });
 
+  /// La puissance a sa propre carte, en tout point celle du cardio. Ce qui se
+  /// vérifie ici : les deux ne se marchent pas dessus, et l'une peut se remplir
+  /// pendant que l'autre attend son premier point.
+  group('zones de puissance', () {
+    Future<void> pedalling(WidgetTester tester) async {
+      await tester.runAsync(() => profiles.record(const RiderProfile(
+            lthr: 160,
+            hrZones: zones,
+            ftpWatts: 250,
+            powerZones: powerZones,
+          )));
+      await tester.runAsync(() => recorder.start());
+      // 60 s à 200 W, soit la z3 de ce profil — le palier de 25 W place la
+      // mesure sur [200, 225[, dont le milieu tombe bien dans la zone.
+      for (var i = 0; i < 60; i++) {
+        recorder.stats.add(_point(power: 200, second: i));
+      }
+    }
+
+    testWidgets('la répartition de puissance a sa carte, et ses sept zones',
+        (tester) async {
+      await pedalling(tester);
+      hub.latestPower.value = 200;
+
+      await pumpPage(tester);
+
+      expect(find.text('Temps par zone de puissance'), findsOneWidget);
+      expect(find.text('01:00'), findsOneWidget);
+      expect(find.text('100 %'), findsOneWidget);
+      // Z6 et Z7 n'existent pas côté cardio : les voir ici prouve que la carte
+      // dessine la liste du site et non cinq zones en dur.
+      expect(find.text('Z7'), findsOneWidget);
+      expect(find.text('00:00'), findsNWidgets(6));
+    });
+
+    testWidgets('l\'éclair dit laquelle des deux cartes on lit',
+        (tester) async {
+      await pedalling(tester);
+      // Les deux capteurs parlent, donc les deux cartes ont une ligne courante.
+      for (var i = 0; i < 60; i++) {
+        recorder.stats.add(_point(heartRate: 155, second: i));
+      }
+      hub.latestPower.value = 200;
+      hub.latestHeartRate.value = 155; // z4 cardio
+
+      await pumpPage(tester);
+
+      // Les deux cartes se ressemblent trait pour trait : sans l'icône, une
+      // ligne peinte au milieu de l'écran ne dirait pas de quoi elle parle.
+      expect(find.byIcon(Icons.bolt), findsOneWidget);
+      expect(find.byIcon(Icons.favorite), findsOneWidget);
+    });
+
+    testWidgets('sans capteur de puissance, la carte attend sans zéros',
+        (tester) async {
+      await tester.runAsync(() => profiles.record(const RiderProfile(
+            lthr: 160,
+            hrZones: zones,
+            ftpWatts: 250,
+            powerZones: powerZones,
+          )));
+      await tester.runAsync(() => recorder.start());
+      for (var i = 0; i < 30; i++) {
+        recorder.stats.add(_point(heartRate: 135, second: i));
+      }
+
+      await pumpPage(tester);
+
+      // Le cardio se remplit pendant que la puissance attend : sept zones à
+      // zéro se liraient comme une sortie sans effort.
+      expect(find.text('00:30'), findsOneWidget);
+      expect(find.text('Pas encore de puissance mesurée.'), findsOneWidget);
+    });
+
+    testWidgets('sans FTP connue du site, la page le dit au lieu d\'inventer',
+        (tester) async {
+      await tester.runAsync(() => profiles.record(const RiderProfile(
+            lthr: 160,
+            hrZones: zones,
+          )));
+      await tester.runAsync(() => recorder.start());
+      recorder.stats.add(_point(power: 200));
+
+      await pumpPage(tester);
+
+      // Le trou est côté site, et il se comble sur le site : le dire nommément
+      // est la seule façon d'y renvoyer le cycliste.
+      expect(find.text('FTP inconnue du site : pas de zones.'), findsOneWidget);
+    });
+  });
+
   /// La ligne de la zone du moment est peinte de sa couleur : c'est ce qui
   /// rattache le cumul à ce qu'on ressent en pédalant.
   group('zone courante', () {
@@ -333,6 +439,33 @@ void main() {
       expect(cleared, 1);
     });
 
+    testWidgets('la calibration s\'atteint sans quitter la sortie',
+        (tester) async {
+      // C'est en roulant qu'on voit la puissance dériver : sortir de la
+      // navigation pour aller la calibrer coûterait la carte et son démarrage,
+      // donc on ne le ferait pas.
+      var calibrated = 0;
+      onRoute(false);
+      await pumpPage(tester, onCalibratePower: () => calibrated++);
+
+      await openMenu(tester);
+      await tester.tap(find.text('Calibrer la puissance'));
+      await tester.pumpAndSettle();
+
+      expect(calibrated, 1);
+    });
+
+    testWidgets('sans capteur calibrable, la commande n\'est pas là',
+        (tester) async {
+      // La coquille ne passe la commande que si un capteur connecté sait
+      // répondre : un menu qui ne peut que dire non se lit comme une panne.
+      await pumpPage(tester, onChooseRoute: () {});
+
+      await openMenu(tester);
+
+      expect(find.text('Calibrer la puissance'), findsNothing);
+    });
+
     testWidgets('sans tracé, il n\'y a rien à retirer', (tester) async {
       // En navigation libre — ou tant que la page n'a rien dit — proposer de
       // retirer un itinéraire laisserait croire qu'il y en a un.
@@ -351,10 +484,11 @@ void main() {
   });
 }
 
-TrackPoint _point({required int heartRate, int second = 0}) => TrackPoint(
+TrackPoint _point({int? heartRate, int? power, int second = 0}) => TrackPoint(
       at: DateTime.utc(2026, 1, 1).add(Duration(seconds: second)),
       distanceM: 0,
       heartRate: heartRate,
+      power: power,
     );
 
 /// Un GPS de test : rien ne part tant qu'on ne pousse pas soi-même une position.

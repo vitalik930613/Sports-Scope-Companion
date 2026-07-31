@@ -8,6 +8,44 @@
 - cd ~/dev/sports-scope-companion
 - flutter run
 
+# Appairer un capteur
+
+L'écran d'accueil ne montre des capteurs que **l'essentiel** : une icône par
+capteur appairé, **verte s'il répond, orange sinon**. C'est la seule chose qu'on
+regarde avant de partir — la ceinture est-elle réveillée, le compteur de
+puissance est-il sorti de veille.
+
+Le reste est derrière cette carte (ou l'icône capteurs, barre du haut) : la page
+**Capteurs**, avec *Mes capteurs* et *Appareils détectés*. On y va pour appairer
+un capteur neuf — bouton **Scanner** de la barre du haut, puis tap sur la ligne
+qui apparaît — pour en oublier un, ou pour couper la connexion automatique d'un
+capteur prêté. L'appairage se fait une fois ; ensuite, les capteurs connus se
+rattachent seuls dès que le Bluetooth est allumé, sans scan.
+
+Un appareil n'entre dans *Mes capteurs* qu'une fois qu'il a **répondu** : tant
+qu'il se connecte, il reste sous *Connexion en cours*. Les *trames brutes*, en
+bas de page, sont l'outil de reverse — un capteur qui n'y écrit rien est un
+capteur muet, pas un décodeur en panne.
+
+## Calibrer le capteur de puissance
+
+La mise à zéro d'un capteur de puissance (compensation d'offset) se lance de
+**deux endroits** : le menu de sa ligne dans *Mes capteurs*, et le menu ⋮ de la
+page **Effort** pendant la sortie — c'est en roulant qu'on voit des watts
+douteux, et la navigation n'a pas à être quittée pour ça.
+
+Dans les deux cas : **vélo à l'arrêt et d'aplomb, rien qui appuie sur les
+pédales**, et on n'y touche plus pendant la mesure. Le capteur répond en
+quelques secondes, avec son offset — une valeur brute, sans unité comparable
+d'une marque à l'autre, utile pour comparer deux calibrations du même capteur.
+
+La commande n'apparaît que si le capteur est connecté **et** sait se calibrer
+par Bluetooth (Control Point du profil Cycling Power). Beaucoup de capteurs
+n'exposent rien : ceux-là se calibrent depuis l'appli du constructeur, ou par la
+manœuvre de pédale de leur mode d'emploi. Un « le capteur n'a pas pu se
+calibrer » vient presque toujours d'une jauge sous charge — un pied resté sur la
+pédale suffit.
+
 # Se connecter au site
 
 ## Le chemin normal : depuis le site, en un tap
@@ -55,7 +93,7 @@ anonyme — et **quatre choses tombent en même temps** :
 - le menu POI ne renvoie rien (`/api/geocode/places` demande une session) ;
 - les POI enregistrés (`/api/pois`) n'apparaissent pas.
 
-Le bandeau orange de l'écran des capteurs le signale avant de partir.
+Le bandeau orange de l'écran d'accueil le signale avant de partir.
 
 ## Notes
 
@@ -78,7 +116,7 @@ cible par défaut) elle fonctionne.
 # Enregistrer une sortie
 
 Trois façons de lancer une sortie. Le bandeau **Enregistrement**, en haut de
-l'écran des capteurs. Si vous partez en navigation sans avoir rien lancé, l'appli
+l'écran d'accueil. Si vous partez en navigation sans avoir rien lancé, l'appli
 **pose la question avant d'ouvrir la carte** : « Enregistrer cette sortie ? ». Et
 si vous avez répondu *Naviguer seulement*, la page **Effort** du tableau de bord
 garde en tête un bouton **Démarrer l'enregistrement**, tant que rien ne tourne.
@@ -95,8 +133,8 @@ largeur — une pause oubliée est la seule façon de perdre la fin d'une sortie
 s'en apercevoir, les compteurs figés se lisant aussi bien comme « en pause » que
 comme « arrêté à un feu ».
 
-Rien pour **terminer**, en revanche : ça se fait au retour, depuis l'écran des
-capteurs. Une pause ne coûte rien et se défait d'un tap ; un bouton qui clôt la
+Rien pour **terminer**, en revanche : ça se fait au retour, depuis l'écran
+d'accueil. Une pause ne coûte rien et se défait d'un tap ; un bouton qui clôt la
 sortie, à portée de pouce sur une page qu'on consulte en roulant, coûterait un
 jour une sortie entière.
 

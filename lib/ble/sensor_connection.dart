@@ -4,8 +4,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import 'characteristic_decoder.dart';
+import 'power_calibration.dart';
 import 'samples.dart';
 import 'sensor_profile.dart';
+import 'sensor_uuids.dart';
 
 enum SensorStatus { disconnected, connecting, connected, reconnecting, failed }
 
@@ -40,8 +42,19 @@ class SensorConnection {
   /// services. Vide tant qu'on n'a pas été connecté au moins une fois.
   final detectedKinds = ValueNotifier<Set<SensorKind>>(const {});
 
+  /// Vrai quand l'appareil expose le Control Point de puissance : ce capteur-là
+  /// sait se calibrer depuis l'appli. Un `ValueNotifier` parce que la réponse
+  /// n'arrive qu'à la découverte des services, longtemps après le tap qui a
+  /// lancé la connexion.
+  final canCalibratePower = ValueNotifier<bool>(false);
+
   /// Décodeurs effectivement branchés, reconstruits à chaque (re)connexion.
   var _decoders = <CharacteristicDecoder>[];
+
+  /// Les caractéristiques de la connexion en cours, par UUID. Vidées à chaque
+  /// coupure : les handles GATT d'une connexion morte ne valent plus rien, et
+  /// écrire dessus lève au lieu de rendre une erreur exploitable.
+  final _characteristics = <Guid, BluetoothCharacteristic>{};
 
   Stream<SensorSample> get samples => _samples.stream;
   Stream<RawFrame> get rawFrames => _rawFrames.stream;
@@ -81,6 +94,8 @@ class SensorConnection {
         _everConnected = true;
         _attempt = 0;
         status.value = SensorStatus.connected;
+        debugPrint('[ble] $name: connecté '
+            '(${detectedKinds.value.map((k) => k.name).join(', ')})');
       } catch (e) {
         // Découverte impossible (appareil parti en cours de route) : le système
         // finira par signaler la déconnexion, qui relancera le cycle.
@@ -91,9 +106,16 @@ class SensorConnection {
 
     await _cancelCharacteristicSubs();
     _resetDecoders();
+    // Les caractéristiques meurent avec la connexion ; la *capacité* à se
+    // calibrer, elle, est une propriété de l'appareil et reste vraie — sans
+    // quoi la commande disparaîtrait de l'écran à chaque passage sous un pont.
+    _characteristics.clear();
     if (_disposed) return;
     status.value =
         _everConnected ? SensorStatus.reconnecting : SensorStatus.connecting;
+    // Sans cette ligne, un capteur qui n'arrive jamais et un capteur qui
+    // décroche en boucle donnent le même écran : une pastille orange.
+    debugPrint('[ble] $name: ${status.value.name} ($state)');
   }
 
   Future<void> _connect() async {
@@ -132,6 +154,11 @@ class SensorConnection {
       for (final service in services)
         for (final c in service.characteristics) c.uuid: c,
     };
+    _characteristics
+      ..clear()
+      ..addAll(characteristics);
+    canCalibratePower.value =
+        characteristics.containsKey(BleCharacteristics.cyclingPowerControlPoint);
 
     // Le tri se fait sur ce qui est réellement exposé, pas sur ce qui a été
     // annoncé au scan : le Di2 ne publie pas son service propriétaire, et une
@@ -186,6 +213,67 @@ class SensorConnection {
     }
   }
 
+  /// Calibre le capteur de puissance : compensation d'offset, « mise à zéro ».
+  ///
+  /// Trois temps imposés par le profil, dans cet ordre : s'abonner aux
+  /// indications du Control Point, écrire l'octet, attendre la réponse.
+  /// L'abonnement d'abord, sinon la plupart des capteurs refusent l'écriture —
+  /// ils n'ont personne à qui répondre.
+  ///
+  /// Ne lève jamais : tout ce qui peut mal tourner ressort en
+  /// [PowerCalibrationResult], parce que l'appelant est une boîte de dialogue
+  /// ouverte au bord de la route, pas un `catch`.
+  ///
+  /// Le délai est long à dessein — une jauge met plusieurs secondes à se
+  /// stabiliser, et abandonner trop tôt afficherait un échec sur une
+  /// calibration qui a réussi.
+  Future<PowerCalibrationResult> calibratePower({
+    Duration timeout = const Duration(seconds: 15),
+  }) async {
+    if (status.value != SensorStatus.connected) {
+      return const PowerCalibrationFailed(PowerCalibrationError.notConnected);
+    }
+
+    final control = _characteristics[BleCharacteristics.cyclingPowerControlPoint];
+    if (control == null) {
+      return const PowerCalibrationFailed(PowerCalibrationError.notSupported);
+    }
+
+    final answer = Completer<PowerCalibrationResult>();
+    StreamSubscription<List<int>>? sub;
+    try {
+      sub = control.onValueReceived.listen((data) {
+        // Publiée comme n'importe quelle trame : la réponse d'un capteur qui
+        // refuse est exactement ce qu'on veut relire dans « Trames brutes ».
+        _rawFrames.add(RawFrame(DateTime.now(), control.uuid.str, data));
+        final result = calibrationResponseOf(data);
+        if (result != null && !answer.isCompleted) answer.complete(result);
+      });
+      await control.setNotifyValue(true);
+      await control.write([startOffsetCompensation]);
+
+      return await answer.future.timeout(
+        timeout,
+        onTimeout: () =>
+            const PowerCalibrationFailed(PowerCalibrationError.noAnswer),
+      );
+    } catch (e) {
+      debugPrint('[ble] $name: calibration refusée ($e)');
+      return PowerCalibrationFailed(PowerCalibrationError.refused,
+          detail: '$e');
+    } finally {
+      await sub?.cancel();
+      // Les indications sont coupées derrière : le Control Point n'a plus rien
+      // à dire jusqu'à la prochaine demande, et un abonnement oublié survivrait
+      // à toutes les sorties suivantes.
+      try {
+        await control.setNotifyValue(false);
+      } catch (_) {
+        // Capteur déjà reparti : sans conséquence, la connexion emporte tout.
+      }
+    }
+  }
+
   void _scheduleRetry() {
     if (_disposed) return;
     _retryTimer?.cancel();
@@ -227,5 +315,6 @@ class SensorConnection {
     await _rawFrames.close();
     status.dispose();
     detectedKinds.dispose();
+    canCalibratePower.dispose();
   }
 }
