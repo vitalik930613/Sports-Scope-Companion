@@ -87,6 +87,11 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
   /// navigation, et survivre au retour en arrière.
   late final _recorder = RideRecorder(hub: _hub, store: widget.rides);
 
+  /// Le rattachement des capteurs, au même étage encore : son balayage doit
+  /// continuer pendant la sortie, là où un capteur qui décroche est le plus
+  /// coûteux et où aucun écran ne peut le relancer.
+  late final _linker = DeviceLinker(hub: _hub, devices: widget.devices);
+
   final _navigatorKey = GlobalKey<NavigatorState>();
   final _appLinks = AppLinks();
   StreamSubscription<Uri>? _linkSub;
@@ -95,6 +100,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
   void initState() {
     super.initState();
     _listenForLinks();
+    _linker.start();
   }
 
   /// « Ouvrir dans l'appli » depuis le site, ou un lien d'itinéraire partagé.
@@ -130,6 +136,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
   @override
   void dispose() {
     _linkSub?.cancel();
+    _linker.dispose();
     _recorder.dispose();
     _hub.dispose();
     super.dispose();
@@ -147,6 +154,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
       home: HomePage(
         devices: widget.devices,
         hub: _hub,
+        linker: _linker,
         recorder: _recorder,
         rides: widget.rides,
         session: widget.session,
@@ -291,6 +299,7 @@ class HomePage extends StatefulWidget {
     super.key,
     required this.devices,
     required this.hub,
+    required this.linker,
     required this.recorder,
     required this.rides,
     required this.session,
@@ -299,6 +308,10 @@ class HomePage extends StatefulWidget {
   });
 
   final KnownDevicesStore devices;
+
+  /// Le rattachement des capteurs. Il appartient à l'application : son
+  /// balayage doit continuer pendant la sortie, écran empilé par-dessus.
+  final DeviceLinker linker;
 
   /// Les itinéraires du compte, pour le sélecteur de navigation.
   final RouteCatalogStore routes;
@@ -334,11 +347,14 @@ class _HomePageState extends State<HomePage> {
   KnownDevicesStore get _devices => widget.devices;
   SensorHub get _hub => widget.hub;
   RideRecorder get _recorder => widget.recorder;
-  late final _linker = DeviceLinker(hub: _hub, devices: _devices);
 
   void _openSensors() {
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => SensorsPage(devices: _devices, hub: _hub),
+      builder: (_) => SensorsPage(
+        devices: _devices,
+        hub: _hub,
+        linker: widget.linker,
+      ),
     ));
   }
 
@@ -385,7 +401,9 @@ class _HomePageState extends State<HomePage> {
       // Rien à rafraîchir à la main derrière : la rangée de capteurs se
       // reconstruit sur le magasin, et un capteur qui répond y est réécrit
       // (`remember`) au moment même où il passe à « connecté ».
-      if (state == BluetoothAdapterState.on) unawaited(_linker.reconnectKnown());
+      if (state == BluetoothAdapterState.on) {
+        unawaited(widget.linker.reconnectKnown());
+      }
     });
   }
 

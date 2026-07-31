@@ -15,12 +15,25 @@ capteur appairé, **verte s'il répond, orange sinon**. C'est la seule chose qu'
 regarde avant de partir — la ceinture est-elle réveillée, le compteur de
 puissance est-il sorti de veille.
 
+Un capteur **gris et barré** est un capteur dont on a coupé la connexion
+automatique (menu de sa ligne, page Capteurs) : il n'est pas en panne, il est
+mis de côté, et l'appli n'ira pas le chercher. C'est le réglage à vérifier en
+premier quand un capteur « ne se connecte plus ».
+
 Le reste est derrière cette carte (ou l'icône capteurs, barre du haut) : la page
 **Capteurs**, avec *Mes capteurs* et *Appareils détectés*. On y va pour appairer
 un capteur neuf — bouton **Scanner** de la barre du haut, puis tap sur la ligne
 qui apparaît — pour en oublier un, ou pour couper la connexion automatique d'un
 capteur prêté. L'appairage se fait une fois ; ensuite, les capteurs connus se
-rattachent seuls dès que le Bluetooth est allumé, sans scan.
+rattachent seuls dès que le Bluetooth est allumé.
+
+Un capteur qui dort (typiquement un capteur de puissance, qui se rendort dès que
+les manivelles s'arrêtent) peut mettre du temps à revenir : l'appli cherche
+toute seule, par courtes salves, **tant qu'il manque un capteur** — et s'arrête
+de chercher dès que tout est connecté. Réveiller le capteur (quelques tours de
+manivelle) le fait attraper dans les secondes qui suivent. Un capteur dont la
+**connexion automatique est désactivée** n'est jamais rattrapé ainsi : c'est
+tout l'intérêt du réglage.
 
 Un appareil n'entre dans *Mes capteurs* qu'une fois qu'il a **répondu** : tant
 qu'il se connecte, il reste sous *Connexion en cours*. Les *trames brutes*, en

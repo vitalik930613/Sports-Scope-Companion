@@ -68,6 +68,11 @@ class SensorConnection {
   bool _disposed = false;
   bool _everConnected = false;
 
+  /// Vrai quand la connexion en cours vient d'un rattachement direct
+  /// ([attachNow]) et non de l'attente `autoConnect`. La différence se paie à
+  /// la déconnexion : le système ne reprendra pas celle-là tout seul.
+  bool _attachedDirectly = false;
+
   static const _maxBackoff = Duration(seconds: 30);
 
   /// Ouvre la connexion et la maintient.
@@ -116,6 +121,15 @@ class SensorConnection {
     // Sans cette ligne, un capteur qui n'arrive jamais et un capteur qui
     // décroche en boucle donnent le même écran : une pastille orange.
     debugPrint('[ble] $name: ${status.value.name} ($state)');
+
+    if (_attachedDirectly) {
+      _attachedDirectly = false;
+      // flutter_blue_plus ne laisse le canal GATT ouvert que pour les
+      // connexions posées en `autoConnect` ; après un rattachement direct il
+      // l'a refermé, et plus personne n'attend le capteur. On repose donc
+      // l'attente — le balayage reprendra la main s'il ne suffit pas.
+      unawaited(_connect());
+    }
   }
 
   Future<void> _connect() async {
@@ -141,6 +155,41 @@ class SensorConnection {
       debugPrint('[ble] $name: demande de connexion refusée ($e)');
       status.value = SensorStatus.failed;
       _scheduleRetry();
+    }
+  }
+
+  /// Rattache **maintenant**, sur une trame de publicité qu'on vient de voir.
+  ///
+  /// L'attente posée par `autoConnect` suffit pour un capteur appairé au
+  /// téléphone (le Di2), et pour ceux qui émettent en continu. Elle traîne, en
+  /// revanche, sur un capteur qui ne parle que par à-coups — un capteur de
+  /// puissance se rendort dès que les manivelles s'arrêtent, et l'écoute de
+  /// fond d'Android, faite de fenêtres courtes, rate ses réveils. Quand un scan
+  /// le voit émettre, on sait qu'il est réveillé *à cet instant* : c'est le
+  /// moment d'aller le chercher en direct.
+  ///
+  /// L'attente en cours doit être annulée d'abord : tant qu'elle tient,
+  /// flutter_blue_plus répond « already connecting » et laisse tomber la
+  /// demande — la déconnexion n'est donc pas une précaution, c'est ce qui rend
+  /// l'appel possible.
+  ///
+  /// Ne lève pas : appelée depuis un flux de scan, elle n'a personne pour
+  /// l'attraper.
+  Future<void> attachNow() async {
+    if (_disposed || status.value == SensorStatus.connected) return;
+
+    _attachedDirectly = false;
+    try {
+      await device.disconnect();
+      await device.connect(autoConnect: false, mtu: null);
+      _attachedDirectly = true;
+      debugPrint('[ble] $name: rattaché en direct');
+    } catch (e) {
+      debugPrint('[ble] $name: rattachement direct échoué ($e)');
+      // On repose l'attente : sans elle, le capteur ne serait plus guetté que
+      // par le prochain balayage, et un capteur appairé perdrait le
+      // rattachement gratuit du système.
+      await _connect();
     }
   }
 

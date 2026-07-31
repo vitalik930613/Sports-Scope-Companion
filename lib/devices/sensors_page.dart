@@ -13,6 +13,7 @@ import 'device_linker.dart';
 import 'known_device.dart';
 import 'known_devices_store.dart';
 import 'sensor_link_status.dart';
+import 'sensor_status_strip.dart';
 
 /// Appairage des capteurs : chercher, connecter, oublier.
 ///
@@ -29,6 +30,7 @@ class SensorsPage extends StatefulWidget {
     super.key,
     required this.devices,
     required this.hub,
+    required this.linker,
   });
 
   final KnownDevicesStore devices;
@@ -36,6 +38,11 @@ class SensorsPage extends StatefulWidget {
   /// Le hub appartient à l'application, pas à cet écran : les capteurs restent
   /// connectés quand on revient à l'accueil et pendant toute la sortie.
   final SensorHub hub;
+
+  /// Le rattachement, partagé lui aussi : le scan lancé ici nourrit le même
+  /// guetteur de trames de publicité, donc un capteur connu vu pendant qu'on
+  /// cherche autre chose se rattache sans qu'on ait à le taper.
+  final DeviceLinker linker;
 
   @override
   State<SensorsPage> createState() => _SensorsPageState();
@@ -54,7 +61,7 @@ class _SensorsPageState extends State<SensorsPage> {
 
   KnownDevicesStore get _devices => widget.devices;
   SensorHub get _hub => widget.hub;
-  late final _linker = DeviceLinker(hub: _hub, devices: _devices);
+  DeviceLinker get _linker => widget.linker;
 
   @override
   void initState() {
@@ -90,9 +97,10 @@ class _SensorsPageState extends State<SensorsPage> {
     _scanStateSub?.cancel();
     _adapterSub?.cancel();
     _frameSub?.cancel();
-    // Le scan, lui, est arrêté : il coûte de la batterie et n'a plus personne
-    // pour en lire le résultat. Le hub n'est pas fermé — il survit à cet écran.
-    unawaited(FlutterBluePlus.stopScan());
+    // Le scan n'est **pas** arrêté ici : il porte son propre délai, et le
+    // couper d'autorité tuerait aussi le balayage de rattachement du linker,
+    // qui n'appartient pas à cet écran. Le hub non plus n'est pas fermé — il
+    // survit à cette page.
     super.dispose();
   }
 
@@ -248,9 +256,15 @@ class _SensorsPageState extends State<SensorsPage> {
       // informations dans un seul point de l'écran, lisible en roulant.
       return ListTile(
         dense: true,
-        leading: Icon(
-          iconForDevice(known.kinds),
-          color: sensorLinkColor(status),
+        // La même pastille qu'à l'accueil, barre comprise : l'écran où l'on
+        // coupe la connexion auto doit montrer ce que ça donnera là où on la
+        // relira.
+        leading: SensorLinkDot(
+          icon: iconForDevice(known.kinds),
+          name: known.name,
+          status: status,
+          autoConnect: known.autoConnect,
+          size: 24,
         ),
         title: Text(known.name.isEmpty ? '(sans nom)' : known.name),
         subtitle: Column(

@@ -69,18 +69,58 @@ connu, verte s'il est connecté, orange sinon**. La forme dit quel capteur, la
 couleur dit s'il mesurera quelque chose. Deux couleurs et pas trois
 (`sensorLinkColor`, `devices/sensor_link_status.dart`) : « hors ligne », « en
 cours » et « échec » se ressemblent trop pour qu'on les distingue d'un coup
-d'œil, et le détail est en toutes lettres sur la sous-page. La rangée se
+d'œil, et le détail est en toutes lettres sur la sous-page.
+
+Troisième cas à part, qui n'est pas un état mais une **décision** : connexion
+auto coupée → **gris et barré** (`SensorLinkStrike`). L'orange serait un
+reproche et enverrait chercher une panne — c'est exactement ce qui est arrivé
+avec un Di2 dont la connexion auto avait été coupée par mégarde. La barre
+redouble la couleur parce qu'au soleil, gris et orange se confondent. Un capteur
+écarté **mais connecté** reste vert : il mesure maintenant, c'est la reconnexion
+future qu'on a désactivée. La rangée se
 reconstruit sur `KnownDevicesStore` — c'est `remember()`, appelé au passage à
 *connecté*, qui la fait verdir — et chaque pastille s'abonne en plus à
 `connection.status`, pour le capteur qui décroche en route.
 
 `DeviceLinker` (`devices/device_linker.dart`) porte le geste commun aux deux
 écrans : connecter, puis **mémoriser à la connexion, jamais au tap** — tant que
-l'appareil n'a pas répondu, on ne connaît ni son nom ni ses capacités. La
-reconnexion des capteurs connus reste sur l'accueil, déclenchée par l'état de
-l'adaptateur et non par `initState` : au lancement `adapterStateNow` vaut encore
-`unknown`, et un scan est de toute façon inutile pour se rattacher à une adresse
-déjà connue.
+l'appareil n'a pas répondu, on ne connaît ni son nom ni ses capacités. Une seule
+instance, créée dans `main.dart` à côté du hub : son balayage (ci-dessous) doit
+continuer pendant la sortie, écran empilé par-dessus. La reconnexion est
+déclenchée par l'état de l'adaptateur et non par `initState` : au lancement
+`adapterStateNow` vaut encore `unknown`.
+
+### Rattacher un capteur : deux mécanismes, pas un
+
+`connect(autoConnect: true)` délègue le rattachement à la pile Bluetooth du
+téléphone. **Mesuré sur route, ça ne suffit pas pour tout le monde** : l'écoute
+de fond d'Android est faite de fenêtres courtes et espacées. Elle attrape sans
+peine le Di2 (appairé au téléphone) et ce qui émet en continu — radar allumé,
+ceinture portée — et rate régulièrement le capteur qui n'émet que par à-coups :
+un capteur de puissance se rendort dès que les manivelles s'arrêtent, et on
+restait sur « connexion… » indéfiniment.
+
+D'où un **balayage** dans `DeviceLinker` : tant qu'il manque un capteur connu,
+scans courts (8 s toutes les ~53 s) ; un capteur vu émettre est rattaché
+**en direct** (`SensorConnection.attachNow()`). Trois choses à ne pas défaire :
+
+- `attachNow` **déconnecte avant de reconnecter** : tant que l'attente posée par
+  `autoConnect` tient, flutter_blue_plus répond « already connecting » et laisse
+  tomber la demande. La déconnexion n'est pas une précaution, c'est ce qui rend
+  l'appel possible.
+- Après un rattachement direct, flutter_blue_plus **referme** le canal GATT à la
+  déconnexion suivante (il ne le garde ouvert que pour les `autoConnect`) :
+  `_attachedDirectly` sert à reposer l'attente, sinon plus personne n'attend le
+  capteur.
+- `devicesToReattach` (pur, testé) filtre sur `autoConnect` : un capteur écarté à
+  la main — vélo prêté, boîtier de l'autre vélo — n'est **jamais** rattrapé au
+  vol parce qu'un scan l'a vu passer, sinon le réglage ne voudrait plus rien
+  dire.
+
+Le minuteur tourne même quand tout est connecté (il ne scanne alors rien) : c'est
+ce qui rattrape le capteur qui décroche en pleine sortie. Et le guetteur écoute
+les résultats de **n'importe quel** scan, y compris celui lancé à la main depuis
+la page des capteurs.
 
 ## Le WebView de navigation
 

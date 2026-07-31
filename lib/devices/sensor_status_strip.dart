@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
@@ -112,7 +114,8 @@ class SensorStatusStrip extends StatelessWidget {
   }
 }
 
-/// Une icône de capteur, colorée par son état.
+/// Une icône de capteur, colorée par son état — et **barrée** quand on a décidé
+/// de ne plus s'y reconnecter.
 class SensorLinkDot extends StatelessWidget {
   const SensorLinkDot({
     super.key,
@@ -131,12 +134,49 @@ class SensorLinkDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final color = sensorLinkColor(status, autoConnect: autoConnect);
     // Le nom et l'état ne sont pas peints : cinq capteurs tiendraient alors sur
     // trois lignes, et l'accueil doit se lire en un coup d'œil. Ils restent
     // atteignables par appui long, et en entier sur la page des capteurs.
     return Tooltip(
       message: '$name · ${sensorStatusLabel(status, autoConnect: autoConnect)}',
-      child: Icon(icon, size: size, color: sensorLinkColor(status)),
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Icon(icon, size: size, color: color),
+            if (!autoConnect) SensorLinkStrike(size: size, color: color),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// La barre d'un capteur écarté.
+///
+/// Tracée à la main plutôt que d'utiliser les icônes `…_off` de Material : il
+/// n'en existe pas pour chaque capacité (aucun « cœur barré », aucun
+/// « éclair barré » assorti aux nôtres), et changer d'icône ferait en plus
+/// perdre *ce qu'est* le capteur — or c'est justement ce qu'on doit continuer
+/// de lire pour savoir lequel on a mis de côté.
+class SensorLinkStrike extends StatelessWidget {
+  const SensorLinkStrike({super.key, required this.size, required this.color});
+
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Transform.rotate(
+      angle: math.pi / 4,
+      child: Container(
+        width: size * 1.15,
+        height: math.max(1.5, size / 13),
+        color: color,
+      ),
     );
   }
 }

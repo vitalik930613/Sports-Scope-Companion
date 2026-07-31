@@ -113,10 +113,24 @@ class KnownDevicesStore extends ChangeNotifier {
     await _flush();
   }
 
+  /// Les écritures en attente, mises à la queue leu leu.
+  ///
+  /// Elles arrivent par rafales — plusieurs capteurs qui se connectent en même
+  /// temps, chacun notifiant deux fois (état puis capacités). Menées en
+  /// parallèle, elles se disputaient le **même fichier temporaire** : la
+  /// première le renommait, la suivante ne le trouvait plus et perdait son
+  /// écriture (`PathNotFoundException` sur le `rename`, vu en vrai au
+  /// lancement). La file garantit un seul écrivain à la fois, et c'est la
+  /// dernière image de la liste qui gagne.
+  Future<void> _writing = Future<void>.value();
+
   Future<void> _flush() async {
     _sort(_devices);
     notifyListeners();
-    await _write(_devices);
+    // Copie : l'écriture est différée, et la liste peut bouger d'ici là.
+    final snapshot = [..._devices];
+    _writing = _writing.then((_) => _write(snapshot));
+    await _writing;
   }
 
   Future<void> _write(List<KnownDevice> devices) async {

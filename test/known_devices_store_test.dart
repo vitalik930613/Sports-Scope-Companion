@@ -159,6 +159,26 @@ void main() {
     expect(notifications, 0);
   });
 
+  test('des écritures simultanées ne se volent pas le fichier', () async {
+    // Le cas réel : plusieurs capteurs se connectent en même temps, chacun
+    // notifiant deux fois (état, puis capacités). Menées en parallèle, les
+    // écritures se disputaient le même `.tmp` — la première le renommait, la
+    // suivante ne le trouvait plus (`PathNotFoundException` au lancement, vu
+    // sur le téléphone) et perdait sa liste.
+    //
+    // Le disque de l'hôte est trop rapide pour que ce test échoue sans la file
+    // d'écriture : il verrouille l'attente, il ne reproduit pas la panne.
+    final store = await openStore();
+
+    await Future.wait([
+      for (var i = 0; i < 24; i++)
+        store.remember('AA:${i.toString().padLeft(2, '0')}', name: 'C$i'),
+    ]);
+
+    final reopened = await openStore();
+    expect(reopened.devices, hasLength(24));
+  });
+
   test('sérialisation : un aller-retour JSON conserve tout', () {
     final device = KnownDevice(
       remoteId: 'AA:BB',

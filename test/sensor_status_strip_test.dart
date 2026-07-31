@@ -24,6 +24,20 @@ void main() {
       }
     });
 
+    test('écarté à la main : gris, et non orange', () {
+      // L'orange serait un reproche : on chercherait une panne alors qu'on a
+      // soi-même décidé de ne plus s'y reconnecter.
+      expect(sensorLinkColor(null, autoConnect: false), Colors.grey);
+      expect(sensorLinkColor(SensorStatus.failed, autoConnect: false),
+          Colors.grey);
+    });
+
+    test('écarté mais connecté : vert quand même', () {
+      // Il mesure *maintenant* ; c'est la reconnexion future qui est coupée.
+      expect(sensorLinkColor(SensorStatus.connected, autoConnect: false),
+          Colors.teal);
+    });
+
     test('sans connexion, la connexion auto désactivée se dit autrement', () {
       // Un capteur mis de côté n'est pas un capteur en panne : confondre les
       // deux enverrait chercher une ceinture qu'on a soi-même écartée.
@@ -104,6 +118,27 @@ void main() {
       await tester.pump();
 
       expect(find.byType(SensorLinkDot), findsOneWidget);
+    });
+
+    testWidgets('un capteur écarté est barré, les autres non', (tester) async {
+      await tester.runAsync(() async {
+        await devices.remember('AA:BB:CC:DD:EE:04',
+            name: 'Pédales du vélo prêté', kinds: {SensorKind.power});
+        await devices.remember('AA:BB:CC:DD:EE:05',
+            name: 'Ceinture', kinds: {SensorKind.heartRate});
+        // Dans le `runAsync` lui aussi : c'est une écriture disque, et le temps
+        // est simulé ici — dehors, le test attend dix minutes puis meurt.
+        await devices.setAutoConnect('AA:BB:CC:DD:EE:04', false);
+      });
+
+      await pumpStrip(tester);
+
+      // Une barre et une seule : la couleur seule ne suffit pas au soleil, et
+      // barrer les deux effacerait la distinction qu'on vient poser.
+      expect(find.byType(SensorLinkStrike), findsOneWidget);
+      final struck = tester.widget<SensorLinkDot>(find.byWidgetPredicate(
+          (w) => w is SensorLinkDot && !w.autoConnect));
+      expect(struck.name, 'Pédales du vélo prêté');
     });
 
     testWidgets('toute la carte ouvre la page des capteurs', (tester) async {
