@@ -141,9 +141,11 @@ publiées vers la page, bouton retour, et les pages du tableau de bord.
   capteur débranché alors que le trou est côté site et se comble avant de partir.
   Le même trou est annoncé en toutes lettres sur l'écran d'accueil
   (`ThresholdGap`, `account/threshold_gap.dart`), seul endroit où le cycliste a
-  encore les mains libres. Attention : côté Rails, seule une **LTHR saisie à la
-  main** (`lthr_manual`) produit des zones cardio — la LTHR estimée depuis les
-  sorties, elle, n'en crée aucune.
+  encore les mains libres. Les deux seuils arrivent **saisis ou estimés** — le
+  site envoie sa valeur courante et sa source (`ftp.source`, `lthr_source`),
+  celle-là même qui sert à ses propres zones, donc l'appli ne peut pas le
+  contredire. Un bandeau sans zone cardio veut dire que le site n'a rien : ni
+  saisie, ni sortie vélo au cardio dans sa fenêtre de 6 semaines.
 
 ### Retour automatique et radar
 

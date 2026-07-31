@@ -45,6 +45,7 @@ class RiderProfile {
     this.ftpSource,
     this.wPerKg,
     this.lthr,
+    this.lthrSource,
     this.weightKg,
     this.powerZones = const [],
     this.hrZones = const [],
@@ -58,8 +59,16 @@ class RiderProfile {
   final String? ftpSource;
   final double? wPerKg;
 
-  /// Seuil cardiaque (bpm), saisi à la main sur le site.
+  /// Seuil cardiaque (bpm) tel que le site l'utilise lui-même.
   final int? lthr;
+
+  /// `manual` (test saisi sur le site) ou `auto` (estimé sur les courbes cardio des
+  /// sorties, fenêtre glissante de 6 semaines). Même vocabulaire que [ftpSource].
+  ///
+  /// Le site a longtemps refusé d'envoyer un seuil cardiaque estimé, faute d'une
+  /// estimation fiable au niveau de l'athlète : un compte sans saisie manuelle
+  /// n'avait donc aucune zone cardio ici. Ce n'est plus le cas.
+  final String? lthrSource;
   final double? weightKg;
 
   final List<TrainingZone> powerZones;
@@ -83,6 +92,7 @@ class RiderProfile {
   Map<String, dynamic> toJson() => {
         'ftp': {'watts': ftpWatts, 'source': ftpSource, 'w_per_kg': wPerKg},
         'lthr': lthr,
+        'lthr_source': lthrSource,
         'weight_kg': weightKg,
         'power_zones': [for (final z in powerZones) z.toJson()],
         'hr_zones': [for (final z in hrZones) z.toJson()],
@@ -105,6 +115,7 @@ class RiderProfile {
           ? (ftp['w_per_kg'] as num).toDouble()
           : null,
       lthr: raw['lthr'] is num ? (raw['lthr'] as num).toInt() : null,
+      lthrSource: raw['lthr_source'] is String ? raw['lthr_source'] as String : null,
       weightKg:
           raw['weight_kg'] is num ? (raw['weight_kg'] as num).toDouble() : null,
       powerZones: _zones(raw['power_zones']),

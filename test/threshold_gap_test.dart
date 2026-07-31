@@ -29,17 +29,17 @@ void main() {
     expect(ThresholdGap.of(complete, everReceived: true), isNull);
   });
 
-  test('la LTHR manque : on dit que l\'estimée ne compte pas', () {
+  test('la LTHR manque : on dit ce qui la ferait apparaître', () {
     final gap = ThresholdGap.of(
       const RiderProfile(ftpWatts: 250, powerZones: [zone]),
       everReceived: true,
     );
 
-    expect(gap!.title, 'LTHR non renseignée');
-    // Le piège du site : seule `lthr_manual` produit des zones, la LTHR estimée
-    // depuis les sorties n'en crée aucune. Sans cette phrase, le cycliste voit
-    // sa LTHR affichée sur le site et ne comprend pas le bandeau vide.
-    expect(gap.detail, contains('main'));
+    expect(gap!.title, 'Seuil cardiaque inconnu');
+    // Le site estime désormais le seuil sur les sorties vélo au cardio : un
+    // bandeau vide ne veut plus dire « tu n'as rien saisi » mais « aucune sortie
+    // au cardio », et c'est le geste à faire qu'il faut nommer.
+    expect(gap.detail, contains('ceinture'));
   });
 
   test('la FTP manque : le cardio connu ne fait pas taire le message', () {

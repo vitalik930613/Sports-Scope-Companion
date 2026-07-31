@@ -42,16 +42,17 @@ class ThresholdGap {
     if (noHr && noPower) {
       return const ThresholdGap(
         title: 'LTHR et FTP inconnues',
-        detail: 'Aucune zone dans le bandeau de sortie. Renseigne-les sur le '
-            'site, panneau Performances.',
+        detail: 'Aucune zone dans le bandeau de sortie. Le site les estime dès '
+            'que tes sorties portent du cardio ou de la puissance ; sinon, '
+            'saisis-les dans le panneau Performances.',
       );
     }
     if (noHr) {
       return const ThresholdGap(
-        title: 'LTHR non renseignée',
-        detail: 'Pas de zone cardio dans le bandeau. Seule une LTHR saisie à '
-            'la main sur le site compte : celle estimée depuis tes sorties ne '
-            'crée aucune zone.',
+        title: 'Seuil cardiaque inconnu',
+        detail: 'Pas de zone cardio dans le bandeau. Le site l\'estime sur tes '
+            'sorties vélo au cardio des 6 dernières semaines — il n\'en a donc '
+            'trouvé aucune. Une sortie avec la ceinture suffira.',
       );
     }
     if (noPower) {

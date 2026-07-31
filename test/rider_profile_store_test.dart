@@ -9,6 +9,7 @@ import 'package:sports_scope_companion/account/rider_profile_store.dart';
 Map<String, dynamic> payload({Map<String, dynamic> over = const {}}) => {
       'ftp': {'watts': 250, 'source': 'manual', 'w_per_kg': 3.6},
       'lthr': 170,
+      'lthr_source': 'auto',
       'weight_kg': 69.4,
       'power_zones': [
         {'key': 'z1', 'lo': 0, 'hi': 138},
@@ -35,6 +36,9 @@ void main() {
       expect(profile.ftpSource, 'manual');
       expect(profile.wPerKg, 3.6);
       expect(profile.lthr, 170);
+      // Le seuil cardiaque peut désormais être estimé par le site, comme la FTP :
+      // l'appli garde d'où il vient, elle ne le recalcule jamais.
+      expect(profile.lthrSource, 'auto');
       expect(profile.weightKg, 69.4);
       expect(profile.powerZones, hasLength(7));
       expect(profile.hasPowerZones, isTrue);
