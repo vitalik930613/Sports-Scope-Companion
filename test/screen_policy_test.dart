@@ -30,7 +30,7 @@ void main() {
   test('quitter la carte rallume', () {
     policy.pageRequested(true);
 
-    expect(policy.movedTo(1), isTrue);
+    expect(policy.movedTo(onMap: false), isTrue);
     expect(policy.dimmed, isFalse);
   });
 
@@ -38,14 +38,14 @@ void main() {
     // C'est tout l'intérêt de retenir la demande plutôt que de la refuser : la
     // page se croit déjà endormie et ne redira rien.
     policy.pageRequested(true);
-    policy.movedTo(1);
+    policy.movedTo(onMap: false);
 
-    expect(policy.movedTo(0), isTrue);
+    expect(policy.movedTo(onMap: true), isTrue);
     expect(policy.dimmed, isTrue);
   });
 
   test('une page de données ne s\'assombrit jamais', () {
-    policy.movedTo(1);
+    policy.movedTo(onMap: false);
 
     expect(policy.pageRequested(true), isFalse);
     expect(policy.dimmed, isFalse);
@@ -53,12 +53,12 @@ void main() {
 
   test('la page se réveille pendant qu\'on lit une autre page', () {
     policy.pageRequested(true);
-    policy.movedTo(1);
+    policy.movedTo(onMap: false);
     // Réveil annoncé alors que rien n'était assombri : aucun effet visible…
     expect(policy.pageRequested(false), isFalse);
 
     // …mais revenir sur la carte ne doit surtout pas la rendormir.
-    expect(policy.movedTo(0), isFalse);
+    expect(policy.movedTo(onMap: true), isFalse);
     expect(policy.dimmed, isFalse);
   });
 
@@ -72,7 +72,7 @@ void main() {
   });
 
   test('un rechargement hors carte ne rallume rien qui soit éteint', () {
-    policy.movedTo(1);
+    policy.movedTo(onMap: false);
 
     expect(policy.pageReloaded(), isFalse);
     expect(policy.dimmed, isFalse);
@@ -111,7 +111,7 @@ void main() {
 
     test('sur une page de données, le radar ne change rien non plus', () {
       policy.pageRequested(true);
-      policy.movedTo(1);
+      policy.movedTo(onMap: false);
 
       expect(policy.radarAwake(true), isFalse);
       expect(policy.radarWake, isFalse);

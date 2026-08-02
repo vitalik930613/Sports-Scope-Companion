@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 
 import 'nav_state.dart';
-import 'ride_pages.dart';
 
 /// Ce qui mérite qu'on ramène le cycliste sur la carte, par ordre de gravité
 /// croissante.
@@ -67,7 +66,8 @@ class AutoReturnDecision {
 
   static const stay = AutoReturnDecision(null);
 
-  final RidePage? goTo;
+  /// L'index de la page à afficher dans le profil courant.
+  final int? goTo;
 }
 
 /// Ramener le cycliste sur la carte quand ça compte, et lui rendre sa page
@@ -92,8 +92,17 @@ class AutoReturnDecision {
 /// 4. **Le cycliste gagne.** S'il change de page pendant une alerte, on ne le
 ///    déplace plus jusqu'à ce qu'elle s'éteigne, et on ne lui doit plus rien :
 ///    il vient de dire où il voulait être.
+///
+/// Cinquième cas, qui n'est pas une règle mais une absence : **sans carte dans
+/// le profil, la politique est inerte**. Elle ne ramène nulle part et ne doit
+/// rien rendre — un home-trainer n'a pas de page web, donc pas de virage à
+/// annoncer, et le seul déplacement qu'elle pourrait décider serait vers une
+/// page choisie au hasard.
 class AutoReturnPolicy {
-  AutoReturnPolicy({this.holdAfterClear = const Duration(seconds: 8)});
+  AutoReturnPolicy({this.mapPage, this.holdAfterClear = const Duration(seconds: 8)});
+
+  /// Où se trouve la carte dans le profil courant, `null` quand il n'y en a pas.
+  final int? mapPage;
 
   /// Délai entre l'extinction de l'alerte et le retour de la page interrompue.
   /// Assez long pour couvrir la sortie du virage, assez court pour qu'on ne
@@ -104,17 +113,20 @@ class AutoReturnPolicy {
 
   /// La page qu'on a interrompue et qu'on doit rendre. `null` = on ne doit
   /// rien : soit rien n'a été interrompu, soit le cycliste a repris la main.
-  RidePage? _owed;
+  int? _owed;
 
   DateTime? _clearedAt;
   bool _overridden = false;
 
   AutoReturnDecision update({
     required DateTime now,
-    required RidePage currentPage,
+    required int currentPage,
     required RideAlert alert,
     bool userMoved = false,
   }) {
+    final mapPage = this.mapPage;
+    if (mapPage == null) return AutoReturnDecision.stay;
+
     if (userMoved) {
       _owed = null;
       if (alert != RideAlert.none) _overridden = true;
@@ -135,11 +147,11 @@ class AutoReturnPolicy {
       // Le maintien repart de zéro : tant qu'il se passe quelque chose, la page
       // attend.
       _clearedAt = null;
-      if (_overridden || currentPage == RidePage.navigation) {
+      if (_overridden || currentPage == mapPage) {
         return AutoReturnDecision.stay;
       }
       _owed = currentPage;
-      return const AutoReturnDecision(RidePage.navigation);
+      return AutoReturnDecision(mapPage);
     }
 
     final owed = _owed;
@@ -150,7 +162,7 @@ class AutoReturnPolicy {
         // Rendre une page depuis une page serait un déplacement de plus dans le
         // dos du cycliste : on ne restitue que depuis la carte, là où on l'a
         // amené.
-        currentPage == RidePage.navigation &&
+        currentPage == mapPage &&
         now.difference(clearedAt) >= holdAfterClear) {
       _owed = null;
       _clearedAt = null;

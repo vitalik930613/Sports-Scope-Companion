@@ -35,8 +35,23 @@ void main() {
 
   group('pageOf', () {
     test('replie l\'index brut sur le catalogue', () {
-      expect(pageOf(rawPageOrigin), 0);
-      expect(pageOf(rawPageOrigin + 1), 1 % RidePage.count);
+      expect(pageOf(rawPageOriginFor(2), count: 2), 0);
+      expect(pageOf(rawPageOriginFor(2) + 1, count: 2), 1);
+    });
+
+    test('l\'origine tombe sur la première page, quel qu\'en soit le nombre', () {
+      // Le nombre de pages vient du profil : il peut valoir 1 (home-trainer
+      // minimal) comme 6. L'origine doit rester un multiple, sinon la sortie
+      // s'ouvrirait au milieu du catalogue.
+      for (var count = 1; count <= 6; count++) {
+        expect(pageOf(rawPageOriginFor(count), count: count), 0,
+            reason: '$count page(s)');
+      }
+    });
+
+    test('un profil d\'une seule page ne divise jamais par zéro', () {
+      expect(pageOf(rawPageOriginFor(1) + 3, count: 1), 0);
+      expect(pageOf(7, count: 0), 0);
     });
 
     test('reculer sous l\'origine repart de la fin', () {
@@ -68,9 +83,10 @@ void main() {
       expect(rawPageFor(2, from: 1001, count: 4), 1002);
     });
 
-    test('sans nombre de pages, le catalogue fait foi', () {
-      expect(pageOf(rawPageFor(RidePage.effort.index, from: rawPageOrigin)),
-          RidePage.effort.index);
+    test('viser une page depuis l\'origine y arrive', () {
+      final origin = rawPageOriginFor(3);
+
+      expect(pageOf(rawPageFor(2, from: origin, count: 3), count: 3), 2);
     });
   });
 

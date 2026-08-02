@@ -40,6 +40,40 @@ qu'il se connecte, il reste sous *Connexion en cours*. Les *trames brutes*, en
 bas de page, sont l'outil de reverse — un capteur qui n'y écrit rien est un
 capteur muet, pas un décodeur en panne.
 
+## Choisir son profil de sortie
+
+Les profils se règlent **sur le site** et se choisissent **dans l'appli, au
+départ** : on sait sur quel vélo on monte au moment où l'on monte dessus.
+
+Tape **Naviguer** : la feuille qui s'ouvre commence par une ligne
+**« Profil : … »**, avec le nombre de pages et ce que le profil coupe (« sans
+carte », « sans GPS », « sans radar »). Tape-la pour en changer. Le choix est
+retenu jusqu'à ce que tu en changes — y compris pour un enregistrement lancé
+depuis l'accueil, qui part avec les mêmes capteurs.
+
+La ligne **n'apparaît que s'il y a plusieurs profils**. Tant que le compte n'a
+rien de réglé, le site en sert trois : *Route*, *VTT* et *Home-trainer*.
+
+Ce qu'un profil décide :
+
+- **les pages du tableau de bord** — combien, dans quel ordre, et ce qu'il y a
+  dans chacune (une grille de mesures, une page qui défile, la carte) ;
+- **les jeux de valeurs du bandeau du bas** (quatre cases au plus par jeu) ;
+- **les capteurs utilisés.** Le profil *Home-trainer* coupe le GPS : pas de
+  notification de service au premier plan, pas de « Recherche du GPS… » au
+  démarrage, et distance et dénivelé affichent un tiret plutôt qu'un zéro. Il
+  coupe aussi le radar et le baromètre, et **n'a pas de carte du tout** — la
+  feuille de départ se réduit alors au profil et à un bouton *Démarrer*.
+
+Un capteur qu'un profil écarte n'est pas déconnecté pour autant : s'il est déjà
+connecté, il continue de mesurer. Le profil décide seulement de ce que l'appli va
+*chercher*. Et il ne peut jamais **rendre** la connexion automatique à un capteur
+que tu as décoché à la main : ton geste gagne.
+
+Hors ligne, l'appli garde les derniers profils reçus. Sur une installation neuve
+sans réseau, elle ouvre son tableau de bord intégré — carte plus page Effort,
+exactement comme avant les profils.
+
 ## Calibrer le capteur de puissance
 
 La mise à zéro d'un capteur de puissance (compensation d'offset) se lance de
@@ -255,6 +289,40 @@ Sans `key.properties`, un build de release **échoue** au lieu de retomber sur l
 clé de debug (`android/app/build.gradle.kts`) : un APK signé debug s'installe et
 se distribue sans rien signaler, et le piège ne se referme qu'à la mise à jour
 suivante.
+
+## « Application non installée » : c'est presque toujours la signature
+
+`flutter run` installe un build signé de la **clé de debug**, sous le même
+`applicationId` que la release. Les deux ne peuvent pas cohabiter : dès qu'un build de
+debug est sur l'appareil, l'APK de release refuse de s'installer par-dessus, et
+l'écran d'Android se contente d'« application non installée » sans dire pourquoi. Ce
+n'est **pas** Play Protect, qui se traverse par « Installer quand même ».
+
+Pour lire la vraie raison, passer par `adb` plutôt que par l'écran :
+
+```bash
+adb install -r build/app/outputs/flutter-apk/app-release.apk
+# INSTALL_FAILED_UPDATE_INCOMPATIBLE → conflit de signature, voir ci-dessous
+```
+
+Comparer les deux signatures — celle qui est installée et celle de l'APK :
+
+```bash
+adb shell dumpsys package ch.logicraft.sports.companion | grep -i "^ *Signatures"
+apksigner verify --print-certs build/app/outputs/flutter-apk/app-release.apk | grep SHA-256
+```
+
+Si elles diffèrent, désinstaller d'abord — en sauvant les sorties s'il y en a
+(cf. « Où sont les données ») :
+
+```bash
+adb uninstall ch.logicraft.sports.companion   # tous les profils
+```
+
+**Chercher le paquet dans tous les profils.** `dumpsys` donne un bloc `User N:` par
+profil : un Pixel avec un espace privé peut porter l'app dans le profil 10 alors que
+`installed=false` dans le profil 0. Elle n'apparaît nulle part sur l'écran d'accueil
+principal, et bloque quand même l'installation.
 
 ## Construire
 

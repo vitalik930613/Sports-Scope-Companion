@@ -1,0 +1,22 @@
+<!-- Icône « héritée », pour Android 7 et antérieurs : là, l'image est posée telle
+     quelle, sans masque du lanceur. Elle porte donc son propre fond noir arrondi —
+     le même rayon relatif que l'icône du site (96/512).
+
+     Même composition que `foreground.svg`, agrandie de 28 % : sans masque à
+     redouter, le cercle de sécurité ne s'applique plus et une icône dessinée à la
+     taille de la zone sûre paraîtrait rétrécie au milieu de son cadre. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="100%" height="100%">
+  <rect width="108" height="108" rx="20.25" fill="#000000"/>
+
+  <g transform="translate(54 54) scale(1.28) translate(-54 -54)">
+    <g transform="translate(23 24) scale(0.079861)" fill="#ffc107">
+      <path d="M256.5 0c14.7 0 28.2 8.1 35.2 21l216 400c6.7 12.4 6.4 27.4-.8 39.5-7.2 12.1-20.3 19.5-34.3 19.5l-432 0c-14.1 0-27.1-7.4-34.3-19.5s-7.5-27.1-.8-39.5l216-400 2.9-4.6C231.7 6.2 243.6 0 256.5 0zM170.4 249.9l26.8 26.8c6.2 6.2 16.4 6.2 22.6 0l43.3-43.3c6-6 14.1-9.4 22.6-9.4l42.8 0-72.1-133.5-86.1 159.4zM496.5 160a80 80 0 1 1 0-160 80 80 0 1 1 0 160z"/>
+    </g>
+
+    <circle cx="68" cy="68" r="12.5" fill="#000000"/>
+    <circle cx="68" cy="68" r="10.6" fill="#ffc107"/>
+    <path d="M68 61.5 L71.25 64.75 L64.75 71.25 M64.75 64.75 L71.25 71.25 L68 74.5 L68 61.5"
+          fill="none" stroke="#000000" stroke-width="2.1"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

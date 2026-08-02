@@ -17,7 +17,12 @@
 /// voiture, donc l'écran se rendort tout seul.
 class ScreenPolicy {
   bool _requested = false;
-  int _page = 0;
+
+  /// Le cycliste est-il sur la carte ? Un booléen et non un index : la carte se
+  /// place où l'on veut dans le profil, et certains profils n'en ont pas du tout
+  /// (home-trainer). Comparer à zéro revenait à supposer les deux.
+  bool _onMap = true;
+
   bool _radarAwake = false;
   bool _dimmed = false;
 
@@ -28,7 +33,7 @@ class ScreenPolicy {
   /// met la page radar à l'écran : sous le voile noir de la page web, il n'y a
   /// rien d'autre à regarder. Hors veille, la carte et ses gouttières disent
   /// déjà tout, et il n'y a rien à recouvrir.
-  bool get radarWake => _requested && _page == 0 && _radarAwake;
+  bool get radarWake => _requested && _onMap && _radarAwake;
 
   /// La page entre ou sort de sa veille.
   bool pageRequested(bool dim) {
@@ -44,8 +49,8 @@ class ScreenPolicy {
   }
 
   /// Le cycliste a changé de page.
-  bool movedTo(int page) {
-    _page = page;
+  bool movedTo({required bool onMap}) {
+    _onMap = onMap;
     return _settle();
   }
 
@@ -60,7 +65,7 @@ class ScreenPolicy {
   /// Rend vrai quand l'état effectif vient de changer — la coquille n'appelle le
   /// réglage de luminosité que sur les transitions, pas à chaque message.
   bool _settle() {
-    final next = _requested && _page == 0 && !_radarAwake;
+    final next = _requested && _onMap && !_radarAwake;
     if (next == _dimmed) return false;
     _dimmed = next;
     return true;

@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:sports_scope_companion/ble/samples.dart';
 import 'package:sports_scope_companion/ble/sensor_hub.dart';
+import 'package:sports_scope_companion/dashboard/ride_preset.dart';
 import 'package:sports_scope_companion/drivetrain.dart';
 import 'package:sports_scope_companion/recording/gps_fix.dart';
 import 'package:sports_scope_companion/recording/gps_source.dart';
@@ -77,6 +78,58 @@ void main() {
     await expectLater(recorder.start(), throwsA(isA<GpsUnavailable>()));
     expect(recorder.state, RecorderState.idle);
     expect(await store.list(), isEmpty);
+  });
+
+  /// Le profil de home-trainer : pas de GPS du tout.
+  ///
+  /// Ce n'est pas une dégradation à subir mais un mode à part entière — sur un
+  /// rouleau, la trace ne dirait rien, et le cardio et la puissance disent tout.
+  group('sans GPS', () {
+    const noGps = SensorSettings(gps: false);
+
+    test('la sortie démarre sans attendre de position', () async {
+      // Le récepteur est déclaré indisponible : avec GPS, `start()` lèverait.
+      // Sans, il ne demande rien — ni permission, ni service au premier plan,
+      // ni première position.
+      gps.ready = false;
+
+      final session = await recorder.start(sensors: noGps);
+
+      expect(session, isNotNull);
+      expect(recorder.state, RecorderState.recording);
+      expect(recorder.gpsEnabled, isFalse);
+    });
+
+    test('les points s\'écrivent sans coordonnées', () async {
+      await recorder.start(sensors: noGps);
+      hub.latestPower.value = 210;
+      recorder.handleSample(PowerSample(DateTime.now().toUtc(), 210));
+
+      final point = recorder.capture(DateTime.now());
+
+      // Un point sans position est une information, pas un trou : c'est ce que
+      // le format admet déjà, et c'est ce qui porte la sortie ici.
+      expect(point.lat, isNull);
+      expect(point.lng, isNull);
+      expect(point.power, 210);
+    });
+
+    test('aucune position n\'arrive, même si le récepteur en émet', () async {
+      // Le flux n'est pas écouté du tout : le service au premier plan et sa
+      // notification n'ont aucune raison d'exister sur un rouleau.
+      await recorder.start(sensors: noGps);
+      gps.emit(fixAt(0, second: 0));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(recorder.lastFix, isNull);
+      expect(recorder.distanceM, 0);
+    });
+
+    test('avec GPS, rien ne change', () async {
+      await recorder.start();
+
+      expect(recorder.gpsEnabled, isTrue);
+    });
   });
 
   test('la distance suit les positions reçues', () async {
@@ -327,6 +380,11 @@ class _FakeGps implements GpsSource {
 
   @override
   Stream<GpsFix> watch() => _controller.stream;
+
+  /// Émet une position. Le flux est diffusé : sans abonné, l'émission tombe
+  /// dans le vide — ce qui est exactement ce qu'on veut vérifier quand le
+  /// profil coupe le GPS.
+  void emit(GpsFix fix) => _controller.add(fix);
 
   Future<void> close() => _controller.close();
 }

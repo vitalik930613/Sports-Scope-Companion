@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Le fond de l'icône adaptative. Une couleur et non une image : le fond est un
+     aplat noir, comme celui de l'icône du site. -->
+<resources>
+    <color name="ic_launcher_background">#000000</color>
+</resources>

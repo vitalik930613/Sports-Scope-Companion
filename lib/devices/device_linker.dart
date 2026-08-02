@@ -5,29 +5,47 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../ble/sensor_connection.dart';
 import '../ble/sensor_hub.dart';
+import '../ble/sensor_profile.dart';
+import '../dashboard/ride_preset.dart';
 import 'known_device.dart';
 import 'known_devices_store.dart';
 
 /// Les capteurs qu'il reste à rattacher.
 ///
-/// Trois filtres, dans cet ordre : connu, **connexion auto voulue**, pas déjà
-/// connecté. Le deuxième est un choix du cycliste et pas une optimisation : un
-/// capteur écarté à la main — vélo prêté, boîtier de l'autre vélo — ne doit
-/// jamais être rattrapé au vol parce qu'un scan l'a vu passer, sinon le réglage
-/// ne voudrait plus rien dire.
+/// Quatre filtres, dans cet ordre : connu, **connexion auto voulue**, retenu par
+/// le profil de sortie, pas déjà connecté. Le deuxième est un choix du cycliste
+/// et pas une optimisation : un capteur écarté à la main — vélo prêté, boîtier de
+/// l'autre vélo — ne doit jamais être rattrapé au vol parce qu'un scan l'a vu
+/// passer, sinon le réglage ne voudrait plus rien dire.
+///
+/// [allows] est le profil de sortie, et il ne peut que **restreindre** : les deux
+/// filtres se composent par un « et ». Un profil qui garde une capacité ne
+/// ressuscite jamais un appareil décoché à la main — c'est la règle qui empêche
+/// un réglage venu du site d'écraser un geste du cycliste.
+///
+/// Un appareil **sans capacité connue** passe : c'est un capteur jamais connecté
+/// avec succès, dont on ne sait pas encore ce qu'il sait faire. L'écarter
+/// l'empêcherait de se présenter, donc de le découvrir un jour.
 ///
 /// « En cours de connexion » compte comme manquant : c'est justement l'état où
 /// l'attente s'éternise, et celui qu'on vient corriger.
 List<KnownDevice> devicesToReattach(
   Iterable<KnownDevice> known,
-  SensorStatus? Function(String remoteId) statusOf,
-) =>
+  SensorStatus? Function(String remoteId) statusOf, {
+  bool Function(SensorKind kind)? allows,
+}) =>
     [
       for (final device in known)
         if (device.autoConnect &&
+            _wantedBy(device, allows) &&
             statusOf(device.remoteId) != SensorStatus.connected)
           device,
     ];
+
+bool _wantedBy(KnownDevice device, bool Function(SensorKind kind)? allows) {
+  if (allows == null || device.kinds.isEmpty) return true;
+  return device.kinds.any(allows);
+}
 
 /// Relie un appareil au hub et le retient au catalogue.
 ///
@@ -42,10 +60,25 @@ List<KnownDevice> devicesToReattach(
 /// doit continuer pendant la sortie, donc vivre au-dessus des écrans, comme le
 /// hub.
 class DeviceLinker {
-  DeviceLinker({required this.hub, required this.devices});
+  DeviceLinker({required this.hub, required this.devices, this.sensorsOf});
 
   final SensorHub hub;
   final KnownDevicesStore devices;
+
+  /// Les capteurs que le profil de sortie courant retient.
+  ///
+  /// Une fonction et pas une valeur : le profil se choisit au départ, et le
+  /// balayage tourne au-dessus des écrans depuis le lancement. Relire à chaque
+  /// tour évite d'avoir à prévenir le rattacheur qu'on a changé de vélo.
+  ///
+  /// Nulle dans les tests et tant que rien n'est câblé : tout est alors autorisé,
+  /// ce qui est exactement le comportement d'avant les profils.
+  final SensorSettings Function()? sensorsOf;
+
+  /// Le filtre du profil, prêt pour [devicesToReattach]. Nul quand il n'y a rien
+  /// à restreindre — la fonction sait déjà que « pas de filtre » veut dire
+  /// « tout passe ».
+  bool Function(SensorKind kind)? get _allows => sensorsOf?.call().allows;
 
   /// Combien de temps on écoute, et combien de temps on se tait.
   ///
@@ -103,12 +136,21 @@ class DeviceLinker {
   Future<void> reconnectKnown() async {
     if (!await FlutterBluePlus.isSupported) return;
 
+    final allows = _allows;
+
     for (final known in devices.devices) {
       if (!known.autoConnect) {
         // Dit à voix haute : une connexion auto coupée par mégarde dans le menu
         // d'un capteur ressemble en tout point à un capteur en panne, et c'est
         // la première chose à écarter quand « il ne se connecte plus ».
         debugPrint('[devices] ${known.name} : connexion auto désactivée, ignoré');
+        continue;
+      }
+      if (!_wantedBy(known, allows)) {
+        // Dit à voix haute pour la même raison, et il en faut d'autant plus :
+        // le réglage vient du site, donc le cycliste n'a rien décoché lui-même
+        // et n'a aucune raison de soupçonner le profil de sortie.
+        debugPrint('[devices] ${known.name} : écarté par le profil, ignoré');
         continue;
       }
       unawaited(_reconnect(known));
@@ -155,7 +197,7 @@ class DeviceLinker {
   Future<void> _sweep() async {
     _sweepTimer?.cancel();
 
-    final missing = devicesToReattach(devices.devices, _statusOf);
+    final missing = devicesToReattach(devices.devices, _statusOf, allows: _allows);
     // Bluetooth éteint : rien à tenter, et `startScan` lèverait. Le rallumage
     // repasse par `reconnectKnown`.
     final ready = FlutterBluePlus.adapterStateNow == BluetoothAdapterState.on;
@@ -184,7 +226,8 @@ class DeviceLinker {
     if (results.isEmpty) return;
 
     final wanted = {
-      for (final device in devicesToReattach(devices.devices, _statusOf))
+      for (final device in devicesToReattach(devices.devices, _statusOf,
+          allows: _allows))
         device.remoteId: device,
     };
     if (wanted.isEmpty) return;

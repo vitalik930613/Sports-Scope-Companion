@@ -35,7 +35,10 @@ class ScreenDimmer {
   /// Rend la main au réglage système (`BRIGHTNESS_OVERRIDE_NONE` côté Android).
   static const systemDefault = -1.0;
 
-  Future<void> dim() => setBrightness(dimmed);
+  /// [level] vient du profil de sortie, qui peut vouloir une veille moins noire
+  /// (un support de guidon teinté, un écran qu'on regarde de biais). Borné à 1 %
+  /// en bas par le décodage du profil, pour la raison ci-dessus.
+  Future<void> dim([double level = dimmed]) => setBrightness(level);
 
   Future<void> restore() => setBrightness(systemDefault);
 

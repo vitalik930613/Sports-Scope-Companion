@@ -12,19 +12,31 @@ import 'package:sports_scope_companion/recording/gps_source.dart';
 import 'package:sports_scope_companion/recording/ride_recorder.dart';
 import 'package:sports_scope_companion/recording/ride_store.dart';
 import 'package:sports_scope_companion/recording/track_point.dart';
+import 'package:sports_scope_companion/dashboard/metric_id.dart';
+import 'package:sports_scope_companion/dashboard/ride_preset.dart';
 import 'package:sports_scope_companion/ride/nav_state.dart';
-import 'package:sports_scope_companion/ride/pages/ride_summary_page.dart';
+import 'package:sports_scope_companion/ride/pages/dashboard_page.dart';
 import 'package:sports_scope_companion/ui/zone_colors.dart';
 
 /// La page Effort dit le cumul, là où le bandeau dit l'instant. Ce qui se
 /// vérifie ici : elle ne montre rien quand elle ne sait rien, et la répartition
 /// se recolore quand les zones arrivent du site en pleine sortie.
+///
+/// Elle n'est plus écrite en dur : c'est une [ListPageSpec] du profil de sortie,
+/// et celle qu'on monte ici est **exactement** la page du profil intégré. Ces
+/// tests sont donc aussi la preuve que le repli sur `RidePreset.builtIn` rend
+/// bien le tableau de bord d'avant les profils, page comprise.
 void main() {
   late Directory root;
   late SensorHub hub;
   late RideRecorder recorder;
   late RiderProfileStore profiles;
+  late MetricSources sources;
   final nav = ValueNotifier<NavState?>(null);
+
+  /// La page Effort du profil intégré : contrôle d'enregistrement, les deux
+  /// répartitions par zone, les moyennes, l'état de navigation.
+  final effortPage = RidePreset.builtIn.pages.last;
 
   const zones = [
     TrainingZone(key: 'z1', lo: 0, hi: 130),
@@ -68,6 +80,12 @@ void main() {
       tickPeriod: const Duration(seconds: 1),
     );
     profiles = RiderProfileStore(File(p.join(root.path, 'profile.json')));
+    sources = MetricSources(
+      hub: hub,
+      recorder: recorder,
+      riderProfile: profiles,
+      nav: nav,
+    );
   });
 
   tearDown(() async {
@@ -86,10 +104,9 @@ void main() {
   }) =>
       tester.pumpWidget(
         MaterialApp(
-          home: RideSummaryPage(
-            recorder: recorder,
-            nav: nav,
-            riderProfile: profiles,
+          home: DashboardPage(
+            page: effortPage,
+            sources: sources,
             onChooseRoute: onChooseRoute,
             onClearRoute: onClearRoute,
             onCalibratePower: onCalibratePower,
@@ -102,7 +119,17 @@ void main() {
       (tester) async {
     await pumpPage(tester);
 
-    expect(find.text('La répartition se remplit dès le départ.'), findsOneWidget);
+    // Chaque répartition nomme sa mesure : la même phrase deux fois de suite se
+    // lirait comme un bégaiement de l'appli, et un bloc ne peut pas compter sur
+    // son voisin pour le lui éviter — un profil peut n'en poser qu'un.
+    expect(
+      find.text('Le temps par zone cardio se remplit dès le départ.'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Le temps par zone de puissance se remplit dès le départ.'),
+      findsOneWidget,
+    );
     expect(find.text('Sortie non lancée'), findsOneWidget);
     // Pas de zéros : un zéro se lit comme une mesure.
     expect(find.text('0 %'), findsNothing);

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icône adaptative (Android 8+). Le lanceur découpe lui-même la forme — ronde,
+     carrée arrondie, goutte selon le téléphone — d'où deux couches séparées plutôt
+     qu'une image finie. Sans ce fichier, Android encadrerait le PNG hérité dans une
+     pastille blanche, ce qui donne un timbre-poste dans un rond. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+
+    <!-- Pas de `monochrome` (icônes thématisées, Android 13+) : cette couche-là n'est
+         lue que par son canal alpha, or la rune Bluetooth est du noir opaque posé sur
+         un disque jaune opaque. Les deux ont la même alpha : la rune disparaîtrait et
+         la pastille deviendrait un point plein — précisément ce qu'elle est censée ne
+         pas être. Sans déclaration, le lanceur garde l'icône couleur. -->
+</adaptive-icon>

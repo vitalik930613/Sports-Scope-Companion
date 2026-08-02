@@ -114,16 +114,31 @@ RadarView radarViewFor(
 /// resterait à l'écran. D'où l'horloge — qui ne tourne que lorsqu'il y a
 /// quelque chose à effacer.
 class RadarViewNotifier extends ValueNotifier<RadarView> {
-  RadarViewNotifier(this._source) : super(RadarView.absent) {
+  RadarViewNotifier(
+    this._source, {
+    this.closeM = 40,
+    this.rangeM = 140,
+  }) : super(RadarView.absent) {
     _source.addListener(_refresh);
     _refresh();
   }
 
   final ValueListenable<RadarSample?> _source;
+
+  /// Les seuils du profil de sortie : un VTT n'a pas la même idée de « proche »
+  /// qu'une route à 30 km/h de moyenne.
+  final double closeM;
+  final double rangeM;
+
   Timer? _timer;
 
   void _refresh() {
-    value = radarViewFor(_source.value, now: DateTime.now());
+    value = radarViewFor(
+      _source.value,
+      now: DateTime.now(),
+      closeM: closeM,
+      rangeM: rangeM,
+    );
 
     if (value.severity == RadarSeverity.absent) {
       _timer?.cancel();

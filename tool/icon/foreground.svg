@@ -1,0 +1,27 @@
+<!-- Couche AVANT de l'icône adaptative (Android 8+). Fond transparent : c'est
+     `ic_launcher_background` (noir) qui le fournit, et le lanceur qui décide de la
+     forme du masque.
+
+     Tout le contenu peint tient dans le cercle de sécurité — diamètre 66 sur 108,
+     soit un rayon de 33 autour du centre (54,54). Hors de ce cercle, rien n'est
+     garanti : les lanceurs découpent en rond, en carré arrondi, en goutte. C'est ce
+     qui explique que la pastille Bluetooth soit collée au glyphe et non au coin de
+     la toile, où elle serait rognée sur la plupart des téléphones.
+
+     Le sommet et le soleil sont le glyphe du site (public/icon.svg du dépôt Rails),
+     repris tel quel pour que les deux applications se lisent comme une famille. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="100%" height="100%">
+  <g transform="translate(23 24) scale(0.079861)" fill="#ffc107">
+    <path d="M256.5 0c14.7 0 28.2 8.1 35.2 21l216 400c6.7 12.4 6.4 27.4-.8 39.5-7.2 12.1-20.3 19.5-34.3 19.5l-432 0c-14.1 0-27.1-7.4-34.3-19.5s-7.5-27.1-.8-39.5l216-400 2.9-4.6C231.7 6.2 243.6 0 256.5 0zM170.4 249.9l26.8 26.8c6.2 6.2 16.4 6.2 22.6 0l43.3-43.3c6-6 14.1-9.4 22.6-9.4l42.8 0-72.1-133.5-86.1 159.4zM496.5 160a80 80 0 1 1 0-160 80 80 0 1 1 0 160z"/>
+  </g>
+
+  <!-- La pastille : disque noir, disque jaune, rune Bluetooth évidée en noir.
+       Le disque noir n'est pas décoratif — sur le fond noir il ne se voit pas, mais
+       là où la pastille mord sur le sommet jaune, c'est lui qui détache le badge du
+       glyphe. Sans ce liseré, les deux jaunes fusionnent en une seule tache. -->
+  <circle cx="68" cy="68" r="12.5" fill="#000000"/>
+  <circle cx="68" cy="68" r="10.6" fill="#ffc107"/>
+  <path d="M68 61.5 L71.25 64.75 L64.75 71.25 M64.75 64.75 L71.25 71.25 L68 74.5 L68 61.5"
+        fill="none" stroke="#000000" stroke-width="2.1"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

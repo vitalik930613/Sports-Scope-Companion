@@ -6,7 +6,10 @@ import 'package:flutter/services.dart';
 import '../account/rider_profile.dart';
 import '../account/rider_profile_store.dart';
 import '../account/site_session.dart';
+import '../ble/samples.dart';
 import '../ble/sensor_hub.dart';
+import '../dashboard/metric_id.dart';
+import '../dashboard/ride_preset.dart';
 import '../navigation/navigation_picker_sheet.dart';
 import '../navigation/navigation_target.dart';
 import '../navigation/route_catalog_store.dart';
@@ -17,7 +20,7 @@ import '../ui/power_calibration_dialog.dart';
 import 'auto_return_policy.dart';
 import 'nav_state.dart';
 import 'navigation_web_view.dart';
-import 'pages/ride_summary_page.dart';
+import 'pages/dashboard_page.dart';
 import 'radar_alert_sound.dart';
 import 'radar_severity.dart';
 import 'radar_wake_policy.dart';
@@ -34,27 +37,32 @@ import 'widgets/ride_bottom_band.dart';
 /// La coquille d'une sortie : ce qui appartient à l'écran, pas à la page web.
 ///
 /// Elle possède le plein écran, le rétroéclairage, les zones obstruées, le
-/// bouton retour et les pages du tableau de bord ; la navigation web, elle, vit
-/// dans un [NavigationWebController] créé une seule fois ici et qui lui survit.
+/// bouton retour et les pages du tableau de bord — **toutes décrites par le
+/// profil de sortie** ([RidePreset]) : leur nombre, leur ordre, leur contenu, et
+/// jusqu'à la présence d'une carte.
 ///
-/// **Le WebView reste monté, mesuré et peint en permanence**, au fond d'une
-/// pile, et les pages de données glissent par-dessus. Ce n'est pas une commodité
-/// de mise en page : une vue plateforme démontée emporte avec elle le pointeur
-/// de virage, la progression sur le tracé, l'état de reroutage et les tuiles
-/// MapLibre en mémoire — soit un rechargement complet en pleine sortie. Une vue
-/// simplement sortie de la liste de peinture, elle, se fait étrangler par
-/// certaines surcouches constructeur, et la page cesse de suivre le cycliste.
-/// Mesuré sur route avant d'être adopté (sonde M0, branche `m0-webview-probe`) :
-/// 465 messages de navigation en sept minutes sous un voile opaque, sans un seul
-/// rechargement.
+/// **Quand le profil a une carte, le WebView reste monté, mesuré et peint en
+/// permanence**, au fond d'une pile, et les pages de données glissent par-dessus.
+/// Ce n'est pas une commodité de mise en page : une vue plateforme démontée
+/// emporte avec elle le pointeur de virage, la progression sur le tracé, l'état
+/// de reroutage et les tuiles MapLibre en mémoire — soit un rechargement complet
+/// en pleine sortie. Une vue simplement sortie de la liste de peinture, elle, se
+/// fait étrangler par certaines surcouches constructeur, et la page cesse de
+/// suivre le cycliste. Mesuré sur route avant d'être adopté (sonde M0, branche
+/// `m0-webview-probe`) : 465 messages de navigation en sept minutes sous un voile
+/// opaque, sans un seul rechargement. **Sa position dans le catalogue n'y change
+/// rien** : elle peut être en deuxième page, elle reste au fond de la pile.
 ///
-/// Le prix, c'est une carte qui continue de composer derrière une page qu'on ne
-/// regarde pas. D'où [NavigationWebController.setOccluded], qui prévient la page
-/// de couper ses animations sans rien endormir.
+/// **Quand le profil n'a pas de carte** (home-trainer), le contrôleur n'est ni
+/// créé ni chargé : ni pont, ni GPS de page, ni service worker, ni tuiles. Tout
+/// ce qui en venait disparaît avec lui — état de navigation, retour automatique,
+/// veille demandée par la page. Le garder monté sous des pages opaques coûterait
+/// de la batterie pour une carte que personne ne regardera.
 class RideShellPage extends StatefulWidget {
   const RideShellPage({
     super.key,
     required this.target,
+    required this.preset,
     required this.hub,
     required this.recorder,
     this.compass,
@@ -65,6 +73,12 @@ class RideShellPage extends StatefulWidget {
   });
 
   final NavigationTarget target;
+
+  /// Le profil de sortie : les pages, le bandeau, les capteurs, le radar.
+  /// Choisi au départ et figé pour la durée de la sortie — changer de tableau
+  /// de bord en roulant n'a aucun usage et coûterait de reconstruire la pile.
+  final RidePreset preset;
+
   final SensorHub hub;
 
   /// Les itinéraires du compte, pour en choisir un autre en pleine sortie. Le
@@ -72,19 +86,19 @@ class RideShellPage extends StatefulWidget {
   /// possible là où le réseau manque, c'est-à-dire sur la route.
   final RouteCatalogStore routes;
 
-  /// L'enregistrement en cours, pour le bandeau et la page d'effort. La coquille
-  /// ne le pilote pas — il vit au-dessus des écrans et survit à la navigation.
+  /// L'enregistrement en cours, pour le bandeau et les pages de données. La
+  /// coquille ne le pilote pas — il vit au-dessus des écrans et survit à la
+  /// navigation.
   final RideRecorder recorder;
 
   /// La boussole du téléphone. La coquille est la SEULE à l'allumer, et
   /// seulement le temps de la sortie : un magnétomètre branché en permanence
   /// réveille le processeur pour une flèche que personne ne regarde. Nulle sur
-  /// un appareil sans magnétomètre, ou dans un test.
+  /// un appareil sans magnétomètre, dans un test, ou quand le profil l'a coupée.
   final RiderCompass? compass;
 
   /// Pas pour authentifier la page — le cookie du WebView s'en charge — mais
-  /// pour tenir à jour ce que l'appli affiche de la session : la navigation est
-  /// la page du site la plus souvent ouverte, donc le meilleur point d'écoute.
+  /// pour tenir à jour ce que l'appli affiche de la session.
   final SiteSession session;
 
   /// Seuils et zones du cycliste. La page les récupère du site et les pousse
@@ -100,24 +114,34 @@ class RideShellPage extends StatefulWidget {
 
 class _RideShellPageState extends State<RideShellPage>
     with WidgetsBindingObserver {
-  late final NavigationWebController _web;
+  /// Le contrôleur de la page web. **Nul quand le profil n'a pas de carte** :
+  /// tout ce qui en dépend est alors conditionné, et le pont n'existe pas.
+  NavigationWebController? _web;
+
   final _screen = ScreenDimmer();
   final _screenPolicy = ScreenPolicy();
 
   /// Ce que la page dit de la navigation en cours. Alimente le tableau de bord,
   /// et surtout le retour automatique sur la carte à l'approche d'un virage.
+  /// Sans carte, personne ne l'alimente jamais — et personne ne l'écoute.
   final _nav = NavStateNotifier();
 
-  final _pages = PageController(initialPage: rawPageOrigin);
+  late final PageController _pages;
 
   /// L'index brut du défilement, qui monte et descend sans borne pour que le
-  /// catalogue tourne en boucle (voir [rawPageOrigin]). Suit le défilement dès
-  /// qu'il passe la moitié, pour que les pastilles ne restent pas en retard sur
-  /// ce qu'on voit.
-  int _rawPage = rawPageOrigin;
+  /// catalogue tourne en boucle (voir [rawPageOriginFor]).
+  late int _rawPage;
 
-  /// La page affichée, celle du catalogue.
-  RidePage get _page => RidePage.values[pageOf(_rawPage)];
+  RidePreset get _preset => widget.preset;
+  int get _pageCount => _preset.pages.length;
+
+  /// La page affichée, index dans le profil.
+  int get _page => pageOf(_rawPage, count: _pageCount);
+
+  /// Où est la carte, `null` quand le profil n'en a pas.
+  int? get _mapPage => _preset.mapPageIndex;
+
+  bool get _onMap => _mapPage != null && _page == _mapPage;
 
   /// Un défilement est-il en cours ? Sert à ne basculer la carte en « vivante »
   /// qu'une fois le geste terminé : le faire à mi-glissé couperait le geste au
@@ -126,26 +150,28 @@ class _RideShellPageState extends State<RideShellPage>
 
   /// Le retour automatique sur la carte, et la restitution de la page ensuite.
   final _alerts = RideAlertSource();
-  final _autoReturn = AutoReturnPolicy();
+  late final AutoReturnPolicy _autoReturn;
   static const _proximity = TurnProximity();
 
   /// L'horloge du retour automatique. Le front d'une alerte arrive par le pont,
   /// mais « rendre la page une fois le calme revenu » n'est piloté que par le
-  /// temps qui passe : sans ce tic, la page ne reviendrait qu'au prochain
-  /// message, c'est-à-dire jamais si le GPS a décroché.
+  /// temps qui passe.
   Timer? _tick;
 
   /// Le cycliste a-t-il changé de page de sa main depuis la dernière décision ?
-  /// C'est ce qui lui donne le dernier mot sur la politique.
   bool _userMoved = false;
 
   /// Nombre de déplacements en cours décidés par la politique. Un compteur et
-  /// pas un booléen : deux animations peuvent se chevaucher, et retomber à
-  /// « c'est le cycliste » entre les deux ferait annuler le retour par le
-  /// retour lui-même.
+  /// pas un booléen : deux animations peuvent se chevaucher.
   int _autoMoves = 0;
 
-  /// Le radar, prêt à dessiner et capable de se périmer tout seul.
+  /// La source radar effectivement écoutée.
+  ///
+  /// Quand le profil coupe le radar, c'est un notifieur **muet** plutôt qu'une
+  /// grappe de conditions dans tout le fichier : le cadre, les gouttières, les
+  /// mètres, le son et le réveil lisent alors tous « absent », qui est
+  /// exactement ce qu'il faut afficher — et jamais « voie libre ».
+  late final ValueNotifier<RadarSample?> _mutedRadar;
   late final RadarViewNotifier _radar;
 
   /// Et sa voix : le seul élément du tableau de bord qui n'attende pas qu'on
@@ -155,63 +181,86 @@ class _RideShellPageState extends State<RideShellPage>
 
   /// Ce qui décide de rallumer l'écran pour une voiture, et de le rendre à la
   /// veille ensuite.
-  final _radarWake = RadarWakePolicy();
+  late final RadarWakePolicy _radarWake;
+
+  late final MetricSources _sources;
 
   /// La carte a-t-elle la main sur les gestes ? Vrai seulement quand elle est
   /// affichée et posée. Le [PageView] est alors entièrement hors du test de
   /// touche — sans quoi son détecteur, qui couvre toute la surface, volerait à
   /// MapLibre le glissé dont la carte a besoin pour se déplacer.
-  bool get _mapLive => _page == RidePage.navigation && !_scrolling;
+  ///
+  /// **Toujours par le prédicat, jamais par l'index seul**, qui bascule à
+  /// mi-glissé et couperait le geste en deux.
+  bool get _mapLive => _onMap && !_scrolling;
 
   /// Construit une fois : un changement de page ne doit pas reconstruire l'arbre
-  /// du WebView. Le widget est bête et le contrôleur porte tout l'état, mais une
-  /// instance identique évite jusqu'au diff.
-  late final Widget _webView = NavigationWebView(controller: _web);
+  /// du WebView.
+  Widget? _webView;
 
   @override
   void initState() {
     super.initState();
 
     // Plein écran, barres système comprises : sur un guidon, chaque centimètre
-    // de carte compte, et les barres d'Android n'ont rien à y faire. `sticky`
-    // les fait réapparaître le temps d'un balayage depuis le bord puis les
-    // remasque — sans quoi un geste involontaire les laisserait à l'écran pour
-    // le reste de la sortie.
+    // de carte compte. `sticky` les fait réapparaître le temps d'un balayage
+    // depuis le bord puis les remasque.
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     WidgetsBinding.instance.addObserver(this);
 
-    _radar = RadarViewNotifier(widget.hub.latestRadar);
+    _rawPage = rawPageOriginFor(_pageCount);
+    _pages = PageController(initialPage: _rawPage);
+
+    _autoReturn = AutoReturnPolicy(mapPage: _mapPage);
+    _radarWake = RadarWakePolicy(hold: _preset.radar.wakeHold);
+
+    _mutedRadar = ValueNotifier<RadarSample?>(null);
+    _radar = RadarViewNotifier(
+      _preset.sensors.radar ? widget.hub.latestRadar : _mutedRadar,
+      closeM: _preset.radar.closeM,
+      rangeM: _preset.radar.rangeM,
+    );
     _radar.addListener(_onRadar);
     // Chargés maintenant : quand une voiture arrivera, il ne sera plus temps
-    // d'ouvrir des fichiers.
-    unawaited(_radarSound.warmUp());
+    // d'ouvrir des fichiers. Inutile si le profil coupe le son.
+    if (_preset.radar.sounds && _preset.sensors.radar) {
+      unawaited(_radarSound.warmUp());
+    }
 
-    // La boussole ne sert qu'ici, et ne mesure rien tant qu'on n'a pas comparé
-    // ses caps à la course GPS : c'est le tic ci-dessous qui la nourrit.
-    widget.compass?.start();
+    // La boussole ne sert qu'avec une carte — c'est la page qui consomme le cap
+    // — et ne mesure rien tant qu'on n'a pas comparé ses caps à la course GPS.
+    if (_preset.sensors.compass && _preset.hasMap) widget.compass?.start();
 
-    _web = NavigationWebController(
+    if (_preset.hasMap) {
+      _web = NavigationWebController(
+        hub: widget.hub,
+        compass: _preset.sensors.compass ? widget.compass : null,
+        target: widget.target,
+        baseUrl: widget.baseUrl,
+        onMessage: _onPageMessage,
+        onPageFinished: _onPageFinished,
+      );
+      _webView = NavigationWebView(controller: _web!);
+    }
+
+    _sources = MetricSources(
       hub: widget.hub,
-      compass: widget.compass,
-      target: widget.target,
-      baseUrl: widget.baseUrl,
-      onMessage: _onPageMessage,
-      onPageFinished: _onPageFinished,
+      recorder: widget.recorder,
+      riderProfile: widget.riderProfile,
+      // Sans carte, aucune page ne publiera d'état : les mesures qui en
+      // dépendent s'abstiennent au lieu d'attendre pour toujours.
+      nav: _preset.hasMap ? _nav : null,
     );
 
     // Deux déclencheurs pour une seule décision : le pont pour les fronts, le
-    // temps pour les délais. Le tic sert aussi au maintien du réveil radar :
-    // route redevenue libre, plus aucune trame ne change, donc plus personne
-    // pour rendre l'écran à la veille.
+    // temps pour les délais. Le tic sert aussi au maintien du réveil radar.
     _nav.addListener(_decideReturn);
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       _decideReturn();
       _updateRadarWake();
       // Même source que le chien de garde (`recorder.lastFix`) et même
       // conséquence assumée : hors enregistrement la boussole n'a aucune course
-      // à laquelle se comparer, donc elle ne se validera pas et la page gardera
-      // sa flèche GPS. Ouvrir un second flux GPS pour ça coûterait plus cher que
-      // le service rendu.
+      // à laquelle se comparer, donc elle ne se validera pas.
       widget.compass?.addFix(widget.recorder.lastFix);
     });
   }
@@ -220,38 +269,33 @@ class _RideShellPageState extends State<RideShellPage>
     _publishInsets();
     // Une page fraîchement chargée n'est pas en veille : son voile noir a
     // disparu avec son état. Sans cette remise à zéro, un rechargement en
-    // pleine veille laisserait une carte allumée à 1 % de luminosité. Si
-    // elle se rendort, elle le redira.
+    // pleine veille laisserait une carte allumée à 1 % de luminosité.
     _applyScreen(_screenPolicy.pageReloaded());
     // Elle ne sait pas non plus qu'elle est peut-être masquée par une page de
     // données : on le lui redit, sinon elle animerait dans le vide.
-    _web.setOccluded(_page != RidePage.navigation);
+    _web?.setOccluded(!_onMap);
     // Elle a pu recharger, ou ouvrir un autre tracé : l'arrivée qu'on avait déjà
-    // vue ne compte plus, celle qui viendra sera une nouvelle arrivée.
+    // vue ne compte plus.
     _alerts.reset();
     _autoReturn.reset();
-    // Une page anonyme n'est pas une panne mais une navigation dégradée
-    // (pas d'itinéraires, fond de carte par défaut, POI muets) : on le
-    // note pour que l'écran des capteurs puisse le dire avant la sortie.
     _checkSession();
   }
 
   /// Le radar vient de changer d'état : y a-t-il quelque chose à dire, et
   /// quelque chose à montrer ?
   void _onRadar() {
-    if (_radarVoice.read(_radar.value.severity) case final cue?) {
-      _radarSound.play(cue);
-    }
+    final cue = _radarVoice.read(_radar.value.severity);
+    // La voix est lue dans tous les cas, y compris muette : c'est elle qui tient
+    // le front des escalades, et la sauter ferait annoncer d'un coup toutes les
+    // voitures accumulées le jour où le son revient.
+    if (cue != null && _preset.radar.sounds) _radarSound.play(cue);
     _updateRadarWake();
   }
 
   /// Rallumer l'écran pour une voiture, et le rendre à la veille ensuite.
-  ///
-  /// Le rétroéclairage ne bouge que si la page dormait ([ScreenPolicy] arbitre) ;
-  /// le rendu, lui, est toujours refait par [_applyScreen] — la page radar
-  /// apparaît sur une condition qui ne vit dans aucun `ValueListenable`.
   void _updateRadarWake() {
     if (!mounted) return;
+    if (!_preset.radar.wakeScreen) return;
 
     final changed = _radarWake.update(
       now: DateTime.now(),
@@ -264,12 +308,8 @@ class _RideShellPageState extends State<RideShellPage>
 
   /// Faut-il ramener le cycliste sur la carte, ou lui rendre sa page ?
   ///
-  /// La position vient de l'enregistreur et non d'un abonnement à part : c'est
-  /// le seul flux GPS de l'appli, et en ouvrir un deuxième pour le chien de
-  /// garde coûterait un service au premier plan de plus, avec sa notification
-  /// qui parlerait d'un enregistrement inexistant. Conséquence assumée : hors
-  /// enregistrement, le chien de garde n'a pas de position et le retour
-  /// automatique repose entièrement sur le pont.
+  /// Sans carte dans le profil, [AutoReturnPolicy] est inerte et rend toujours
+  /// « rester » : il n'y a pas de page web, donc pas de virage à annoncer.
   void _decideReturn() {
     if (!mounted) return;
 
@@ -296,18 +336,16 @@ class _RideShellPageState extends State<RideShellPage>
   }
 
   Future<void> _checkSession() async {
-    await widget.session.record(await _web.probeSession());
+    final web = _web;
+    if (web == null) return;
+    await widget.session.record(await web.probeSession());
   }
 
   /// Changer de tracé sans quitter la sortie.
   ///
-  /// Le besoin est celui de la route : on part sur un itinéraire, on décide de
-  /// couper, de rallonger, ou de rentrer. Jusqu'ici il fallait sortir de la
-  /// navigation et tout relancer — donc perdre la carte et son démarrage.
-  ///
   /// La même feuille qu'au départ : elle sait déjà lire le catalogue en cache,
-  /// coller un lien, et proposer la reprise. Le sélecteur ne fait que rendre
-  /// une cible ; l'ouvrir appartient à la coquille, qui possède le WebView.
+  /// coller un lien, et proposer la reprise. Le sélecteur ne fait que rendre une
+  /// cible ; l'ouvrir appartient à la coquille, qui possède le WebView.
   Future<void> _chooseRoute() async {
     final target = await showModalBottomSheet<NavigationTarget>(
       context: context,
@@ -324,8 +362,7 @@ class _RideShellPageState extends State<RideShellPage>
   /// Avec confirmation, contrairement au choix d'un autre tracé — celui-là passe
   /// déjà par une feuille qu'on ne traverse pas par mégarde. Retirer, en
   /// revanche, est sans retour : `fresh=1` efface la session de la page, donc la
-  /// progression avec elle. On ne la retrouve pas en rechoisissant l'itinéraire,
-  /// on la refait.
+  /// progression avec elle.
   Future<void> _clearRoute() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -356,81 +393,76 @@ class _RideShellPageState extends State<RideShellPage>
   ///
   /// C'est en roulant qu'on voit une puissance dériver — au départ elle a l'air
   /// juste. Sortir de la navigation pour aller chercher l'écran des capteurs
-  /// coûterait la carte et son démarrage, donc on ne le ferait pas : on
-  /// finirait la sortie avec des watts faux, et une sortie fausse dans
-  /// l'historique.
-  ///
-  /// La calibration demande un vélo arrêté, ce que la boîte de dialogue dit ;
-  /// rien n'est bloqué pour autant, un capteur sous charge répond « échec » et
-  /// c'est un message plus clair qu'un bouton grisé.
+  /// coûterait la carte et son démarrage, donc on ne le ferait pas : on finirait
+  /// la sortie avec des watts faux, et une sortie fausse dans l'historique.
   Future<void> _calibratePower() =>
       showPowerCalibration(context, hub: widget.hub);
 
   /// Le bouton retour du téléphone, en **trois crans au plus** et dans l'ordre
-  /// où le cycliste s'est éloigné de la carte : la page de données, puis la
-  /// page web si elle s'est égarée ailleurs que sur le tracé ouvert, et enfin
-  /// la sortie elle-même.
+  /// où le cycliste s'est éloigné de la carte : la page de données, puis la page
+  /// web si elle s'est égarée ailleurs que sur le tracé ouvert, et enfin la
+  /// sortie elle-même.
   ///
-  /// Le cran du milieu était sans fond : il dépilait l'historique du WebView
-  /// entier, si bien qu'il fallait parfois appuyer cinq fois pour rentrer — et
-  /// que les premiers appuis rouvraient au passage les tracés de la sortie.
-  /// [NavigationWebController.goBackInPage] le borne désormais à ce que la page
-  /// a réellement empilé par-dessus l'itinéraire.
+  /// **Les crans qui n'existent pas sont sautés.** Sans carte dans le profil, il
+  /// n'y en a que deux : revenir à la première page, puis quitter. Le cran du
+  /// milieu était sans fond avant `goBackInPage` : il dépilait l'historique du
+  /// WebView entier, si bien qu'il fallait parfois appuyer cinq fois pour
+  /// rentrer — et que les premiers appuis rouvraient au passage les tracés de la
+  /// sortie.
   Future<void> _handleBack() async {
-    if (_page != RidePage.navigation) {
-      _goToPage(RidePage.navigation);
+    final home = _mapPage ?? 0;
+    if (_page != home) {
+      _goToPage(home);
       return;
     }
-    if (await _web.goBackInPage()) return;
+    if (await (_web?.goBackInPage() ?? Future.value(false))) return;
     if (mounted) _leaveRide();
   }
 
   /// Quitter la sortie et retrouver l'accueil, **d'un seul geste**.
   ///
-  /// Sans confirmation : rentrer est une chose qu'on fait souvent — jeter un
-  /// œil à l'enregistrement, à un capteur — et une boîte à traverser à chaque
-  /// fois rendrait le trajet aller-retour plus coûteux que ce qu'on va y
-  /// chercher. Ce qui rend l'absence de garde-fou tenable, c'est la reprise :
-  /// la sortie qu'on quitte est rendue à l'accueil, qui la repropose en tête
-  /// et en un tap. Un départ par mégarde ne coûte donc plus qu'un tap et le
-  /// rechargement de la carte.
+  /// Sans confirmation : rentrer est une chose qu'on fait souvent — jeter un œil
+  /// à l'enregistrement, à un capteur — et une boîte à traverser à chaque fois
+  /// rendrait le trajet aller-retour plus coûteux que ce qu'on va y chercher. Ce
+  /// qui rend l'absence de garde-fou tenable, c'est la reprise : la sortie qu'on
+  /// quitte est rendue à l'accueil, qui la repropose en tête et en un tap.
   ///
   /// L'enregistrement, lui, n'est jamais concerné : il vit au-dessus de la
   /// navigation et continue d'écrire pendant qu'on est à l'accueil.
   void _leaveRide() {
-    // La reprise, et pas le tracé qu'on avait ouvert : c'est la page qui sait
-    // où l'on en était (son `localStorage`), et redemander `/routes/<token>/
-    // navigate` repartirait du début du tracé. Le nom, lui, ne sert qu'à
-    // l'annoncer à l'accueil.
-    Navigator.of(context).pop(NavigationTarget.resume(label: _web.target.label));
+    final web = _web;
+    // Sans carte, il n'y a rien à reprendre : la sortie n'avait pas de page web,
+    // et proposer « Reprendre la navigation » à l'accueil ouvrirait une carte que
+    // ce profil ne veut justement pas.
+    Navigator.of(context).pop(
+      web == null ? null : NavigationTarget.resume(label: web.target.label),
+    );
   }
 
   /// Charge un autre tracé dans la page déjà montée.
   ///
   /// L'état de navigation est remis à zéro tout de suite : celui du tracé qu'on
   /// quitte ne dit plus rien de celui qui arrive, et le laisser en place ferait
-  /// afficher un virage périmé — voire proposer de retirer un itinéraire qui
-  /// n'existe plus — pendant les secondes du chargement. Les alertes et le
-  /// retour automatique, eux, sont déjà repris à la fin du chargement
-  /// (`_onPageFinished`).
+  /// afficher un virage périmé pendant les secondes du chargement.
   void _openTarget(NavigationTarget target) {
+    final web = _web;
+    if (web == null) return;
+
     _nav.reset();
-    _web.openTarget(target);
+    web.openTarget(target);
     // Sur la carte : c'est là que le chargement se voit, et c'est ce qu'on veut
     // regarder juste après avoir choisi où aller.
-    _goToPage(RidePage.navigation);
+    if (_mapPage case final page?) _goToPage(page);
   }
 
   /// Republie les zones obstruées de l'écran vers la page.
   ///
   /// `viewPadding` et non `padding` : la première garde la hauteur de
-  /// l'obstruction physique même quand les barres système sont masquées, ce qui
-  /// est exactement le cas ici. Le bas, lui, est retiré par [webInsetsFor] :
-  /// depuis que le bandeau natif occupe cette zone, le WebView ne la touche
-  /// plus.
+  /// l'obstruction physique même quand les barres système sont masquées. Le bas,
+  /// lui, est retiré par [webInsetsFor] — le bandeau natif occupe cette zone.
   Future<void> _publishInsets() async {
     if (!mounted) return;
-    await _web.pushInsets(webInsetsFor(MediaQuery.viewPaddingOf(context)));
+    await _web?.pushInsets(webInsetsFor(MediaQuery.viewPaddingOf(context)));
   }
 
   @override
@@ -440,16 +472,16 @@ class _RideShellPageState extends State<RideShellPage>
     _publishInsets();
   }
 
-  /// Emmène le cycliste sur une page nommée : pastille, bouton retour, ou plus
-  /// tard retour automatique à l'approche d'un virage. Par le chemin le plus
-  /// court dans la boucle, jamais par le tour complet.
-  void _goToPage(RidePage page, {bool auto = false}) =>
-      _animateTo(rawPageFor(page.index, from: _rawPage), auto: auto);
+  /// Emmène le cycliste sur une page nommée : pastille, bouton retour, retour
+  /// automatique. Par le chemin le plus court dans la boucle, jamais par le tour
+  /// complet.
+  void _goToPage(int page, {bool auto = false}) => _animateTo(
+        rawPageFor(page, from: _rawPage, count: _pageCount),
+        auto: auto,
+      );
 
   /// Avance ou recule d'une page, sans se soucier de laquelle : c'est ce que
   /// demandent les bandes du bord, qui parlent en gestes et pas en destinations.
-  /// L'index brut n'ayant pas de bout, il n'y a rien à borner — la boucle est
-  /// exactement là.
   void _stepPage(int direction) => _animateTo(_rawPage + direction);
 
   /// [auto] : le déplacement vient de la politique, pas du cycliste. C'est ce
@@ -471,16 +503,14 @@ class _RideShellPageState extends State<RideShellPage>
 
   void _onPageChanged(int rawPage) {
     // Tout ce qui n'a pas été décidé ici l'a été par un doigt : un glissé sur
-    // une page de données ne passe par aucun de nos appels, il ne se voit que
-    // là.
+    // une page de données ne passe par aucun de nos appels, il ne se voit que là.
     if (_autoMoves == 0) _userMoved = true;
     setState(() => _rawPage = rawPage);
-    // La page web n'est plus regardée : qu'elle cesse d'animer. Elle continue
-    // en revanche de suivre la position, de compter les virages et de publier
-    // son état — c'est tout l'intérêt de la garder montée.
-    final page = pageOf(rawPage);
-    _web.setOccluded(page != RidePage.navigation.index);
-    _applyScreen(_screenPolicy.movedTo(page));
+    // La page web n'est plus regardée : qu'elle cesse d'animer. Elle continue en
+    // revanche de suivre la position et de publier son état — c'est tout
+    // l'intérêt de la garder montée.
+    _web?.setOccluded(!_onMap);
+    _applyScreen(_screenPolicy.movedTo(onMap: _onMap));
   }
 
   /// Messages venus de la page.
@@ -490,13 +520,10 @@ class _RideShellPageState extends State<RideShellPage>
   /// correspondant — ce qu'un navigateur ne sait pas faire lui-même.
   /// `nav` : où en est la navigation (virage, hors-trace, arrivée, col).
   /// `rider_profile` : les seuils du cycliste, relayés depuis le site.
-  ///
-  /// Le protocole est volontairement en JSON typé : il grossira, et un simple
-  /// mot-clé deviendrait vite illisible.
   void _onPageMessage(Map<dynamic, dynamic> message) {
     switch (message['type']) {
       case 'ready':
-        _web.bridge.pushNow();
+        _web?.bridge.pushNow();
       case 'nav':
         _nav.accept(message);
       case 'rider_profile':
@@ -521,7 +548,7 @@ class _RideShellPageState extends State<RideShellPage>
   void _applyScreen(bool changed) {
     if (changed) {
       if (_screenPolicy.dimmed) {
-        _screen.dim();
+        _screen.dim(_preset.screen.dimLevel);
       } else {
         _screen.restore();
       }
@@ -539,19 +566,18 @@ class _RideShellPageState extends State<RideShellPage>
     _nav.removeListener(_decideReturn);
     _radar.removeListener(_onRadar);
     _radar.dispose();
+    _mutedRadar.dispose();
     _radarSound.dispose();
     // Filet de sécurité : quitter la navigation en veille (bouton retour, page
-    // qui plante) ne doit pas laisser l'appareil à 1 % de luminosité sur
-    // l'écran des capteurs. La page le demande aussi de son côté, mais elle
-    // n'est pas toujours en état de le faire.
+    // qui plante) ne doit pas laisser l'appareil à 1 % de luminosité.
     _screen.restore();
-    // Les barres reviennent en quittant la navigation : la page des capteurs
-    // est un écran d'appli ordinaire, avec son horloge et ses gestes.
+    // Les barres reviennent en quittant la navigation : l'accueil est un écran
+    // d'appli ordinaire, avec son horloge et ses gestes.
     SystemChrome.setEnabledSystemUIMode(
       SystemUiMode.manual,
       overlays: SystemUiOverlay.values,
     );
-    _web.dispose();
+    _web?.dispose();
     _nav.dispose();
     _pages.dispose();
     super.dispose();
@@ -560,6 +586,7 @@ class _RideShellPageState extends State<RideShellPage>
   @override
   Widget build(BuildContext context) {
     final bandHeight = RideBottomBand.heightFor(context);
+    final webView = _webView;
 
     return PopScope(
       canPop: false,
@@ -571,25 +598,25 @@ class _RideShellPageState extends State<RideShellPage>
         backgroundColor: Colors.black,
         // Pas de SafeArea autour de la carte : en immersif il n'y a plus de
         // barres à contourner, et l'encoche éventuelle est mieux occupée par la
-        // carte que par une bande noire. Seul le message d'erreur, qui est du
-        // texte à lire, garde ses marges.
+        // carte que par une bande noire.
         body: Stack(
           children: [
-            // La carte, tout au fond et pour toute la sortie.
-            Positioned(
-              left: 0,
-              right: 0,
-              top: 0,
-              bottom: bandHeight,
-              child: _webView,
-            ),
-            // Les pages de données, dans le même cadre, opaques quand elles
-            // sont là. La page « navigation » est vide : c'est la carte qu'on
-            // voit à travers.
+            // La carte, tout au fond et pour toute la sortie — quand il y en a
+            // une.
+            if (webView != null)
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                bottom: bandHeight,
+                child: webView,
+              ),
+            // Les pages de données, dans le même cadre, opaques quand elles sont
+            // là. La page carte est vide : c'est le WebView qu'on voit à travers.
             //
-            // Construite à la demande et sans fin, parce que le catalogue
-            // tourne en boucle : l'index brut du défilement ne revient jamais
-            // en arrière, c'est [pageOf] qui le replie sur les pages réelles.
+            // Construite à la demande et sans fin, parce que le catalogue tourne
+            // en boucle : l'index brut du défilement ne revient jamais en
+            // arrière, c'est [pageOf] qui le replie sur les pages réelles.
             Positioned(
               left: 0,
               right: 0,
@@ -604,32 +631,14 @@ class _RideShellPageState extends State<RideShellPage>
                     physics: physicsForMap(mapLive: _mapLive),
                     onPageChanged: _onPageChanged,
                     itemBuilder: (context, rawPage) =>
-                        switch (RidePage.values[pageOf(rawPage)]) {
-                      RidePage.navigation => const SizedBox.shrink(),
-                      RidePage.effort => RideSummaryPage(
-                          recorder: widget.recorder,
-                          nav: _nav,
-                          riderProfile: widget.riderProfile,
-                          onChooseRoute: _chooseRoute,
-                          onClearRoute: _clearRoute,
-                          // La commande n'apparaît que si un capteur connecté
-                          // sait effectivement se calibrer : évalué à chaque
-                          // rendu, donc juste dès que le capteur répond.
-                          onCalibratePower: powerCalibrationAvailable(widget.hub)
-                              ? _calibratePower
-                              : null,
-                          onLeaveRide: _leaveRide,
-                        ),
-                    },
+                        _pageAt(pageOf(rawPage, count: _pageCount)),
                   ),
                 ),
               ),
             ),
             // La page radar : le seul écran qui s'invite. Elle ne paraît que
-            // pendant la veille, là où la page web est sous son voile noir et
-            // n'a rien à dire d'une voiture qu'elle ne voit pas. Sous les
-            // gouttières et les mètres, qui continuent de se peindre par-dessus
-            // comme sur n'importe quelle page.
+            // pendant la veille, là où la page web est sous son voile noir et n'a
+            // rien à dire d'une voiture qu'elle ne voit pas.
             if (_screenPolicy.radarWake)
               Positioned(
                 left: 0,
@@ -648,15 +657,15 @@ class _RideShellPageState extends State<RideShellPage>
               right: 0,
               bottom: 0,
               child: RideBottomBand(
-                hub: widget.hub,
-                recorder: widget.recorder,
-                nav: _nav,
-                riderProfile: widget.riderProfile,
+                bands: _preset.bands,
+                sources: _sources,
                 page: _page,
+                pageCount: _pageCount,
                 onGoToPage: _goToPage,
-                // Toujours branché, sans passer par [powerCalibrationAvailable]
-                // : la coquille ne se redessine pas à la découverte GATT, et un
-                // tap qui ne ferait rien serait pris pour un écran gelé.
+                // Toujours branché, sans filtrer sur la découverte GATT : la
+                // coquille ne se redessine pas quand le capteur finit sa
+                // découverte, et un tap qui ne ferait rien serait pris pour un
+                // écran gelé.
                 onCalibratePower: _calibratePower,
               ),
             ),
@@ -686,6 +695,30 @@ class _RideShellPageState extends State<RideShellPage>
     );
   }
 
+  /// La page d'un index du profil.
+  ///
+  /// La carte ne se dessine pas ici — elle est au fond de la pile, et cette
+  /// entrée du `PageView` est donc transparente.
+  Widget _pageAt(int index) {
+    final page = _preset.pages[index];
+    if (page is MapPageSpec) return const SizedBox.shrink();
+
+    return DashboardPage(
+      page: page,
+      sources: _sources,
+      radar: _preset.sensors.radar ? _radar : null,
+      // Sans carte, il n'y a aucune page à qui adresser un itinéraire : les deux
+      // commandes disparaissent plutôt que de répondre « non ».
+      onChooseRoute: _preset.hasMap ? _chooseRoute : null,
+      onClearRoute: _preset.hasMap ? _clearRoute : null,
+      // La commande n'apparaît que si un capteur connecté sait effectivement se
+      // calibrer : évalué à chaque rendu, donc juste dès que le capteur répond.
+      onCalibratePower:
+          powerCalibrationAvailable(widget.hub) ? _calibratePower : null,
+      onLeaveRide: _leaveRide,
+    );
+  }
+
   /// Une gouttière, c'est-à-dire deux choses qui se partagent le même bord :
   /// la bande de changement de page, qui n'existe que sur la carte, et la jauge
   /// radar, qui est là sur toutes les pages.
@@ -695,10 +728,8 @@ class _RideShellPageState extends State<RideShellPage>
   /// radar alerte, c'est lui qu'on voit : la bande garde ses gestes et efface
   /// son repère.
   ///
-  /// La jauge est **plus large que la bande** depuis que son dégradé déborde sur
-  /// la page. La bande de gestes, elle, garde ses vingt-deux points collés au
-  /// bord : l'élargir prendrait à MapLibre un tiers de sa surface de glissé,
-  /// alors que la jauge ne prend aucun geste.
+  /// La bande de gestes n'existe **que sur la page carte**, où le `PageView` est
+  /// hors du test de touche : ailleurs, tout l'écran fait déjà défiler.
   Widget _gutter(RadarGaugeSide side, double bandHeight) {
     final left = side == RadarGaugeSide.left;
 
@@ -714,7 +745,7 @@ class _RideShellPageState extends State<RideShellPage>
           child: Stack(
             children: [
               Positioned.fill(child: RadarSideGauge(view: radar, side: side)),
-              if (_page == RidePage.navigation)
+              if (_onMap)
                 Positioned(
                   left: left ? 0 : null,
                   right: left ? null : 0,

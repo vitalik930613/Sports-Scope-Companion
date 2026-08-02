@@ -1,0 +1,330 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+
+import '../account/rider_profile.dart';
+import '../account/rider_profile_store.dart';
+import '../ble/sensor_hub.dart';
+import '../recording/ride_recorder.dart';
+import '../ride/nav_state.dart';
+import '../ui/formats.dart';
+
+/// Le catalogue des mesures affichables, et **le vocabulaire partagé avec le
+/// site** : une clé d'ici est une clé du document de réglages.
+///
+/// Rien n'y entre qui n'ait une source réelle aujourd'hui (le hub, l'agrégat de
+/// l'enregistreur, l'état publié par la page web). Une mesure sans source
+/// afficherait un tiret pour toujours, et un tiret permanent se lit comme un
+/// capteur en panne — soit exactement la mauvaise information, puisque le trou
+/// serait dans l'appli.
+///
+/// Ajouter une mesure, c'est donc : une valeur ici, sa lecture dans [read], et
+/// ses dépendances dans [dependencies]. Le site pourra s'en servir dès qu'il
+/// connaîtra la clé ; l'appli plus ancienne, elle, l'ignorera sans broncher.
+enum MetricId {
+  duration('duration', 'durée', Icons.timer_outlined),
+  movingTime('moving_time', 'en mouvement', Icons.directions_bike),
+  distance('distance', 'distance', Icons.straighten),
+  speed('speed', 'km/h', Icons.speed),
+  speedAvg('speed_avg', 'km/h moy', Icons.speed),
+  speedMax('speed_max', 'km/h max', Icons.speed),
+  heartRate('heart_rate', 'bpm', Icons.favorite),
+  hrZone('hr_zone', 'zone bpm', Icons.favorite),
+  hrAvg('hr_avg', 'bpm moy', Icons.favorite_border),
+  hrMax('hr_max', 'bpm max', Icons.favorite_border),
+  power('power', 'W', Icons.bolt),
+  powerZone('power_zone', 'zone W', Icons.bolt),
+  powerAvg('power_avg', 'W moy', Icons.bolt),
+  powerNormalized('power_np', 'W NP', Icons.bolt),
+  powerMax('power_max', 'W max', Icons.bolt),
+  cadence('cadence', 'tr/min', Icons.autorenew),
+  cadenceAvg('cadence_avg', 'tr/min moy', Icons.autorenew),
+  ascent('ascent', 'm D+', Icons.trending_up),
+  altitude('altitude', 'm', Icons.terrain),
+  calories('calories', 'kcal', Icons.local_fire_department),
+  gears('gears', 'braquet', Icons.settings),
+  routeRemaining('route_remaining', 'restant', Icons.flag_outlined),
+  routeRemainingGain('route_remaining_gain', 'D+ restant', Icons.trending_up);
+
+  const MetricId(this.key, this.unit, this.icon);
+
+  /// La clé du contrat JSON. Écrite à la main plutôt que dérivée de [name] :
+  /// renommer une valeur Dart ne doit pas casser les documents déjà servis par
+  /// le site.
+  final String key;
+
+  /// Ce qui s'écrit sous le chiffre. Court à dessein — c'est une case de
+  /// bandeau, pas une légende.
+  final String unit;
+
+  final IconData icon;
+
+  /// La mesure de cette clé, ou `null` si le site en nomme une que cette
+  /// version ne connaît pas. Tolérant par construction : le site peut être plus
+  /// récent que l'appli, et une clé inconnue ne doit rien faire échouer.
+  static MetricId? fromKey(Object? raw) {
+    if (raw is! String) return null;
+    for (final metric in values) {
+      if (metric.key == raw) return metric;
+    }
+    return null;
+  }
+
+  /// Cette mesure porte-t-elle une zone d'entraînement ? Sert au rendu, qui
+  /// peint alors la case aux couleurs de la zone du moment.
+  bool get hasZone => switch (this) {
+        MetricId.heartRate ||
+        MetricId.hrZone ||
+        MetricId.power ||
+        MetricId.powerZone =>
+          true,
+        _ => false,
+      };
+
+  /// Les zones dans lesquelles cette mesure se situe, vides quand elle n'en a
+  /// pas — ou quand le site ne connaît pas le seuil correspondant.
+  ///
+  /// Sert au mode jauge, qui a besoin de la **plage** et pas seulement de la
+  /// zone du moment : sans plage, il n'y a rien à remplir.
+  List<TrainingZone> zonesOf(RiderProfile profile) => switch (this) {
+        MetricId.heartRate || MetricId.hrZone => profile.hrZones,
+        MetricId.power || MetricId.powerZone => profile.powerZones,
+        _ => const [],
+      };
+
+  /// De quoi cette mesure dépend, pour n'être reconstruite que quand il le
+  /// faut. Une seule liste par mesure, à côté de sa lecture : deux endroits
+  /// finiraient par se contredire, et le symptôme serait une case figée que
+  /// rien ne rafraîchit.
+  List<Listenable> dependencies(MetricSources sources) {
+    final nav = sources.nav;
+    return switch (this) {
+      MetricId.heartRate || MetricId.hrZone => [
+          sources.hub.latestHeartRate,
+          sources.riderProfile,
+        ],
+      MetricId.power || MetricId.powerZone => [
+          sources.hub.latestPower,
+          sources.riderProfile,
+        ],
+      MetricId.cadence => [sources.hub.latestCadence],
+      MetricId.gears => [sources.hub.latestGears],
+      // La vitesse a deux sources et doit suivre les deux : la page quand il y
+      // en a une, le GPS de l'enregistreur sinon.
+      MetricId.speed => [sources.recorder, if (nav != null) nav],
+      MetricId.routeRemaining || MetricId.routeRemainingGain => [
+          if (nav != null) nav,
+        ],
+      _ => [sources.recorder],
+    };
+  }
+
+  /// La valeur du moment, mise en forme.
+  ///
+  /// `null` veut dire « pas de mesure », ce que le rendu écrit **`—` et jamais
+  /// `0`** : un zéro se lit comme une mesure, et un capteur muet ne mesure pas
+  /// zéro, il ne mesure rien.
+  MetricReading read(MetricSources sources) {
+    final stats = sources.recorder.stats;
+    final active = sources.recorder.isActive;
+    final profile = sources.riderProfile.profile;
+
+    return switch (this) {
+      // Durée et distance viennent de l'enregistreur et pas de la page : hors
+      // enregistrement elles n'existent pas, et un zéro ferait croire à un
+      // compteur remis à zéro plutôt qu'à une sortie non lancée.
+      MetricId.duration => MetricReading(
+          active ? formatDuration(sources.recorder.recorded) : null,
+        ),
+      MetricId.movingTime =>
+        MetricReading(active ? formatDuration(stats.movingTime) : null),
+      // Sans GPS (home-trainer), la distance n'a pas de source : un « 0 m » se
+      // lirait comme « je n'ai pas bougé », alors que la question ne se pose
+      // même pas. Le tiret dit la bonne chose — on ne mesure pas ça ici.
+      MetricId.distance => MetricReading(
+          active && sources.recorder.gpsEnabled
+              ? formatDistance(sources.recorder.distanceM)
+              : null,
+        ),
+      MetricId.speed => MetricReading(_speed(sources)),
+      MetricId.speedAvg => MetricReading(_kmh(stats.avgSpeedMps)),
+      MetricId.speedMax => MetricReading(_kmh(stats.maxSpeedMps)),
+      MetricId.heartRate => _zoned(
+          sources.hub.latestHeartRate.value,
+          profile: profile,
+          zoneOf: profile.hrZoneFor,
+          asZone: false,
+          threshold: 'LTHR ?',
+          hasZones: profile.hasHrZones,
+        ),
+      MetricId.hrZone => _zoned(
+          sources.hub.latestHeartRate.value,
+          profile: profile,
+          zoneOf: profile.hrZoneFor,
+          asZone: true,
+          threshold: 'LTHR ?',
+          hasZones: profile.hasHrZones,
+        ),
+      MetricId.hrAvg => MetricReading(stats.avgHeartRate?.toString()),
+      MetricId.hrMax => MetricReading(stats.maxHeartRate?.toString()),
+      MetricId.power => _zoned(
+          sources.hub.latestPower.value,
+          profile: profile,
+          zoneOf: profile.powerZoneFor,
+          asZone: false,
+          threshold: 'FTP ?',
+          hasZones: profile.hasPowerZones,
+        ),
+      MetricId.powerZone => _zoned(
+          sources.hub.latestPower.value,
+          profile: profile,
+          zoneOf: profile.powerZoneFor,
+          asZone: true,
+          threshold: 'FTP ?',
+          hasZones: profile.hasPowerZones,
+        ),
+      MetricId.powerAvg => MetricReading(stats.avgPower?.toString()),
+      MetricId.powerNormalized =>
+        MetricReading(stats.normalizedPowerW?.toString()),
+      MetricId.powerMax => MetricReading(stats.maxPower?.toString()),
+      MetricId.cadence =>
+        MetricReading(sources.hub.latestCadence.value?.round().toString()),
+      MetricId.cadenceAvg => MetricReading(stats.avgCadence?.toString()),
+      // Le dénivelé n'a de sens qu'une fois la sortie lancée : c'est un cumul,
+      // et un cumul avant le départ vaut « rien », pas « zéro mètre ».
+      MetricId.ascent => MetricReading(
+          active && sources.recorder.gpsEnabled
+              ? '${stats.ascentM.round()}'
+              : null,
+        ),
+      MetricId.altitude => MetricReading(
+          sources.recorder.lastFix?.altitudeM?.round().toString(),
+        ),
+      MetricId.calories => MetricReading(stats.calories?.toString()),
+      MetricId.gears => MetricReading(_gears(sources)),
+      MetricId.routeRemaining => MetricReading(_remaining(sources)),
+      MetricId.routeRemainingGain => MetricReading(_remainingGain(sources)),
+    };
+  }
+
+  /// La vitesse, de la page si elle en publie une, du GPS de l'enregistreur
+  /// sinon.
+  ///
+  /// L'ordre n'est pas arbitraire : la page tient déjà le GPS de la navigation
+  /// et publie sa vitesse à chaque position. Le repli sert aux profils **sans
+  /// carte** (home-trainer, où il n'y a pas de page web du tout), et il prend la
+  /// vitesse Doppler du point plutôt que la dérivée des positions — bien plus
+  /// stable, cf. [GpsFix.speedMps].
+  ///
+  /// Un état périmé ne s'affiche pas : une vitesse figée à 34 km/h à l'arrêt
+  /// serait pire que pas de vitesse du tout.
+  static String? _speed(MetricSources sources) {
+    final now = DateTime.now();
+    final nav = sources.nav?.value;
+    if (nav != null && !nav.isStale(now)) return _decimal(nav.speedKmh);
+
+    final fix = sources.recorder.lastFix;
+    if (fix == null) return null;
+    if (now.difference(fix.at) > RideRecorder.fixTtl) return null;
+    return _kmh(fix.speedMps);
+  }
+
+  static String? _remaining(MetricSources sources) {
+    final nav = sources.nav?.value;
+    if (nav == null || !nav.onRoute || nav.isStale(DateTime.now())) return null;
+    return formatDistance(nav.remainingM);
+  }
+
+  static String? _remainingGain(MetricSources sources) {
+    final nav = sources.nav?.value;
+    if (nav == null || !nav.onRoute || nav.isStale(DateTime.now())) return null;
+    return '${nav.remainingGainM.round()}';
+  }
+
+  /// Le braquet en positions — `2 × 7` — et non en dents.
+  ///
+  /// Les dents demandent de savoir ce qu'il y a sur le vélo ([Drivetrain]), ce
+  /// que le Di2 ne dit pas ; la position, elle, est toujours juste. La carte des
+  /// valeurs en direct de l'écran des capteurs affiche les deux, parce qu'elle
+  /// a la place et qu'on la lit à l'arrêt.
+  static String? _gears(MetricSources sources) {
+    final gears = sources.hub.latestGears.value;
+    if (gears == null) return null;
+    return '${gears.frontPosition} × ${gears.rearPosition}';
+  }
+
+  static MetricReading _zoned(
+    int? value, {
+    required RiderProfile profile,
+    required TrainingZone? Function(num value) zoneOf,
+    required bool asZone,
+    required String threshold,
+    required bool hasZones,
+  }) {
+    final zone = value == null ? null : zoneOf(value);
+    if (!asZone) {
+      return MetricReading(value?.toString(), zoneKey: zone?.key);
+    }
+    // Le seuil passe avant le capteur : sans zones, aucune mesure n'en donnera
+    // jamais, et c'est ça qu'il faut dire — y compris quand le capteur est muet.
+    // Le tiret seul se lirait comme un capteur débranché et cacherait la seule
+    // des deux causes que le cycliste puisse corriger, sur le site, avant de
+    // partir.
+    if (!hasZones) return MetricReading(threshold);
+    return MetricReading(zone?.key.toUpperCase(), zoneKey: zone?.key);
+  }
+
+  static String? _kmh(double? metresPerSecond) =>
+      metresPerSecond == null ? null : _decimal(metresPerSecond * 3.6);
+
+  static String _decimal(double value) =>
+      value.toStringAsFixed(1).replaceAll('.', ',');
+}
+
+/// D'où les mesures se lisent.
+///
+/// Elle porte les **écoutables** et non des valeurs figées : la même instance
+/// sert à lire ([MetricId.read]) et à savoir quand se reconstruire
+/// ([MetricId.dependencies]), si bien que les deux ne peuvent pas diverger.
+@immutable
+class MetricSources {
+  const MetricSources({
+    required this.hub,
+    required this.recorder,
+    required this.riderProfile,
+    this.nav,
+  });
+
+  final SensorHub hub;
+  final RideRecorder recorder;
+
+  /// Les seuils du cycliste, d'où sortent les zones. **Jamais une zone calculée
+  /// sur un seuil par défaut** : sans seuil, la case l'annonce en toutes lettres.
+  final RiderProfileStore riderProfile;
+
+  /// Ce que la page web publie de la navigation. **Nul dans un profil sans
+  /// carte** : il n'y a alors pas de page pour le dire, et les mesures qui en
+  /// dépendent s'abstiennent au lieu de deviner.
+  final ValueListenable<NavState?>? nav;
+}
+
+/// Une mesure prête à peindre : son texte, et la zone qui la colore.
+@immutable
+class MetricReading {
+  const MetricReading(this.value, {this.zoneKey});
+
+  /// `null` = pas de mesure. Le rendu écrit alors `—`, jamais `0`.
+  final String? value;
+
+  /// `z1`…`z7`, ou `null` pour laisser la case sur le fond du tableau de bord.
+  /// Une couleur inventée serait pire qu'une couleur absente.
+  final String? zoneKey;
+
+  @override
+  bool operator ==(Object other) =>
+      other is MetricReading &&
+      other.value == value &&
+      other.zoneKey == zoneKey;
+
+  @override
+  int get hashCode => Object.hash(value, zoneKey);
+}

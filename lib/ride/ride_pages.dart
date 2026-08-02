@@ -1,46 +1,39 @@
 import 'package:flutter/widgets.dart';
 
-/// Les pages du tableau de bord, dans l'ordre où on les fait défiler.
+/// Le défilement des pages du tableau de bord.
 ///
-/// La carte est en tête et le restera : c'est la page par défaut, celle où le
-/// retour automatique ramène, et celle que le bouton retour vise avant de
-/// quitter la sortie.
-enum RidePage {
-  navigation('Carte'),
-  effort('Effort');
-
-  const RidePage(this.label);
-
-  final String label;
-
-  static int get count => RidePage.values.length;
-}
-
-/// Le défilement est **circulaire** : après la dernière page revient la
-/// première. Un `PageView` ne sait pas boucler, donc la pile est parcourue par
-/// un index *brut* qui monte et descend sans borne, et [pageOf] le ramène au
-/// catalogue.
+/// **Les pages viennent du profil de sortie** (`dashboard/ride_preset.dart`), pas
+/// d'une énumération : leur nombre, leur ordre et leur contenu sont décrits par
+/// le site. Ce fichier ne connaît donc qu'un nombre de pages et des index — et
+/// surtout plus de « page 0 = la carte », qui a longtemps été le même fait que
+/// « la carte est en tête ». La carte se place où l'on veut, et un profil de
+/// home-trainer n'en a pas du tout : c'est `RidePreset.mapPageIndex` qui le sait,
+/// et lui seul.
 ///
-/// [rawPageOrigin] est le point de départ, choisi assez loin de zéro pour qu'une
-/// sortie n'atteigne jamais le bout : il faudrait dix mille changements de page
-/// dans le même sens. C'est un multiple du nombre de pages, pour que l'origine
-/// tombe bien sur la carte.
-int get rawPageOrigin => RidePage.count * 10000;
+/// Le défilement est **circulaire** : après la dernière page revient la première.
+/// Un `PageView` ne sait pas boucler, donc la pile est parcourue par un index
+/// *brut* qui monte et descend sans borne, et [pageOf] le ramène au catalogue.
+///
+/// [rawPageOriginFor] est le point de départ, choisi assez loin de zéro pour
+/// qu'une sortie n'atteigne jamais le bout : il faudrait dix mille changements de
+/// page dans le même sens. C'est un multiple du nombre de pages, pour que
+/// l'origine tombe bien sur la première.
+int rawPageOriginFor(int count) => (count > 0 ? count : 1) * 10000;
 
 /// La page du catalogue qu'affiche un index brut.
 ///
 /// Le `%` de Dart rend toujours un résultat positif pour un diviseur positif —
 /// contrairement à C ou JavaScript : reculer sous l'origine n'a donc pas besoin
 /// de rattrapage.
-int pageOf(int raw, {int count = 0}) => raw % (count > 0 ? count : RidePage.count);
+int pageOf(int raw, {required int count}) => raw % (count > 0 ? count : 1);
 
 /// L'index brut le plus proche de [from] qui affiche la page [page].
 ///
 /// Par le chemin court, jamais par le tour complet : revenir sur la carte depuis
 /// la dernière page ne doit pas faire défiler tout le catalogue à l'envers sous
 /// les yeux du cycliste.
-int rawPageFor(int page, {required int from, int count = 0}) {
-  final pages = count > 0 ? count : RidePage.count;
+int rawPageFor(int page, {required int from, required int count}) {
+  final pages = count > 0 ? count : 1;
   var delta = (page - pageOf(from, count: pages)) % pages;
   if (delta > pages ~/ 2) delta -= pages;
   return from + delta;

@@ -26,7 +26,7 @@ Rails voisin.
 
 ```bash
 flutter analyze          # doit rester à « No issues found! »
-flutter test             # ~200 tests, tous en dur (pas de golden, pas de mock)
+flutter test             # ~500 tests, tous en dur (pas de golden, pas de mock)
 flutter run              # sur le téléphone connecté en adb (voir HOWTO.md)
 flutter run --dart-define=SPORTS_SCOPE_URL=http://192.168.1.20:3000
 ```
@@ -44,17 +44,20 @@ lib/
   drivetrain.dart        # dents et circonférence : traduit une position Di2
   account/               # session du site, seuils du cycliste, écran Compte
   ble/                   # scan, connexion, décodeurs GATT, hub d'échantillons
+  dashboard/             # les profils de sortie : ce que le site décrit du tableau de bord
   devices/               # les appareils appairés (disque) + la page d'appairage
   lighting/              # décision d'éclairage (modes) + envoi au feu
   navigation/            # cible de navigation, pont capteurs→page, luminosité
   phone/                 # capteurs du téléphone : baromètre, lumière, boussole
   recording/             # enregistreur, magasin de sorties, agrégats, .fit
-  ride/                  # le tableau de bord de sortie (la coquille + ses pages)
+  ride/                  # le tableau de bord de sortie (la coquille, ses pages, ses blocs)
   ui/                    # tuiles et formats partagés entre écrans
   update/                # « une version plus récente existe » (diffusion hors Play Store)
 assets/sounds/           # tonalités d'alerte radar — GÉNÉRÉES, ne pas éditer
 tool/fit_sample.dart     # génère un .fit de test (voir HOWTO.md)
 tool/radar_tones.dart    # (re)génère assets/sounds/ : dart run tool/radar_tones.dart
+tool/icon/*.svg          # les sources de l'icône de lancement
+tool/app_icon.sh         # (re)génère les mipmap-*/ — les PNG sont GÉNÉRÉS
 ```
 
 ## L'accueil et la page des capteurs
@@ -122,10 +125,13 @@ scans courts (8 s toutes les ~53 s) ; un capteur vu émettre est rattaché
   déconnexion suivante (il ne le garde ouvert que pour les `autoConnect`) :
   `_attachedDirectly` sert à reposer l'attente, sinon plus personne n'attend le
   capteur.
-- `devicesToReattach` (pur, testé) filtre sur `autoConnect` : un capteur écarté à
-  la main — vélo prêté, boîtier de l'autre vélo — n'est **jamais** rattrapé au
-  vol parce qu'un scan l'a vu passer, sinon le réglage ne voudrait plus rien
-  dire.
+- `devicesToReattach` (pur, testé) filtre sur `autoConnect` **et** sur les
+  capacités que le profil de sortie garde : un capteur écarté à la main — vélo
+  prêté, boîtier de l'autre vélo — n'est **jamais** rattrapé au vol parce qu'un
+  scan l'a vu passer, sinon le réglage ne voudrait plus rien dire. Les deux
+  filtres se composent par un « et » : le profil **ne peut que restreindre**, il
+  ne ressuscite jamais ce que le cycliste a décoché (voir « Les profils de
+  sortie »).
 
 Le minuteur tourne même quand tout est connecté (il ne scanne alors rien) : c'est
 ce qui rattrape le capteur qui décroche en pleine sortie. Et le guetteur écoute
@@ -206,6 +212,129 @@ par `/auth/handoff`, qui recopie `next` tel quel. Un **lien entrant** sans token
 lui, part toujours à neuf : on ne sait pas ce que la page a en mémoire, et la
 reprise ne s'offre que dans le sélecteur, là où on a vraiment lu le stockage.
 
+## Les profils de sortie (`lib/dashboard/`)
+
+**C'est le site qui décrit le tableau de bord.** Un *profil de sortie*
+(`RidePreset`) porte ses pages dans l'ordre, ce que chacune contient et comment,
+les jeux de valeurs du bandeau, les capteurs utilisés et les réglages
+radar / éclairage. Route, VTT et home-trainer n'ont ni les mêmes mesures utiles,
+ni le même besoin de carte, ni les mêmes capteurs — et le choix se fait **au
+départ**, dans la feuille de sélection : on sait sur quel vélo on monte au moment
+où l'on monte dessus, pas la veille devant un navigateur.
+
+Le nom de classe est `RidePreset` et non `RideProfile` : `RiderProfile` (les
+seuils du cycliste, `account/`) existe déjà, et une lettre d'écart entre deux
+concepts sans rapport se paierait à chaque relecture. Dans l'interface, le mot
+reste « profil de sortie ».
+
+### Le contrat, et ce que l'appli en garantit
+
+`GET /api/companion_settings` (authentifié, cf. `CompanionSettingsController` du
+dépôt Rails) rend un document : `presets[]`, chacun avec `pages[]`, `bands[]`,
+`sensors`, `radar`, `lighting`, `screen`. Trois genres de pages :
+
+| `kind` | Ce que c'est |
+|---|---|
+| `map` | La carte du site. **Facultative et déplaçable comme les autres.** |
+| `grid` | `rows` × `cols`, chaque composant occupant un rectangle (`row_span`, `col_span`). **Ne défile pas** : elle se lit en roulant, tout doit tenir. |
+| `list` | La page qui défile — celle qu'on consulte à l'arrêt. |
+
+Chaque composant porte un **`mode`** (`metric` : `big`/`compact`/`gauge`/`zone` ;
+`zones` : `bar`/`bar_only`/`legend` ; …), parce que le même contenu ne se dessine
+pas pareil dans un quart d'écran et dans une bande de deux cellules. Une
+répartition par zone montre sa barre et sa légende quand elle a la place, sa
+barre seule quand elle n'en a plus — plutôt que de déborder ou de rapetisser
+jusqu'à l'illisible.
+
+**Rien ne lève, jamais** — même convention que les décodeurs GATT et
+`CompanionRelease.parse`, avec une raison plus forte encore : ce document décide
+de ce qui s'affiche pendant la sortie. Le pire résultat imaginable n'est pas
+« mes réglages ne sont pas arrivés », c'est un écran noir au départ d'un col. Les
+garanties de `CompanionSettings.parse`, chacune gardée par un test :
+
+1. **Rien d'exploitable → `RidePreset.builtIn`**, qui est *exactement* le tableau
+   de bord d'avant ce chantier. Rien de nouveau à apprendre le jour où ça tombe.
+2. **Au plus une carte**, où qu'elle soit ; les suivantes sont retirées. Deux
+   cartes voudraient dire deux identités pour un seul WebView.
+3. **Au moins une page** : un profil vidé retombe sur la page Effort intégrée.
+4. **Grille : rien ne déborde, rien ne se recouvre.** Les étendues sont rognées
+   (réduire une grille dans l'éditeur ne doit pas faire disparaître ce qu'on y a
+   posé), une origine hors grille est rejetée (on ne devine pas où le cycliste
+   voulait la mettre), et sur un recouvrement **la première posée gagne** —
+   l'ordre du document, donc celui que l'éditeur affiche.
+5. **Bandes : 1 à 4 mesures**, au-delà on tronque.
+6. **Capteur non mentionné = capteur activé** (voir plus bas).
+7. Clés et modes inconnus **ignorés** : le site peut être plus récent que l'appli.
+
+Le menu d'actions, lui, **n'est pas configurable** et reste sur chaque page de
+données : c'est le seul chemin nommé pour sortir d'une sortie, et un profil mal
+composé ne doit pas pouvoir enfermer le cycliste dans son propre tableau de bord.
+
+### Le transport, et le cache
+
+`CompanionSettingsFetch` reprend le patron de `RouteCatalogFetch` : WebView hors
+écran sur `/robots.txt`, `fetch(…, {credentials: 'same-origin'})`,
+`Accept: application/json` pour distinguer un 401 propre d'une panne réseau.
+L'appli ne détient aucun cookie côté Dart, la session vit dans le pot partagé des
+WebViews.
+
+**Une fois par lancement**, dans `SportsScopeApp` — comme `UpdateChecker`, et pas
+comme le catalogue d'itinéraires : ces réglages changent au plus une fois par
+mois, alors que les itinéraires changent la veille d'une sortie. Un échec est
+**muet** : hors ligne avant de partir est le cas banal, et le cache fait autorité.
+
+`CompanionSettingsStore` garde **le document brut**, pas le modèle décodé : une
+version plus récente de l'appli comprendra alors des composants qu'une version
+plus ancienne avait rapportés sans savoir les lire. Il garde aussi la **clé du
+profil choisi**, qui est un geste local et non une donnée du compte — et il vit au
+niveau de l'application, si bien qu'un enregistrement lancé depuis l'accueil part
+avec les mêmes capteurs que la navigation ouverte deux minutes plus tard. Un
+document sans profil exploitable est **refusé** plutôt qu'enregistré : il veut dire
+« le site n'a rien su dire » (endpoint absent sur une version plus ancienne), et
+l'écraser ferait perdre des profils valables reçus la veille.
+
+### Sans carte
+
+Un profil de home-trainer n'a pas d'entrée `map`. Alors **le
+`NavigationWebController` n'est ni créé ni chargé** : ni pont, ni GPS de page, ni
+service worker, ni tuiles. Le garder monté sous des pages opaques coûterait de la
+batterie pour une carte que personne ne regardera. En contrepartie, tout ce qui
+venait du pont disparaît — état de navigation, retour automatique (la politique
+est **inerte**, `mapPage` valant `null`), veille demandée par la page, et donc
+page de réveil radar. La vitesse du bandeau change alors de source : elle vient de
+`recorder.lastFix.speedMps` (la vitesse Doppler du point, plus stable que la
+dérivée des positions) au lieu de `NavState.speedKmh`.
+
+### Les capteurs, profil par profil
+
+Quatre règles, chacune gardée par un test :
+
+- **Absent vaut activé.** Un document plus ancien que l'appli ne doit jamais
+  éteindre un capteur en silence : l'erreur irait dans le mauvais sens, une sortie
+  sans cardio ne se rattrapant pas.
+- **Le profil ne peut que restreindre.** Un capteur est rattaché si l'appareil dit
+  `autoConnect` **et** si le profil garde sa capacité (`devicesToReattach`, pur et
+  testé). Un boîtier écarté à la main — vélo prêté, capteur de l'autre vélo —
+  n'est jamais ressuscité parce qu'un profil garde sa capacité. Un appareil **sans
+  capacité connue** passe : jamais connecté avec succès, l'écarter l'empêcherait de
+  se présenter.
+- **Désactiver n'est pas déconnecter.** Ça gouverne ce que l'appli va *chercher*.
+  Un capteur déjà connecté continue de mesurer — même raison que le capteur écarté
+  mais connecté, qui reste vert dans la rangée d'état.
+- **GPS coupé ⇒ l'enregistreur ne l'attend plus.** `RideRecorder.start()` ne
+  demande alors ni permission, ni service au premier plan, ni première position :
+  la sortie démarre sur-le-champ et écrit des points sans coordonnées, ce que le
+  format admet déjà. Distance et dénivelé affichent **`—` et non `0`** (via
+  `recorder.gpsEnabled`) — un zéro se lirait comme « je n'ai pas bougé », alors que
+  la question ne se pose pas sur un rouleau. Le `.fit`, lui, garde bien `0` de
+  distance : le vélo n'a effectivement pas avancé, et c'est ce que font Garmin et
+  Strava d'une sortie d'intérieur sans capteur de vitesse.
+
+**La rangée d'état de l'accueil ne change pas.** Elle dit ce que les appareils
+connus font, pas ce qu'un profil demande ; y ajouter un quatrième état visuel
+ferait trois façons différentes d'être gris. L'exclusion se lit en toutes lettres
+dans la feuille de départ, à côté du nom du profil.
+
 ## Le tableau de bord de sortie (`lib/ride/`)
 
 `RideShellPage` est la coquille : plein écran, rétroéclairage, zones obstruées
@@ -215,18 +344,20 @@ publiées vers la page, bouton retour, et les pages du tableau de bord.
   pages de données glissent par-dessus. Décidé après mesure sur route — une vue
   plateforme démontée, ou seulement sortie de la liste de peinture, cesse de
   suivre le cycliste. `setOccluded` prévient la page de couper ses animations
-  sans rien endormir.
+  sans rien endormir. **Où que la carte soit dans le catalogue**, elle reste au
+  fond : sa position ne change rien à cette règle.
 - **Changer de tracé en pleine sortie** passe par
   `NavigationWebController.openTarget()`, jamais par un contrôleur neuf : le
   tracé est choisi par l'URL, donc la page recharge — mais l'instance MapLibre,
   le pot de cookies, le pont des capteurs et le service worker, eux, survivent.
-  Les commandes sont dans le menu de la page Effort (choisir un autre
+  Les commandes sont dans le menu des pages de données (choisir un autre
   itinéraire, retirer celui en cours), pas sur la carte, qui n'a pas de pixels à
   donner. Retirer demande confirmation : `fresh=1` efface la session de la page,
   donc la progression avec elle. L'enregistrement, lui, n'est pas concerné — il
   vit au-dessus de la navigation.
 - **Rentrer, et repartir** — un tap dans chaque sens, c'est la règle. Le bouton
-  retour du téléphone descend d'au plus trois crans : page de données → carte,
+  retour du téléphone descend d'au plus trois crans, **ceux qui existent** : page
+  de données → carte (ou première page, dans un profil qui n'en a pas),
   puis la page web **si elle s'est égarée ailleurs que sur le tracé ouvert**
   (`pageLeftTarget` compare les *chemins*, jamais les paramètres : `fresh=1`
   disparaît de l'URL une fois la session effacée), puis la sortie. Le cran du
@@ -240,18 +371,27 @@ publiées vers la page, bouton retour, et les pages du tableau de bord.
   l'accueil repropose en tête et en un tap — jamais le tracé par son token, qui
   repartirait de son début, là où la page sait où l'on en était. Et parce qu'un
   geste ne répond jamais à la question « comment on rentre ? », **« Revenir à
-  l'accueil » est écrit en toutes lettres** au bas du menu de la page Effort,
-  sous un séparateur : les autres commandes restent dans la sortie, celle-là en
+  l'accueil » est écrit en toutes lettres** au bas du menu de chaque page de
+  données, sous un séparateur : les autres commandes restent dans la sortie, celle-là en
   sort. L'enregistrement continue — c'est l'accueil qui le termine.
-- **Catalogue circulaire** : `RidePage` (`ride_pages.dart`) liste les pages,
-  navigation en tête. Le `PageView` est infini ; l'état est un index **brut**
-  qui monte sans borne, replié par `pageOf()`, et `rawPageFor()` vise une page
-  par le chemin court.
-- **La page Effort dit le cumul, le bandeau dit l'instant** : temps passé par
+- **Catalogue circulaire, et venu du site** : les pages sont celles du profil de
+  sortie (`RidePreset.pages`, cf. « Les profils de sortie »), plus une
+  énumération. Le `PageView` est infini ; l'état est un index **brut** qui monte
+  sans borne, replié par `pageOf()`, et `rawPageFor()` vise une page par le
+  chemin court. `ride_pages.dart` ne connaît plus qu'un *nombre* de pages :
+  « page 0 = la carte » a disparu, et avec lui six endroits qui s'y appuyaient
+  (`_mapLive`, `ScreenPolicy`, `AutoReturnPolicy`, le bouton retour, la
+  gouttière, `setOccluded`). C'est `RidePreset.mapPageIndex` qui sait où elle
+  est — **ou qu'il n'y en a pas**.
+- **Les pages de données disent le cumul, le bandeau dit l'instant** : temps passé par
   zone depuis le départ (barre + légende, **une carte pour le cardio et une pour
   la puissance**), moyennes cardio/puissance, cadence, D+, calories. Tout vient de
-  l'enregistreur — **hors enregistrement, elle n'affiche rien** plutôt que des
-  zéros. Le temps par zone se calcule d'un **histogramme** de mesures
+  l'enregistreur — **hors enregistrement, elles n'affichent rien** plutôt que des
+  zéros. Chaque répartition vide **nomme sa mesure** (« le temps par zone cardio
+  se remplit dès le départ ») : la page d'avant les profils fusionnait ses deux
+  cartes vides en une, parce que la même phrase deux fois de suite se lit comme
+  un bégaiement de l'appli — un bloc composable ne pouvant pas compter sur son
+  voisin, c'est la phrase qui se distingue. Le temps par zone se calcule d'un **histogramme** de mesures
   (`RideStats.hrHistogram` et `powerHistogram`, paliers de 5 bpm et 25 W comme le
   site) replié en zones à l'affichage (`zoneSharesOf`, `ride/zone_time.dart`) :
   un profil qui arrive en pleine sortie recolore alors le temps **déjà écoulé**,
@@ -275,11 +415,13 @@ publiées vers la page, bouton retour, et les pages du tableau de bord.
   La carte a besoin du glissé horizontal et un `PageView` réclame le même : tant
   que la carte est vivante, le `PageView` est mis **entièrement hors du test de
   touche** (`IgnorePointer`), la physique non défilante servant de second
-  rideau. Le prédicat est `page == navigation && !scrolling` — **jamais l'index
-  seul**, qui bascule à mi-glissé et couperait le geste en deux.
+  rideau. Le prédicat est `page == carte && !scrolling` — **jamais l'index
+  seul**, qui bascule à mi-glissé et couperait le geste en deux. Dans un profil
+  sans carte, il n'y a rien à disputer : tout l'écran fait défiler, et les bandes
+  de bord ne paraissent pas.
 
-- `RideBottomBand` porte les jeux de valeurs (`RideBandSet`), qui bouclent eux
-  aussi. Les zones viennent de `RiderProfileStore`, donc du site : **jamais une
+- `RideBottomBand` porte les jeux de valeurs (`RidePreset.bands`), qui bouclent
+  eux aussi. Les zones viennent de `RiderProfileStore`, donc du site : **jamais une
   zone calculée sur un seuil par défaut.** Sans seuil, la case zone affiche
   `LTHR ?` ou `FTP ?` — pas le tiret des mesures absentes, qui se lirait comme un
   capteur débranché alors que le trou est côté site et se comble avant de partir.
@@ -442,6 +584,11 @@ Une seule entrée à écrire : un `SensorProfile` dans `sensorProfiles`
 service et à la caractéristique GATT, plus le décodeur. Ni `SensorConnection`,
 ni `SensorHub`, ni l'UI n'ont à être touchés.
 
+Une capacité **nouvelle** demande une ligne de plus : `SensorSettings.allows`
+(`lib/dashboard/ride_preset.dart`) fait un `switch` exhaustif sur `SensorKind`, et
+un profil de sortie doit pouvoir la couper comme les autres. La compilation le
+rappellera.
+
 Le décodeur implémente `CharacteristicDecoder` (`lib/ble/characteristic_decoder.dart`) :
 
 - il **ne lève jamais** — une trame incomprise rend une liste vide ;
@@ -454,7 +601,8 @@ Le décodeur implémente `CharacteristicDecoder` (`lib/ble/characteristic_decode
 
 Tout est en fichiers dans le dossier applicatif, réécrits en entier via un
 temporaire renommé (`known_devices.json`, `site_session.json`,
-`rider_profile.json`) — une coupure ne laisse jamais un fichier à moitié écrit.
+`rider_profile.json`, `companion_settings.json`) — une coupure ne laisse jamais un
+fichier à moitié écrit.
 
 Les sorties, elles, sont en **ajout** :
 
@@ -516,6 +664,33 @@ La carte ouvre la page **dans Chrome** (`url_launcher`, `externalApplication`) e
 dans un WebView : `webview_flutter` ne gère pas les téléchargements, c'est Chrome qui
 détient la session du site, et c'est lui qu'Android enchaîne sur l'installateur.
 
+## L'icône de lancement
+
+`android/…/res/mipmap-*/ic_launcher*.png` sont **générés** par `tool/app_icon.sh`
+depuis `tool/icon/*.svg` — les éditer à la main serait perdu au prochain passage.
+Le rasteriseur est Chrome sans écran : ni ImageMagick ni librsvg ne sont installés,
+et c'est le seul moteur SVG déjà là.
+
+Le dessin reprend le glyphe du site (`public/icon.svg` du dépôt Rails) — sommet et
+soleil jaunes sur noir — plus une **pastille Bluetooth**, parce que la PWA du site
+s'installe elle aussi sur l'écran d'accueil : deux pastilles identiques ne se
+distingueraient que par leur légende.
+
+Deux contraintes qui expliquent la composition, et qu'il ne faut pas défaire :
+
+- **La pastille est collée au glyphe, pas au coin de la toile.** Sur une icône
+  adaptative, seul le cercle central de 66 dp sur 108 est garanti visible : les
+  lanceurs découpent en rond, en carré arrondi ou en goutte. Un badge d'angle,
+  réflexe naturel, serait rogné sur la plupart des téléphones.
+- **Pas de couche `monochrome`** (icônes thématisées, Android 13+) : elle n'est lue
+  que par son canal alpha, or la rune Bluetooth est du noir opaque sur un disque
+  jaune opaque. Même alpha des deux côtés, donc la rune disparaîtrait et la pastille
+  deviendrait un point plein.
+
+Le liseré noir entre la pastille et le sommet n'est pas décoratif non plus : sur le
+fond noir il ne se voit pas, mais là où le badge mord sur le jaune, c'est lui qui
+empêche les deux jaunes de fusionner en une seule tache.
+
 ## Conventions de code
 
 - **Les commentaires sont en français et disent le _pourquoi_**, pas le quoi :
@@ -546,6 +721,16 @@ détient la session du site, et c'est lui qu'Android enchaîne sur l'installateu
   est précisément le piège, puisqu'il ne se voit qu'à la mise à jour suivante.
   Le `+N` de `version:` (pubspec) est le `versionCode` : à incrémenter à chaque
   APK diffusé.
+- **Debug et release ne cohabitent pas sur un appareil.** `flutter run` installe un
+  build signé de la clé de debug sous le même `applicationId` : tant qu'il est là,
+  l'APK de release refuse de s'installer, et Android n'affiche qu'« application non
+  installée ». Ce n'est pas Play Protect, qui se traverse par « Installer quand
+  même ». Le diagnostic passe par `adb install` (qui donne
+  `INSTALL_FAILED_UPDATE_INCOMPATIBLE`) et par la comparaison des signatures — et il
+  faut chercher le paquet dans **tous les profils** (`dumpsys package`, un bloc
+  `User N:` par profil) : sur un Pixel, l'app peut être installée dans l'espace privé
+  sans apparaître sur l'écran d'accueil, et bloquer quand même. Procédure dans
+  `HOWTO.md`.
 - L'App Link vérifié `https://` est déclaré dans le manifeste mais **inactif**
   tant que le site ne publie pas l'empreinte SHA-256 de la clé de release ; d'ici
   là le passage de session repose sur le schéma `sportsscope://` + un jeton à

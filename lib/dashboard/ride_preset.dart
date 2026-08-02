@@ -1,0 +1,482 @@
+import 'package:flutter/foundation.dart';
+
+import '../ble/sensor_profile.dart';
+import '../lighting/auto_lighting.dart';
+import '../navigation/screen_dimmer.dart';
+import 'dashboard_block.dart';
+import 'grid_layout.dart';
+import 'metric_id.dart';
+
+/// Un profil de sortie : le tableau de bord et les réglages d'une pratique.
+///
+/// Route, VTT, home-trainer n'ont ni les mêmes mesures utiles, ni le même besoin
+/// de carte, ni les mêmes capteurs. Le site les décrit, l'appli les applique, et
+/// **le choix se fait au départ** — on sait sur quel vélo on monte au moment où
+/// l'on monte dessus, pas la veille devant un navigateur.
+///
+/// Tout ce qui sort de [parse] est **déjà sain** : il n'existe pas d'instance
+/// dont les pages débordent, dont deux cellules se recouvrent ou dont le bandeau
+/// a six cases. Les garanties sont énumérées sur chaque champ, et chacune est
+/// gardée par un test.
+@immutable
+class RidePreset {
+  const RidePreset({
+    required this.key,
+    required this.name,
+    required this.pages,
+    required this.bands,
+    this.sensors = const SensorSettings(),
+    this.radar = const RadarSettings(),
+    this.lighting = const LightingSettings(),
+    this.screen = const ScreenSettings(),
+  });
+
+  /// Le tableau de bord d'aujourd'hui, mot pour mot.
+  ///
+  /// C'est le filet de sécurité de toute la chaîne : première installation, site
+  /// injoignable, document illisible, profil vidé de ses pages. Il ne peut pas
+  /// être vide, il ne dépend d'aucun réseau, et il donne exactement ce que
+  /// l'appli donnait avant ce chantier — donc rien de nouveau à apprendre le
+  /// jour où le reste tombe.
+  static const builtIn = RidePreset(
+    key: 'default',
+    name: 'Sortie',
+    pages: [
+      MapPageSpec(),
+      ListPageSpec(
+        title: 'Effort',
+        blocks: [
+          RecordingBlock(),
+          ZonesBlock(source: ZonesSource.hr),
+          ZonesBlock(source: ZonesSource.power),
+          AveragesBlock(),
+          NavStateBlock(),
+        ],
+      ),
+    ],
+    bands: [
+      RideBandSpec([
+        MetricId.duration,
+        MetricId.distance,
+        MetricId.speed,
+        MetricId.power,
+      ]),
+      RideBandSpec([
+        MetricId.heartRate,
+        MetricId.hrZone,
+        MetricId.power,
+        MetricId.powerZone,
+      ]),
+    ],
+  );
+
+  final String key;
+  final String name;
+
+  /// Les pages, **dans l'ordre où on les fait défiler**. Au moins une, au plus
+  /// une carte.
+  final List<RidePageSpec> pages;
+
+  /// Les jeux de valeurs du bandeau, dans l'ordre. Au moins un.
+  final List<RideBandSpec> bands;
+
+  final SensorSettings sensors;
+  final RadarSettings radar;
+  final LightingSettings lighting;
+  final ScreenSettings screen;
+
+  /// Où se trouve la carte, `null` quand le profil n'en a pas.
+  ///
+  /// C'est ce qui remplace l'ancien « la carte est la page 0 » : elle se place
+  /// où l'on veut, et un profil de home-trainer s'en passe complètement.
+  int? get mapPageIndex {
+    for (var i = 0; i < pages.length; i++) {
+      if (pages[i] is MapPageSpec) return i;
+    }
+    return null;
+  }
+
+  bool get hasMap => mapPageIndex != null;
+
+  /// Décode un profil du document, ou `null` s'il n'en reste rien d'utilisable.
+  static RidePreset? parse(Object? raw) {
+    if (raw is! Map) return null;
+    final key = raw['key'];
+    if (key is! String || key.isEmpty) return null;
+
+    final pages = _pages(raw['pages']);
+    final bands = _bands(raw['bands']);
+
+    return RidePreset(
+      key: key,
+      name: raw['name'] is String && (raw['name'] as String).trim().isNotEmpty
+          ? (raw['name'] as String).trim()
+          : key,
+      // Un profil vidé de toutes ses pages retombe sur la page Effort intégrée :
+      // on ne monte jamais une coquille sans contenu, et un écran noir en pleine
+      // sortie ne se diagnostique pas au guidon.
+      pages: pages.isEmpty ? [RidePreset.builtIn.pages.last] : pages,
+      bands: bands.isEmpty ? RidePreset.builtIn.bands : bands,
+      sensors: SensorSettings.parse(raw['sensors']),
+      radar: RadarSettings.parse(raw['radar']),
+      lighting: LightingSettings.parse(raw['lighting']),
+      screen: ScreenSettings.parse(raw['screen']),
+    );
+  }
+
+  /// Les pages du document, **au plus une carte**.
+  ///
+  /// Les cartes suivantes sont retirées : deux cartes voudraient dire deux
+  /// identités pour un seul WebView, alors que l'instance MapLibre est unique et
+  /// doit le rester (la démonter coûte le pointeur de virage, la progression et
+  /// les tuiles en mémoire).
+  static List<RidePageSpec> _pages(Object? raw) {
+    if (raw is! List) return const [];
+
+    final pages = <RidePageSpec>[];
+    var mapSeen = false;
+
+    for (final entry in raw) {
+      final page = RidePageSpec.parse(entry);
+      if (page == null) continue;
+      if (page is MapPageSpec) {
+        if (mapSeen) continue;
+        mapSeen = true;
+      }
+      pages.add(page);
+    }
+
+    return pages;
+  }
+
+  static List<RideBandSpec> _bands(Object? raw) {
+    if (raw is! List) return const [];
+    return [
+      for (final entry in raw)
+        if (RideBandSpec.parse(entry) case final band?) band,
+    ];
+  }
+}
+
+/// Une page du tableau de bord.
+///
+/// Trois genres, et pas un seul : la carte n'est pas une grille, et une grille
+/// n'est pas une liste. Ce qui les sépare vraiment, c'est le **défilement** —
+/// une grille se lit en roulant et doit tenir tout entière, une liste se
+/// consulte à l'arrêt et peut être longue.
+@immutable
+sealed class RidePageSpec {
+  const RidePageSpec({required this.title});
+
+  final String title;
+
+  static RidePageSpec? parse(Object? raw) {
+    if (raw is! Map) return null;
+    final title = raw['title'] is String ? raw['title'] as String : null;
+
+    return switch (raw['kind']) {
+      'map' => const MapPageSpec(),
+      'grid' => GridPageSpec.parse(raw, title: title),
+      'list' => ListPageSpec.parse(raw, title: title),
+      _ => null,
+    };
+  }
+}
+
+/// La carte du site.
+///
+/// Facultative et déplaçable comme les autres pages. Quand elle est là, le
+/// WebView est monté et peint **en permanence** au fond de la pile, où qu'elle
+/// soit dans l'ordre : c'est une mesure sur route qui l'impose (une vue
+/// plateforme démontée cesse de suivre le cycliste), et sa position dans le
+/// catalogue n'y change rien.
+class MapPageSpec extends RidePageSpec {
+  const MapPageSpec() : super(title: 'Carte');
+}
+
+/// Une grille de `rows` × `cols`, avec fusions.
+///
+/// **Ne défile pas.** C'est la page qu'on lit en roulant : tout doit tenir, et
+/// c'est au mode de chaque composant de s'y plier ([DashboardBlock]).
+class GridPageSpec extends RidePageSpec {
+  const GridPageSpec({
+    required super.title,
+    required this.rows,
+    required this.cols,
+    required this.cells,
+  });
+
+  final int rows;
+  final int cols;
+
+  /// Les cellules effectivement plaçables : dans la grille, et sans
+  /// recouvrement. La première posée gagne (cf. [placedCells]).
+  final List<GridCell> cells;
+
+  /// Au-delà, les cases deviennent trop petites pour porter un chiffre lisible
+  /// en roulant — c'est la même raison qui borne le bandeau à quatre cases.
+  static const maxSide = 6;
+
+  static GridPageSpec? parse(Map<dynamic, dynamic> raw, {String? title}) {
+    final rows = _side(raw['rows']);
+    final cols = _side(raw['cols']);
+
+    final cells = placedCells<GridCell>(
+      [
+        for (final entry in (raw['cells'] is List ? raw['cells'] as List : []))
+          if (GridCell.parse(entry) case final cell?) cell,
+      ],
+      spanOf: (cell) => cell.span,
+      withSpan: (cell, span) => GridCell(span: span, block: cell.block),
+      rows: rows,
+      cols: cols,
+    );
+
+    // Une grille sans une seule cellule plaçable n'est pas une page vide, c'est
+    // une page qui n'a rien à dire : on la retire plutôt que de faire défiler le
+    // cycliste jusqu'à un rectangle noir.
+    if (cells.isEmpty) return null;
+
+    return GridPageSpec(
+      title: title ?? 'Mesures',
+      rows: rows,
+      cols: cols,
+      cells: cells,
+    );
+  }
+
+  static int _side(Object? raw) =>
+      (raw is num ? raw.toInt() : 1).clamp(1, maxSide);
+}
+
+/// Une cellule posée : où, et quoi.
+@immutable
+class GridCell {
+  const GridCell({required this.span, required this.block});
+
+  final GridSpan span;
+  final DashboardBlock block;
+
+  static GridCell? parse(Object? raw) {
+    if (raw is! Map) return null;
+    final block = DashboardBlock.parse(raw['block']);
+    if (block == null) return null;
+    return GridCell(span: GridSpan.parse(raw), block: block);
+  }
+}
+
+/// La page qui défile, celle d'aujourd'hui : une pile de blocs qu'on consulte à
+/// l'arrêt d'un col ou au feu rouge.
+class ListPageSpec extends RidePageSpec {
+  const ListPageSpec({required super.title, required this.blocks});
+
+  final List<DashboardBlock> blocks;
+
+  static ListPageSpec? parse(Map<dynamic, dynamic> raw, {String? title}) {
+    final blocks = [
+      for (final entry in (raw['blocks'] is List ? raw['blocks'] as List : []))
+        if (DashboardBlock.parse(entry) case final block?) block,
+    ];
+    if (blocks.isEmpty) return null;
+    return ListPageSpec(title: title ?? 'Sortie', blocks: blocks);
+  }
+}
+
+/// Un jeu de valeurs du bandeau.
+///
+/// **Quatre cases, pas plus** : au-delà, les chiffres deviennent trop petits
+/// pour être lus d'un coup d'œil en roulant, ce qui est le seul usage du
+/// bandeau. Ce qui ne tient pas passe dans le jeu suivant, à un glissé de là.
+@immutable
+class RideBandSpec {
+  const RideBandSpec(this.metrics);
+
+  static const maxMetrics = 4;
+
+  final List<MetricId> metrics;
+
+  static RideBandSpec? parse(Object? raw) {
+    final list = raw is Map ? raw['metrics'] : raw;
+    if (list is! List) return null;
+
+    final metrics = <MetricId>[];
+    for (final entry in list) {
+      if (metrics.length == maxMetrics) break;
+      if (MetricId.fromKey(entry) case final metric?) metrics.add(metric);
+    }
+
+    return metrics.isEmpty ? null : RideBandSpec(metrics);
+  }
+}
+
+/// Les capteurs que ce profil utilise.
+///
+/// Un home-trainer n'a que faire du GPS — ni du service au premier plan, ni de
+/// sa notification, ni de sa batterie — pas plus que du baromètre, du radar ou
+/// du capteur de lumière.
+///
+/// **Absent vaut activé.** Un document plus ancien que l'appli, ou un profil
+/// écrit à la main, ne doit jamais éteindre un capteur en silence : l'erreur
+/// irait dans le mauvais sens, une sortie sans cardio ne se rattrapant pas.
+@immutable
+class SensorSettings {
+  const SensorSettings({
+    this.gps = true,
+    this.barometer = true,
+    this.light = true,
+    this.compass = true,
+    this.radar = true,
+    this.power = true,
+    this.heartRate = true,
+    this.cadence = true,
+    this.gears = true,
+  });
+
+  final bool gps;
+  final bool barometer;
+  final bool light;
+  final bool compass;
+  final bool radar;
+  final bool power;
+  final bool heartRate;
+  final bool cadence;
+  final bool gears;
+
+  /// Ce profil accepte-t-il cette capacité BLE ?
+  ///
+  /// **Ne peut que restreindre.** L'appelant garde son propre filtre — le
+  /// réglage `autoConnect` de l'appareil — et les deux se composent par un
+  /// « et » : un boîtier écarté à la main (vélo prêté, capteur de l'autre vélo)
+  /// n'est jamais rattrapé au vol parce qu'un profil garde sa capacité.
+  bool allows(SensorKind kind) => switch (kind) {
+        SensorKind.heartRate => heartRate,
+        SensorKind.power => power,
+        SensorKind.speedCadence => cadence,
+        SensorKind.gears => gears,
+        SensorKind.radar => radar,
+      };
+
+  static SensorSettings parse(Object? raw) {
+    if (raw is! Map) return const SensorSettings();
+    bool on(String key) => raw[key] is bool ? raw[key] as bool : true;
+
+    return SensorSettings(
+      gps: on('gps'),
+      barometer: on('barometer'),
+      light: on('light'),
+      compass: on('compass'),
+      radar: on('radar'),
+      power: on('power'),
+      heartRate: on('heart_rate'),
+      cadence: on('cadence'),
+      gears: on('gears'),
+    );
+  }
+}
+
+/// Le réglage du radar arrière.
+///
+/// Les valeurs par défaut sont celles de la carte de diagnostic
+/// (`ui/radar_card.dart`) et de `radarViewFor` : les deux affichages doivent
+/// raconter la même chose du même capteur.
+@immutable
+class RadarSettings {
+  const RadarSettings({
+    this.closeM = 40,
+    this.rangeM = 140,
+    this.sounds = true,
+    this.wakeScreen = true,
+    this.wakeHold = const Duration(seconds: 5),
+  });
+
+  final double closeM;
+  final double rangeM;
+
+  /// Les tonalités d'alerte. Coupées, le radar reste visible — c'est le son
+  /// qu'on retire, pas l'information.
+  final bool sounds;
+
+  /// Rallumer l'écran quand une voiture remonte.
+  final bool wakeScreen;
+
+  /// Le maintien après extinction, qui empêche le rétroéclairage de battre et
+  /// laisse le temps de lire « Voie libre ».
+  final Duration wakeHold;
+
+  static RadarSettings parse(Object? raw) {
+    if (raw is! Map) return const RadarSettings();
+    const fallback = RadarSettings();
+
+    return RadarSettings(
+      closeM: _double(raw['close_m'], fallback.closeM),
+      rangeM: _double(raw['range_m'], fallback.rangeM),
+      sounds: raw['sounds'] is bool ? raw['sounds'] as bool : fallback.sounds,
+      wakeScreen: raw['wake_screen'] is bool
+          ? raw['wake_screen'] as bool
+          : fallback.wakeScreen,
+      wakeHold: raw['wake_hold_s'] is num
+          ? Duration(seconds: (raw['wake_hold_s'] as num).round())
+          : fallback.wakeHold,
+    );
+  }
+}
+
+/// Les seuils d'éclairage, tels que [AutoLightingPolicy] les attend.
+///
+/// Transportés et rangés dès maintenant, mais **sans effet visible tant que la
+/// politique n'est montée nulle part** : elle est écrite et testée, aucun écran
+/// ne la fait encore tourner. Les câbler ici évite d'avoir à refaire le contrat
+/// le jour où elle le sera.
+@immutable
+class LightingSettings {
+  const LightingSettings({this.config = const LightingConfig()});
+
+  final LightingConfig config;
+
+  static LightingSettings parse(Object? raw) {
+    if (raw is! Map) return const LightingSettings();
+    const fallback = LightingConfig();
+
+    return LightingSettings(
+      config: LightingConfig(
+        nightLux: _double(raw['night_lux'], fallback.nightLux),
+        dayLux: _double(raw['day_lux'], fallback.dayLux),
+        minimumDwell: raw['dwell_s'] is num
+            ? Duration(seconds: (raw['dwell_s'] as num).round())
+            : fallback.minimumDwell,
+        alertDistanceM: raw['alert_distance_m'] is num
+            ? (raw['alert_distance_m'] as num).round()
+            : fallback.alertDistanceM,
+        flashAtNight: raw['flash_at_night'] is bool
+            ? raw['flash_at_night'] as bool
+            : fallback.flashAtNight,
+        offInDaylight: raw['off_in_daylight'] is bool
+            ? raw['off_in_daylight'] as bool
+            : fallback.offInDaylight,
+        frontDayRunning: raw['front_day_running'] is bool
+            ? raw['front_day_running'] as bool
+            : fallback.frontDayRunning,
+      ),
+    );
+  }
+}
+
+/// Le rétroéclairage en veille.
+@immutable
+class ScreenSettings {
+  const ScreenSettings({this.dimLevel = ScreenDimmer.dimmed});
+
+  /// Borné à 1 % en bas : à zéro, certains appareils coupent franchement le
+  /// rétroéclairage, et le bandeau deviendrait illisible même de nuit.
+  final double dimLevel;
+
+  static ScreenSettings parse(Object? raw) {
+    if (raw is! Map) return const ScreenSettings();
+    final level = raw['dim_level'];
+    if (level is! num) return const ScreenSettings();
+    return ScreenSettings(dimLevel: level.toDouble().clamp(0.01, 1.0));
+  }
+}
+
+double _double(Object? raw, double fallback) =>
+    raw is num ? raw.toDouble() : fallback;

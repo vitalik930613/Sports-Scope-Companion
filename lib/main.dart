@@ -10,6 +10,9 @@ import 'account/rider_profile_store.dart';
 import 'account/site_session.dart';
 import 'account/threshold_gap.dart';
 import 'ble/sensor_hub.dart';
+import 'dashboard/ride_preset.dart';
+import 'dashboard/companion_settings_fetch.dart';
+import 'dashboard/companion_settings_store.dart';
 import 'devices/device_linker.dart';
 import 'devices/known_devices_store.dart';
 import 'devices/sensor_status_strip.dart';
@@ -51,12 +54,17 @@ Future<void> main() async {
   // tracé au départ, c'est-à-dire à l'endroit de la sortie où le réseau manque
   // le plus souvent.
   final routes = await RouteCatalogStore.open();
+  // Les profils de sortie, enfin : ils décident du tableau de bord et des
+  // capteurs, donc ils doivent être là avant le premier écran — et surtout avant
+  // qu'on puisse lancer un enregistrement depuis l'accueil.
+  final settings = await CompanionSettingsStore.open();
   runApp(SportsScopeApp(
     devices: devices,
     rides: rides,
     session: session,
     riderProfile: riderProfile,
     routes: routes,
+    settings: settings,
   ));
 }
 
@@ -68,6 +76,7 @@ class SportsScopeApp extends StatefulWidget {
     required this.session,
     required this.riderProfile,
     required this.routes,
+    required this.settings,
   });
 
   final KnownDevicesStore devices;
@@ -75,6 +84,9 @@ class SportsScopeApp extends StatefulWidget {
   final RouteCatalogStore routes;
   final SiteSession session;
   final RiderProfileStore riderProfile;
+
+  /// Les profils de sortie et celui qu'on a choisi.
+  final CompanionSettingsStore settings;
 
   @override
   State<SportsScopeApp> createState() => _SportsScopeAppState();
@@ -105,7 +117,13 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
   /// Le rattachement des capteurs, au même étage encore : son balayage doit
   /// continuer pendant la sortie, là où un capteur qui décroche est le plus
   /// coûteux et où aucun écran ne peut le relancer.
-  late final _linker = DeviceLinker(hub: _hub, devices: widget.devices);
+  late final _linker = DeviceLinker(
+    hub: _hub,
+    devices: widget.devices,
+    // Une fonction et non une valeur : le balayage tourne depuis le lancement,
+    // et le profil se choisit plus tard, au départ.
+    sensorsOf: () => widget.settings.preset.sensors,
+  );
 
   final _navigatorKey = GlobalKey<NavigatorState>();
   final _appLinks = AppLinks();
@@ -134,6 +152,25 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
     // Sans `await` : le premier écran ne doit rien attendre du réseau, et être
     // hors ligne avant de partir est le cas banal.
     unawaited(_updates.check());
+    unawaited(_refreshSettings());
+  }
+
+  /// Les profils de sortie, **une fois par lancement** — comme le contrôle de
+  /// version, et pas comme le catalogue d'itinéraires.
+  ///
+  /// Ces réglages changent au plus une fois par mois, alors que les itinéraires
+  /// changent la veille d'une sortie : les accrocher au rafraîchissement du
+  /// catalogue coûterait un chargement de WebView hors écran à chaque ouverture
+  /// de la feuille de départ, pour un document identique.
+  ///
+  /// Un échec est **muet**, même convention que le contrôle de version : hors
+  /// ligne avant de partir est le cas banal, le cache fait autorité, et « les
+  /// réglages n'ont pas pu être relus » n'est pas une information à poser sur
+  /// l'écran d'avant-départ.
+  Future<void> _refreshSettings() async {
+    final result = await const CompanionSettingsFetch().run();
+    if (result.status != SettingsFetchStatus.ok) return;
+    await widget.settings.record(result.document);
   }
 
   /// « Ouvrir dans l'appli » depuis le site, ou un lien d'itinéraire partagé.
@@ -164,6 +201,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
       session: widget.session,
       riderProfile: widget.riderProfile,
       routes: widget.routes,
+      settings: widget.settings,
       resume: _resume,
     );
   }
@@ -191,6 +229,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
       ),
       home: HomePage(
         devices: widget.devices,
+        settings: widget.settings,
         hub: _hub,
         linker: _linker,
         recorder: _recorder,
@@ -221,23 +260,32 @@ Future<void> openNavigation(
   required SiteSession session,
   required RiderProfileStore riderProfile,
   required RouteCatalogStore routes,
+  required CompanionSettingsStore settings,
   required ValueNotifier<NavigationTarget?> resume,
 }) async {
   if (context == null || !context.mounted) return;
 
-  final status = await Permission.location.request();
-  if (!context.mounted) return;
+  final preset = settings.preset;
 
-  if (!status.isGranted) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('Sans autorisation de position, la navigation ne peut pas '
-          'te suivre.'),
-    ));
-    return;
+  // La permission n'est demandée que si quelque chose s'en sert. Un profil de
+  // home-trainer n'a ni carte à suivre ni trace à écrire : lui réclamer la
+  // position serait une question sans objet, et la refuser bloquerait une sortie
+  // qui n'en a pas besoin.
+  if (preset.hasMap || preset.sensors.gps) {
+    final status = await Permission.location.request();
+    if (!context.mounted) return;
+
+    if (!status.isGranted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Sans autorisation de position, la navigation ne peut pas '
+            'te suivre.'),
+      ));
+      return;
+    }
   }
 
   if (!recorder.isActive) {
-    await _offerRecording(context, recorder);
+    await _offerRecording(context, recorder, preset.sensors);
     if (!context.mounted) return;
   }
 
@@ -245,9 +293,11 @@ Future<void> openNavigation(
     MaterialPageRoute(
       builder: (_) => RideShellPage(
         target: target,
+        preset: preset,
         hub: hub,
+        // La boussole ne sert qu'avec une carte, et le profil peut la couper.
+        compass: preset.sensors.compass ? compass : null,
         recorder: recorder,
-        compass: compass,
         session: session,
         riderProfile: riderProfile,
         routes: routes,
@@ -278,6 +328,7 @@ Future<void> openNavigation(
 Future<void> _offerRecording(
   BuildContext context,
   RideRecorder recorder,
+  SensorSettings sensors,
 ) async {
   final wanted = await showDialog<bool>(
     context: context,
@@ -307,7 +358,7 @@ Future<void> _offerRecording(
   if (wanted != true || !context.mounted) return;
 
   try {
-    await recorder.start();
+    await recorder.start(sensors: sensors);
   } on GpsUnavailable catch (e) {
     if (!context.mounted) return;
     await _tellRecordingFailed(context, e.message);
@@ -357,11 +408,17 @@ class HomePage extends StatefulWidget {
     required this.session,
     required this.riderProfile,
     required this.routes,
+    required this.settings,
     required this.resume,
     required this.updates,
   });
 
   final KnownDevicesStore devices;
+
+  /// Les profils de sortie. Cet écran ne les affiche pas : il les passe au
+  /// sélecteur de départ, seul endroit où l'on choisit son vélo, et à
+  /// l'enregistrement lancé d'ici, qui doit partir avec les mêmes capteurs.
+  final CompanionSettingsStore settings;
 
   /// La sortie qu'on vient de quitter, s'il y en a une. Elle appartient à
   /// l'application et non à cet écran : un lien entrant ouvre la navigation
@@ -501,7 +558,10 @@ class _HomePageState extends State<HomePage> {
     final target = await showModalBottomSheet<NavigationTarget>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => NavigationPickerSheet(catalog: widget.routes),
+      builder: (_) => NavigationPickerSheet(
+        catalog: widget.routes,
+        settings: widget.settings,
+      ),
     );
 
     if (target == null || !mounted) return;
@@ -517,6 +577,7 @@ class _HomePageState extends State<HomePage> {
         session: widget.session,
         riderProfile: widget.riderProfile,
         routes: widget.routes,
+        settings: widget.settings,
         resume: widget.resume,
       );
 
@@ -638,7 +699,11 @@ class _HomePageState extends State<HomePage> {
           const SizedBox(height: 12),
           // L'enregistrement passe avant les valeurs en direct : c'est le geste
           // qu'on cherche avant de partir, les mesures ne sont qu'un contrôle.
-          RecordingCard(recorder: _recorder, store: widget.rides),
+          RecordingCard(
+            recorder: _recorder,
+            store: widget.rides,
+            sensors: widget.settings.preset.sensors,
+          ),
           const SizedBox(height: 12),
           LiveValuesCard(hub: _hub, drivetrain: _drivetrain),
           const SizedBox(height: 12),

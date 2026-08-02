@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../ble/samples.dart';
 import '../ble/sensor_hub.dart';
+import '../dashboard/ride_preset.dart';
 import '../drivetrain.dart';
 import '../phone/barometric_altitude.dart';
 import '../phone/phone_sensors.dart';
@@ -140,17 +141,38 @@ class RideRecorder extends ChangeNotifier {
   /// GPS a accroché.
   GpsFix? get lastFix => _lastFix;
 
+  /// Les capteurs que le profil de sortie retient. Fixés au démarrage et non
+  /// relus ensuite : couper le GPS en pleine sortie couperait la trace en deux.
+  SensorSettings _sensors = const SensorSettings();
+
+  /// La sortie en cours enregistre-t-elle une position ?
+  ///
+  /// Ce que ça change à l'écran : distance et dénivelé n'ont plus de source, et
+  /// s'affichent **`—` plutôt que `0`** — un zéro se lirait comme « je n'ai pas
+  /// bougé » alors que la question ne se pose pas sur un home-trainer.
+  bool get gpsEnabled => _sensors.gps;
+
   /// Démarre une sortie.
   ///
-  /// Lève [GpsUnavailable] si la position n'est pas disponible : sans trace, un
-  /// enregistrement qui ne dirait rien serait pire qu'un refus franc. Les
-  /// capteurs, eux, sont facultatifs — on peut enregistrer un parcours sans
+  /// Lève [GpsUnavailable] si la position est demandée mais indisponible : sans
+  /// trace, un enregistrement qui ne dirait rien serait pire qu'un refus franc.
+  /// Les capteurs, eux, sont facultatifs — on peut enregistrer un parcours sans
   /// aucun capteur connecté.
-  Future<RideSession> start() async {
+  ///
+  /// **Sans GPS ([SensorSettings.gps] à faux), rien de tout ça n'a lieu** : ni
+  /// permission, ni service au premier plan, ni attente d'une première position.
+  /// La sortie démarre sur-le-champ et écrit des points sans coordonnées, ce que
+  /// le format admet déjà — un point sans position est une information, pas un
+  /// trou. C'est le home-trainer : la trace ne dirait rien, le cardio et la
+  /// puissance disent tout.
+  Future<RideSession> start({
+    SensorSettings sensors = const SensorSettings(),
+  }) async {
     final existing = _session;
     if (existing != null) return existing;
 
-    await gps.ensureReady();
+    _sensors = sensors;
+    if (sensors.gps) await gps.ensureReady();
 
     final session = await store.create();
     _session = session;
@@ -172,14 +194,21 @@ class RideRecorder extends ChangeNotifier {
     });
     // Le baromètre ne tourne que pendant l'enregistrement : hors sortie il n'y a
     // pas de dénivelé à mesurer, et un capteur branché réveille le processeur.
-    _pressureSub = phone?.pressureHpa().listen(handlePressure, onError: (Object e) {
-      debugPrint('[recorder] baromètre en erreur : $e');
-    });
-    _gpsSub = gps.watch().listen(handleFix, onError: (Object e) {
-      // Un récepteur qui tombe ne doit pas arrêter la sortie : le cardio et la
-      // puissance continuent d'être enregistrés, et la position reprendra.
-      debugPrint('[recorder] position en erreur : $e');
-    });
+    // Sans GPS, il ne tourne pas du tout : sa référence se cale sur le premier
+    // point GPS exploitable, et sans elle il ne rend que des pressions.
+    _pressureSub = sensors.barometer && sensors.gps
+        ? phone?.pressureHpa().listen(handlePressure, onError: (Object e) {
+            debugPrint('[recorder] baromètre en erreur : $e');
+          })
+        : null;
+    _gpsSub = sensors.gps
+        ? gps.watch().listen(handleFix, onError: (Object e) {
+            // Un récepteur qui tombe ne doit pas arrêter la sortie : le cardio
+            // et la puissance continuent d'être enregistrés, et la position
+            // reprendra.
+            debugPrint('[recorder] position en erreur : $e');
+          })
+        : null;
 
     _state = RecorderState.recording;
     _timer = Timer.periodic(tickPeriod, (_) => tick());

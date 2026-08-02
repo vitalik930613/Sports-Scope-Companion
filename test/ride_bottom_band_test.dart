@@ -8,8 +8,9 @@ import 'package:sports_scope_companion/account/rider_profile_store.dart';
 import 'package:sports_scope_companion/ble/sensor_hub.dart';
 import 'package:sports_scope_companion/recording/ride_recorder.dart';
 import 'package:sports_scope_companion/recording/ride_store.dart';
+import 'package:sports_scope_companion/dashboard/metric_id.dart';
+import 'package:sports_scope_companion/dashboard/ride_preset.dart';
 import 'package:sports_scope_companion/ride/nav_state.dart';
-import 'package:sports_scope_companion/ride/ride_pages.dart';
 import 'package:sports_scope_companion/ride/widgets/ride_bottom_band.dart';
 import 'package:sports_scope_companion/ui/zone_colors.dart';
 
@@ -33,7 +34,14 @@ void main() {
   late SensorHub hub;
   late RideRecorder recorder;
   late RiderProfileStore profiles;
+  late MetricSources sources;
   final nav = ValueNotifier<NavState?>(null);
+
+  /// Les jeux de valeurs du tableau de bord intégré : « sortie » puis
+  /// « effort », exactement ceux d'avant les profils. Le bandeau ne les connaît
+  /// plus lui-même — c'est le profil qui les porte — mais son comportement,
+  /// lui, n'a pas bougé d'un pouce, et c'est ce que ces tests vérifient.
+  final bands = RidePreset.builtIn.bands;
 
   setUp(() async {
     root = await Directory.systemTemp.createTemp('band_test');
@@ -46,6 +54,12 @@ void main() {
       tickPeriod: const Duration(days: 1),
     );
     profiles = RiderProfileStore(File(p.join(root.path, 'profile.json')));
+    sources = MetricSources(
+      hub: hub,
+      recorder: recorder,
+      riderProfile: profiles,
+      nav: nav,
+    );
   });
 
   tearDown(() async {
@@ -60,11 +74,10 @@ void main() {
             body: Align(
               alignment: Alignment.bottomCenter,
               child: RideBottomBand(
-                hub: hub,
-                recorder: recorder,
-                nav: nav,
-                riderProfile: profiles,
-                page: RidePage.navigation,
+                bands: bands,
+                sources: sources,
+                page: 0,
+                pageCount: 2,
                 onGoToPage: (_) {},
               ),
             ),
@@ -83,11 +96,10 @@ void main() {
             body: Align(
               alignment: Alignment.bottomCenter,
               child: RideBottomBand(
-                hub: hub,
-                recorder: recorder,
-                nav: nav,
-                riderProfile: profiles,
-                page: RidePage.navigation,
+                bands: bands,
+                sources: sources,
+                page: 0,
+                pageCount: 2,
                 onGoToPage: (_) {},
                 onCalibratePower: onCalibratePower,
               ),
@@ -151,11 +163,10 @@ void main() {
           body: Align(
             alignment: Alignment.bottomCenter,
             child: RideBottomBand(
-              hub: hub,
-              recorder: recorder,
-              nav: nav,
-              riderProfile: profiles,
-              page: RidePage.navigation,
+              bands: bands,
+              sources: sources,
+              page: 0,
+              pageCount: 2,
               onGoToPage: (_) => pageAsked = true,
             ),
           ),
@@ -185,7 +196,7 @@ void main() {
       (tester) async {
     await pumpBand(tester);
 
-    for (var i = 0; i < RideBandSet.count; i++) {
+    for (var i = 0; i < bands.length; i++) {
       await tester.fling(
         find.byType(RideBottomBand),
         const Offset(-200, 0),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../dashboard/ride_preset.dart';
 import '../ui/formats.dart';
 import 'gps_source.dart';
 import 'ride_recorder.dart';
@@ -13,10 +14,21 @@ import 'rides_page.dart';
 /// remettre ailleurs (une surcouche sur la navigation, par exemple) sans le
 /// réécrire.
 class RecordingCard extends StatelessWidget {
-  const RecordingCard({super.key, required this.recorder, required this.store});
+  const RecordingCard({
+    super.key,
+    required this.recorder,
+    required this.store,
+    this.sensors = const SensorSettings(),
+  });
 
   final RideRecorder recorder;
   final RideStore store;
+
+  /// Les capteurs du profil de sortie courant. Une sortie lancée d'ici doit
+  /// partir avec exactement les mêmes que si elle avait été lancée depuis la
+  /// navigation : sans ça, démarrer avant de partir donnerait un GPS allumé sur
+  /// un profil de home-trainer.
+  final SensorSettings sensors;
 
   @override
   Widget build(BuildContext context) {
@@ -127,7 +139,7 @@ class RecordingCard extends StatelessWidget {
   Future<void> _start(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await recorder.start();
+      await recorder.start(sensors: sensors);
     } on GpsUnavailable catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.message)));
     } catch (e) {
