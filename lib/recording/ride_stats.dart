@@ -20,6 +20,8 @@ class RideStats {
     this.altitudeNoiseM = defaultAltitudeNoiseM,
     this.baroAltitudeNoiseM = defaultBaroAltitudeNoiseM,
     this.normalizedWindow = defaultNormalizedWindow,
+    this.stationarySpeedMps = defaultStationarySpeedMps,
+    this.maxVerticalSpeedMps = defaultMaxVerticalSpeedMps,
   });
 
   /// Seuil de bruit du dénivelé : l'altitude GPS oscille de quelques mètres à
@@ -31,6 +33,38 @@ class RideStats {
   /// centimètres là où le GPS oscille de plusieurs mètres. C'est précisément ce
   /// qui fait qu'un faux plat montant finit enfin par être compté.
   static const defaultBaroAltitudeNoiseM = 0.3;
+
+  /// En dessous de 1,8 km/h on ne roule pas : l'appareil est posé.
+  ///
+  /// L'hystérésis n'a jamais suffi à l'arrêt, et le baromètre l'a rendu pire au
+  /// lieu de le régler : son seuil est dix fois plus fin, donc la dérive de
+  /// pression d'une pause (vent, soleil sur le téléphone, dépression qui
+  /// s'installe) le franchit d'autant plus facilement. Mesuré sur une sortie de
+  /// 146 km enregistrée en parallèle par un compteur : 58 minutes immobiles
+  /// réparties sur 754 arrêts valaient 253 m de D+ gagnés sans avancer.
+  ///
+  /// À l'arrêt on suit donc l'altitude sans l'accumuler — la référence continue
+  /// d'avancer, sans quoi la dérive de la pause serait comptée d'un bloc à la
+  /// reprise.
+  static const defaultStationarySpeedMps = 0.5;
+
+  /// Vitesse verticale au-delà de laquelle une variation n'est plus du relief
+  /// mais une discontinuité : 5 m/s, soit 18 km/h à la verticale. Une descente
+  /// de col à 60 km/h dans du -20 % plafonne à 3,3 m/s.
+  ///
+  /// Deux marches nous guettent, et elles sont dans notre propre chaîne :
+  ///
+  ///  • le passage de l'altitude GPS à l'altitude barométrique, quand la
+  ///    première pression arrive (les deux sources sont décalées de plusieurs
+  ///    mètres) ;
+  ///  • le calage de la référence par [BarometricAltimeter.calibrateWith], qui
+  ///    déplace tout le profil d'un coup — l'altimètre ne le fait qu'une fois
+  ///    par sortie *précisément* pour cette raison, mais cette fois-là compte.
+  ///
+  /// Sur la sortie de comparaison, les deux réunies valaient 115 m : l'altitude
+  /// est passée de 923,8 m à 1039,2 m **en une seconde**. Franchir ce plafond
+  /// recale la référence sans rien compter.
+  static const defaultMaxVerticalSpeedMps = 5.0;
 
   /// Fenêtre de la moyenne glissante de la puissance normalisée, en points.
   /// Les points sont capturés une fois par seconde, donc 30 points ≈ 30 s —
@@ -48,6 +82,8 @@ class RideStats {
   final double altitudeNoiseM;
   final double baroAltitudeNoiseM;
   final int normalizedWindow;
+  final double stationarySpeedMps;
+  final double maxVerticalSpeedMps;
 
   /// Temps passé par palier de mesure : borne basse du palier → nombre de points.
   ///
@@ -99,7 +135,19 @@ class RideStats {
   int _powerCount = 0;
   double _speedSum = 0;
   int _speedCount = 0;
+
+  // Le dénivelé se lit entre la référence et le point courant, pas entre deux
+  // points consécutifs : sous le seuil de bruit la référence ne bouge pas, et
+  // c'est ce qui laisse une pente douce finir par être comptée. D'où la date de
+  // la référence à côté d'elle — c'est sur *cet* intervalle-là que se juge une
+  // vitesse verticale, pas sur la seconde écoulée.
   double? _altitudeReference;
+  DateTime? _referenceAt;
+  bool _referenceFromBaro = false;
+
+  DateTime? _lastAt;
+  double? _lastDistanceM;
+  double _movingMs = 0;
 
   // Puissance normalisée : moyenne glissante sur la fenêtre, puis racine
   // quatrième de la moyenne des puissances quatrièmes de cette moyenne.
@@ -107,6 +155,16 @@ class RideStats {
   int _npWindowSum = 0;
   double _npFourthSum = 0;
   int _npCount = 0;
+
+  /// Temps passé à avancer, arrêts exclus — le `total_moving_time` du `.fit`.
+  ///
+  /// À distinguer du temps *chronométré*, qui est le nombre de points capturés :
+  /// tant qu'une sortie n'est pas mise en pause à la main, l'appli enregistre un
+  /// point par seconde y compris au feu rouge. Sans ce champ, un lecteur retombe
+  /// sur `total_timer_time` et lit les arrêts comme du roulage — 7 h 38 au lieu
+  /// de 6 h 29 sur la sortie de comparaison, et une vitesse moyenne fausse dans
+  /// la même proportion.
+  Duration get movingTime => Duration(milliseconds: _movingMs.round());
 
   int? get avgHeartRate => _hrCount > 0 ? (_hrSum / _hrCount).round() : null;
 
@@ -142,6 +200,22 @@ class RideStats {
   }
 
   void add(TrackPoint point) {
+    // Avance-t-on ? `null` sur le premier point : il n'y a pas d'intervalle à
+    // juger, et rien à accumuler de toute façon.
+    final previousAt = _lastAt;
+    final previousDistanceM = _lastDistanceM;
+    _lastAt = point.at;
+    _lastDistanceM = point.distanceM;
+
+    final seconds = previousAt == null
+        ? null
+        : point.at.difference(previousAt).inMilliseconds / 1000;
+    bool? moving;
+    if (seconds != null && seconds > 0 && previousDistanceM != null) {
+      moving = point.distanceM - previousDistanceM >= stationarySpeedMps * seconds;
+      if (moving) _movingMs += seconds * 1000;
+    }
+
     distanceM = point.distanceM;
 
     if (point.hasPosition) {
@@ -165,19 +239,7 @@ class RideStats {
     // Un trou vaut mieux qu'une marche : la référence est conservée, et le
     // dénivelé reprend exactement où il s'était arrêté.
     final altitude = hasBaroAltitude ? point.baroAltitudeM : point.altitudeM;
-    if (altitude != null) {
-      // Le baromètre mesure au décimètre, le GPS à ±10 m : leur laisser le même
-      // seuil de bruit reviendrait à jeter la précision qu'on est allé chercher.
-      final noise = hasBaroAltitude ? baroAltitudeNoiseM : altitudeNoiseM;
-      _altitudeReference ??= altitude;
-      if (altitude - _altitudeReference! > noise) {
-        ascentM += altitude - _altitudeReference!;
-        _altitudeReference = altitude;
-      } else if (_altitudeReference! - altitude > noise) {
-        descentM += _altitudeReference! - altitude;
-        _altitudeReference = altitude;
-      }
-    }
+    if (altitude != null) _addAltitude(altitude, point.at, moving);
 
     final heartRate = point.heartRate;
     if (heartRate != null) {
@@ -214,6 +276,51 @@ class RideStats {
       maxSpeedMps =
           maxSpeedMps == null || speed > maxSpeedMps! ? speed : maxSpeedMps;
     }
+  }
+
+  /// Le dénivelé d'un point, à partir de la référence courante.
+  ///
+  /// Trois situations recalent la référence **sans rien compter** : l'écart
+  /// qu'on lirait alors n'est pas du relief.
+  void _addAltitude(double altitude, DateTime at, bool? moving) {
+    final reference = _altitudeReference;
+    final referenceAt = _referenceAt;
+
+    // 1. La source a changé (GPS → baromètre) : les deux échelles ne se
+    //    comparent pas. 2. La variation dépasse le plafond de vitesse verticale
+    //    (calage de l'altimètre). 3. On est à l'arrêt : c'est de la dérive.
+    final sinceReference = referenceAt == null
+        ? null
+        : at.difference(referenceAt).inMilliseconds / 1000;
+    final jumped = reference != null &&
+        sinceReference != null &&
+        sinceReference > 0 &&
+        (altitude - reference).abs() > maxVerticalSpeedMps * sinceReference;
+
+    if (reference == null ||
+        _referenceFromBaro != hasBaroAltitude ||
+        jumped ||
+        moving == false) {
+      _altitudeReference = altitude;
+      _referenceAt = at;
+      _referenceFromBaro = hasBaroAltitude;
+      return;
+    }
+
+    // Le baromètre mesure au décimètre, le GPS à ±10 m : leur laisser le même
+    // seuil de bruit reviendrait à jeter la précision qu'on est allé chercher.
+    final noise = hasBaroAltitude ? baroAltitudeNoiseM : altitudeNoiseM;
+    if (altitude - reference > noise) {
+      ascentM += altitude - reference;
+    } else if (reference - altitude > noise) {
+      descentM += reference - altitude;
+    } else {
+      // Sous le seuil : la référence NE bouge pas, sinon une pente douce ne
+      // franchirait jamais le seuil et ne serait jamais comptée.
+      return;
+    }
+    _altitudeReference = altitude;
+    _referenceAt = at;
   }
 
   /// Range une mesure dans son palier. Une mesure nulle ou négative est écartée :
@@ -259,6 +366,11 @@ class RideStats {
     _speedSum = 0;
     _speedCount = 0;
     _altitudeReference = null;
+    _referenceAt = null;
+    _referenceFromBaro = false;
+    _lastAt = null;
+    _lastDistanceM = null;
+    _movingMs = 0;
     _npWindow.clear();
     _npWindowSum = 0;
     _npFourthSum = 0;

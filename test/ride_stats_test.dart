@@ -5,9 +5,13 @@ import 'package:sports_scope_companion/recording/ride_stats.dart';
 import 'package:sports_scope_companion/recording/track_point.dart';
 
 /// Un point de sortie, avec le strict minimum renseigné par défaut.
+///
+/// La distance avance de 8 m/s par défaut, soit ~29 km/h : sans elle, `RideStats`
+/// lirait chaque cas comme un vélo à l'arrêt et n'y compterait aucun dénivelé.
+/// Les cas qui portent sur l'arrêt passent leur propre `distanceM`.
 TrackPoint point({
   int second = 0,
-  double distanceM = 0,
+  double? distanceM,
   double? lat,
   double? lng,
   double? altitudeM,
@@ -20,7 +24,7 @@ TrackPoint point({
 }) {
   return TrackPoint(
     at: DateTime.utc(2026, 1, 1).add(Duration(seconds: second)),
-    distanceM: distanceM,
+    distanceM: distanceM ?? second * 8.0,
     lat: lat,
     lng: lng,
     altitudeM: altitudeM,
@@ -140,6 +144,107 @@ void main() {
       }
       expect(stats.hasBaroAltitude, isFalse);
       expect(stats.ascentM, closeTo(27, 0.1));
+    });
+  });
+
+  group('dénivelé à l\'arrêt', () {
+    test('une pause ne gravit rien, même si le baromètre dérive', () {
+      // Le seuil barométrique est dix fois plus fin que celui du GPS : à l'arrêt
+      // il ne protège plus de rien, et c'est là que partaient 253 m sur la sortie
+      // de comparaison. Ici la pression monte lentement pendant dix minutes.
+      final stats = RideStats();
+      for (var i = 0; i < 600; i++) {
+        stats.add(point(second: i, distanceM: 4200, baroAltitudeM: 500 + i * 0.05));
+      }
+
+      expect(stats.ascentM, 0);
+      expect(stats.descentM, 0);
+    });
+
+    test('la dérive d\'une pause n\'est pas reportée à la reprise', () {
+      // Ce que garantit la référence qui continue d'avancer à l'arrêt : les 30 m
+      // de dérive ne doivent pas tomber d'un bloc au premier point roulant.
+      final stats = RideStats();
+      for (var i = 0; i < 30; i++) {
+        stats.add(point(second: i, distanceM: 1000, baroAltitudeM: 500 + i * 1.0));
+      }
+      for (var i = 0; i <= 50; i++) {
+        stats.add(point(
+            second: 30 + i, distanceM: 1000 + i * 8.0, baroAltitudeM: 529 + i * 1.0));
+      }
+
+      // Les 50 m réellement gravis après le redémarrage, et eux seuls.
+      expect(stats.ascentM, closeTo(50, 1));
+    });
+
+    test('le temps en mouvement exclut les arrêts', () {
+      final stats = RideStats();
+      for (var i = 0; i < 60; i++) {
+        stats.add(point(second: i, distanceM: i * 8.0));
+      }
+      for (var i = 0; i < 120; i++) {
+        stats.add(point(second: 60 + i, distanceM: 472));
+      }
+      for (var i = 0; i < 60; i++) {
+        stats.add(point(second: 180 + i, distanceM: 472 + i * 8.0));
+      }
+
+      // Deux blocs de 60 points roulants, soit 59 intervalles chacun : 118 s sur
+      // 239 s d'horloge. Le premier point d'un bloc n'ouvre pas d'intervalle
+      // roulant — il est précédé d'un point à la même distance.
+      expect(stats.movingTime.inSeconds, 118);
+    });
+
+    test('sans arrêt, temps en mouvement et temps écoulé coïncident', () {
+      final stats = RideStats();
+      for (var i = 0; i <= 100; i++) {
+        stats.add(point(second: i));
+      }
+      expect(stats.movingTime.inSeconds, 100);
+    });
+  });
+
+  group('discontinuités d\'altitude', () {
+    test('le passage du GPS au baromètre ne fabrique pas de marche', () {
+      // Les dix premières secondes n'ont pas encore de pression : l'altitude est
+      // celle du GPS. Quand le baromètre prend le relais, les deux échelles sont
+      // décalées de 115 m — c'est ce qu'a vécu la sortie de comparaison.
+      final stats = RideStats();
+      for (var i = 0; i < 10; i++) {
+        stats.add(point(second: i, altitudeM: 924));
+      }
+      for (var i = 10; i < 40; i++) {
+        stats.add(point(second: i, altitudeM: 924, baroAltitudeM: 1039));
+      }
+
+      expect(stats.hasBaroAltitude, isTrue);
+      expect(stats.ascentM, 0);
+      expect(stats.descentM, 0);
+    });
+
+    test('un calage d\'altimètre en route ne fabrique pas de marche', () {
+      // `BarometricAltimeter.calibrateWith` ne cale qu'une fois par sortie, mais
+      // cette fois-là déplace tout le profil d'un coup.
+      final stats = RideStats();
+      for (var i = 0; i < 20; i++) {
+        stats.add(point(second: i, baroAltitudeM: 500 + i * 0.5));
+      }
+      for (var i = 20; i < 60; i++) {
+        stats.add(point(second: i, baroAltitudeM: 610 + i * 0.5)); // +100 m d'un coup
+      }
+
+      // Les 0,5 m/s de pente réelle sur 59 s, sans les 100 m du recalage.
+      expect(stats.ascentM, closeTo(29.5, 1));
+    });
+
+    test('une vraie descente rapide n\'est pas écrêtée', () {
+      // -3 m/s : une descente de col à 60 km/h dans du -18 %, sous le plafond.
+      final stats = RideStats();
+      for (var i = 0; i <= 100; i++) {
+        stats.add(point(second: i, distanceM: i * 17.0, baroAltitudeM: 1500 - i * 3.0));
+      }
+      expect(stats.descentM, closeTo(300, 1));
+      expect(stats.ascentM, 0);
     });
   });
 

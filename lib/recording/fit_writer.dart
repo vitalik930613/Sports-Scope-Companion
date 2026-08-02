@@ -96,6 +96,10 @@ class FitWriter {
     // plusieurs et le reste ne bougera pas.
     final elapsed = end.difference(start);
     final timer = Duration(seconds: points.length);
+    // Le temps chronométré compte une seconde par point capturé, donc aussi les
+    // feux rouges : sans `total_moving_time` à côté, un lecteur prend le premier
+    // pour le second et en tire une vitesse moyenne fausse. Cf. `RideStats`.
+    final moving = summary.movingTime;
 
     file.define(_Local.lap, _Mesg.lap, const [
       _FieldDef(254, _BaseType.uint16), // message_index
@@ -120,6 +124,7 @@ class FitWriter {
       _FieldDef(20, _BaseType.uint16), // max_power
       _FieldDef(21, _BaseType.uint16), // total_ascent
       _FieldDef(22, _BaseType.uint16), // total_descent
+      _FieldDef(52, _BaseType.uint32), // total_moving_time
     ]);
     file.data(_Local.lap, {
       254: 0,
@@ -144,6 +149,7 @@ class FitWriter {
       20: summary.maxPower,
       21: summary.ascentM.round(),
       22: summary.descentM.round(),
+      52: _milliseconds(moving),
     });
 
     // — session : le résumé que lisent les sites d'analyse.
@@ -172,6 +178,7 @@ class FitWriter {
       _FieldDef(23, _BaseType.uint16), // total_descent
       _FieldDef(25, _BaseType.uint16), // first_lap_index
       _FieldDef(26, _BaseType.uint16), // num_laps
+      _FieldDef(59, _BaseType.uint32), // total_moving_time
     ]);
     file.data(_Local.session, {
       254: 0,
@@ -198,6 +205,7 @@ class FitWriter {
       23: summary.descentM.round(),
       25: 0,
       26: 1,
+      59: _milliseconds(moving),
     });
 
     // — activity : le message de clôture, obligatoire pour un fichier

@@ -93,10 +93,33 @@ void main() {
     expect(summary.uint16(22), 8, reason: '+2 m par point sur 4 intervalles');
     expect(summary.uint16(23), 0);
     expect(summary.uint16(26), 1, reason: 'un seul tour');
+    expect(summary.uint32(59), 4000,
+        reason: 'temps en mouvement en ms — la sortie roule de bout en bout');
+
+    final lap = messages.firstWhere((m) => m.global == 19);
+    expect(lap.uint32(52), 4000, reason: 'le tour porte le même temps en mouvement');
 
     // Un fichier d'activité doit se clore par un message `activity`.
     expect(messages.last.global, 34);
     expect(messages.where((m) => m.global == 0), hasLength(1));
+  });
+
+  test('un arrêt sépare le temps en mouvement du temps chronométré', () {
+    // Sans `total_moving_time`, un lecteur retombe sur `total_timer_time` et
+    // compte le feu rouge comme du roulage — vitesse moyenne fausse d'autant.
+    final points = [
+      for (var i = 0; i < 5; i++)
+        TrackPoint(at: start.add(Duration(seconds: i)), distanceM: i * 10.0),
+      // Dix secondes à l'arrêt, distance figée.
+      for (var i = 5; i < 15; i++)
+        TrackPoint(at: start.add(Duration(seconds: i)), distanceM: 40),
+    ];
+
+    final messages = _parse(FitWriter.build(session: session, points: points));
+    final summary = messages.firstWhere((m) => m.global == 18);
+
+    expect(summary.uint32(8), 15000, reason: '15 points = 15 s de chronomètre');
+    expect(summary.uint32(59), 4000, reason: 'dont 4 s seulement à avancer');
   });
 
   test('une sortie sans capteur ne déclare pas leurs colonnes', () {
