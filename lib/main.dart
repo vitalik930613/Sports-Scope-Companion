@@ -29,6 +29,8 @@ import 'recording/ride_store.dart';
 import 'recording/rides_page.dart';
 import 'ui/metric_tile.dart';
 import 'ui/radar_card.dart';
+import 'update/update_card.dart';
+import 'update/update_checker.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -118,11 +120,20 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
   /// tracé qui n'existe plus (voir `RouteCatalogFetch`).
   final _resume = ValueNotifier<NavigationTarget?>(null);
 
+  /// Le contrôle de mise à jour, à cet étage pour n'interroger le site **qu'une
+  /// fois par lancement** : l'accueil se reconstruit à chaque retour de sortie,
+  /// et un contrôle dans son `initState` rejouerait la requête à chaque
+  /// aller-retour.
+  final _updates = UpdateChecker();
+
   @override
   void initState() {
     super.initState();
     _listenForLinks();
     _linker.start();
+    // Sans `await` : le premier écran ne doit rien attendre du réseau, et être
+    // hors ligne avant de partir est le cas banal.
+    unawaited(_updates.check());
   }
 
   /// « Ouvrir dans l'appli » depuis le site, ou un lien d'itinéraire partagé.
@@ -160,6 +171,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
   @override
   void dispose() {
     _linkSub?.cancel();
+    _updates.dispose();
     _resume.dispose();
     _linker.dispose();
     unawaited(_compass.stop());
@@ -188,6 +200,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
         riderProfile: widget.riderProfile,
         routes: widget.routes,
         resume: _resume,
+        updates: _updates,
       ),
     );
   }
@@ -345,6 +358,7 @@ class HomePage extends StatefulWidget {
     required this.riderProfile,
     required this.routes,
     required this.resume,
+    required this.updates,
   });
 
   final KnownDevicesStore devices;
@@ -382,6 +396,11 @@ class HomePage extends StatefulWidget {
   /// depuis le site. Cet écran ne les affiche pas, il signale seulement ce qui
   /// leur manque pour que les zones du bandeau de sortie existent.
   final RiderProfileStore riderProfile;
+
+  /// Le contrôle de mise à jour, interrogé une fois au lancement par
+  /// l'application. Cet écran ne fait que montrer son résultat, quand il y en a
+  /// un.
+  final UpdateChecker updates;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -602,6 +621,11 @@ class _HomePageState extends State<HomePage> {
           // déjà que rien n'est connecté, ce qui est la vraie cause. Deux cartes
           // pour un seul problème se lisent comme deux problèmes.
           if (widget.session.signedIn != false) _thresholdGapCard(),
+          // Avec les autres cartes « ce qu'il faudrait régler avant de partir »,
+          // et pas en tête : une mise à jour n'empêche jamais de rouler. Elle
+          // ne s'affiche que s'il y en a une, et l'installation se fait dans le
+          // navigateur — donc pas en pleine préparation de sortie.
+          UpdateCard(checker: widget.updates),
           // L'état des capteurs passe avant tout le reste : c'est la question
           // qu'on se pose au moment de partir, et la seule à laquelle il faut
           // répondre avant de rouler — un capteur oublié sur le vélo d'à côté

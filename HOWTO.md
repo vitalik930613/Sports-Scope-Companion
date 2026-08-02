@@ -117,8 +117,11 @@ seule l'appli signée par la bonne clé peut recevoir) : l'intent-filter est dé
 déclaré dans le manifeste, il s'active dès que
 `https://sports.logicraft.ch/.well-known/assetlinks.json` publie le nom de
 paquet et l'empreinte SHA-256 de signature (variables `ANDROID_PACKAGE_NAME` /
-`ANDROID_CERT_FINGERPRINTS` côté serveur). Tant que le paquet s'appelle
-`com.example.sports_scope_companion`, ce n'est pas fait.
+`ANDROID_CERT_FINGERPRINTS` côté serveur). Le paquet porte désormais son nom
+définitif (`ch.logicraft.sports.companion`), donc plus rien ne s'y oppose : il
+reste à publier l'empreinte de la clé de release (voir plus bas), en notant que
+le serveur ne sert aujourd'hui **qu'un seul** paquet — celui du TWA. Faire
+cohabiter les deux demande d'étendre `WellKnownController` côté Rails.
 
 Dev : contre le serveur de dev, Keycloak est publié sur
 `keycloak.localtest.me`, qui résout sur `127.0.0.1` — donc sur le *téléphone*
@@ -185,7 +188,7 @@ rides/2026-07-28T14-03-11Z/points.jsonl   ← un point par ligne, écrit en ajou
 Pour les récupérer en debug :
 
 ```bash
-adb exec-out run-as com.example.sports_scope_companion \
+adb exec-out run-as ch.logicraft.sports.companion \
   tar c files/rides > rides.tar
 ```
 
@@ -213,3 +216,91 @@ node -e '
     });
 '
 ```
+
+# Construire un APK à distribuer
+
+## Une fois pour toutes : la clé de signature
+
+Android identifie une application par son **applicationId** *et* sa **clé de
+signature**. Les deux sont définitifs : changer l'un ou l'autre après diffusion
+donne une application que le téléphone tient pour étrangère, qui refuse de se
+mettre à jour par-dessus l'ancienne. Il faut alors désinstaller — donc perdre les
+capteurs appairés, la session du site et les sorties non exportées.
+
+Créer le keystore, **hors du dépôt** :
+
+```bash
+keytool -genkeypair -v \
+  -keystore ~/.keys/sports-scope-companion.jks \
+  -keyalg RSA -keysize 4096 -validity 10000 \
+  -alias companion
+```
+
+Puis `android/key.properties` sur le modèle de `android/key.properties.example`
+(les deux fichiers sensibles, `.jks` et `key.properties`, sont ignorés par git) :
+
+```properties
+storeFile=/home/<vous>/.keys/sports-scope-companion.jks
+storePassword=…
+keyAlias=companion
+keyPassword=…
+```
+
+**Sauvegarder le `.jks` et son mot de passe ailleurs que sur la machine de
+build.** Les perdre, c'est ne plus jamais pouvoir mettre à jour les APK déjà
+installés : la seule issue serait de rebâtir sous un autre applicationId, donc de
+faire désinstaller tout le monde.
+
+Sans `key.properties`, un build de release **échoue** au lieu de retomber sur la
+clé de debug (`android/app/build.gradle.kts`) : un APK signé debug s'installe et
+se distribue sans rien signaler, et le piège ne se referme qu'à la mise à jour
+suivante.
+
+## Construire
+
+Incrémenter d'abord le `+N` de `version:` dans `pubspec.yaml` — c'est le
+`versionCode`, et Android refuse d'installer par-dessus un numéro supérieur ou
+égal, avec un « application non installée » qui ne dit pas pourquoi.
+
+```bash
+flutter build apk --release --target-platform android-arm64
+# → build/app/outputs/flutter-apk/app-release.apk  (~15–20 Mo)
+```
+
+`android-arm64` couvre tous les téléphones du marché depuis ~2016 et divise le
+fichier par deux ou trois par rapport à l'APK universel. Pour un doute sur un
+appareil ancien, `flutter build apk --release` sans option produit l'universel.
+
+Vérifier la signature avant d'envoyer le fichier :
+
+```bash
+$ANDROID_HOME/build-tools/*/apksigner verify --print-certs \
+  build/app/outputs/flutter-apk/app-release.apk
+```
+
+Le `SHA-256` affiché est **l'empreinte à publier** dans
+`ANDROID_CERT_FINGERPRINTS` côté Rails pour activer l'App Link vérifié
+(cf. les notes de sécurité plus haut).
+
+## Publier sur le site
+
+Le site distribue l'APK à ses membres (`https://sports.logicraft.ch/companion`,
+réservé aux connectés). La publication se fait depuis le dépôt Rails voisin, sans
+redéployer le site :
+
+```bash
+cd ~/dev/sports-scope
+script/push-apk.sh          # prend build/app/outputs/flutter-apk/app-release.apk
+```
+
+Le script relit l'APK avant d'envoyer quoi que ce soit — nom de paquet, signature,
+`versionCode` — affiche ce qu'il s'apprête à publier, et demande confirmation. Il lit
+la version **dans le fichier** et non dans `pubspec.yaml` : c'est l'APK publié qui
+fait foi, un pubspec modifié après le build annoncerait une version que personne n'a
+téléchargée.
+
+Côté téléphones déjà équipés, rien ne se met à jour tout seul : l'app interroge
+`/api/companion_version` **une fois par lancement** et, si le `versionCode` publié est
+supérieur au sien, pose une carte sur l'écran d'accueil qui ouvre la page de
+téléchargement dans Chrome (`lib/update/`). Hors ligne ou déjà à jour, elle ne dit
+rien.

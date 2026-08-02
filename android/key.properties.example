@@ -1,0 +1,10 @@
+# Modèle de android/key.properties — le vrai fichier n'est PAS dans le dépôt
+# (cf. android/.gitignore), pas plus que le .jks qu'il désigne.
+# Procédure complète : HOWTO.md, « Construire un APK à distribuer ».
+
+# Chemin absolu du keystore. Le garder hors du dépôt : sa perte interdit toute
+# mise à jour des APK déjà installés.
+storeFile=/home/<vous>/.keys/sports-scope-companion.jks
+storePassword=<mot de passe du keystore>
+keyAlias=companion
+keyPassword=<mot de passe de la clé>

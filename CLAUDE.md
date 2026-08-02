@@ -51,6 +51,7 @@ lib/
   recording/             # enregistreur, magasin de sorties, agrégats, .fit
   ride/                  # le tableau de bord de sortie (la coquille + ses pages)
   ui/                    # tuiles et formats partagés entre écrans
+  update/                # « une version plus récente existe » (diffusion hors Play Store)
 assets/sounds/           # tonalités d'alerte radar — GÉNÉRÉES, ne pas éditer
 tool/fit_sample.dart     # génère un .fit de test (voir HOWTO.md)
 tool/radar_tones.dart    # (re)génère assets/sounds/ : dart run tool/radar_tones.dart
@@ -482,6 +483,39 @@ Le cadencement est régulier, pas déclenché par le GPS : à l'arrêt ou sous u
 tunnel, la trace continue de porter le cardio et la puissance. Un point sans
 position est une information, pas un trou.
 
+## Se mettre à jour sans Play Store (`lib/update/`)
+
+L'appli est diffusée par le site (`/companion`, réservé aux connectés) : **rien ne la
+met à jour tout seul**. Sans contrôle, les téléphones divergent en silence jusqu'au
+jour où le protocole du pont ne correspond plus entre les deux dépôts — ce qui se
+manifeste par une navigation aux capteurs muets et pas un mot d'explication.
+
+`UpdateChecker` interroge donc `/api/companion_version` **une fois par lancement**
+(créé dans `SportsScopeApp`, pas dans l'accueil, qui se reconstruit à chaque retour de
+sortie). Trois choses tenues par des tests :
+
+- **L'ordre vient du `versionCode`, jamais du `versionName`** : en texte, « 0.10.0 »
+  passe pour plus ancien que « 0.9.0 ». Et la comparaison est **strictement
+  supérieure** — un `>=` proposerait éternellement la version qu'on vient
+  d'installer, et un build de dev en avance sur la prod se verrait offrir un retour
+  en arrière.
+- **`CompanionRelease.parse` ne lève jamais**, même convention que les décodeurs
+  GATT : le site peut être plus ancien que l'appli, renvoyer du HTML d'erreur ou un
+  JSON amputé, et tout ça arrive dans un `initState`.
+- **Un échec est muet.** Hors ligne avant de partir est le cas banal ; « le contrôle
+  de version a échoué » n'est pas une information à poser sur l'écran d'avant-départ.
+  Un seul état (`available == null`) pour « pas encore interrogé », « hors ligne »,
+  « à jour » et « échec » : l'écran n'a qu'une carte à montrer ou non.
+
+L'endpoint est **public** côté Rails, exprès : l'appli ne détient aucun cookie côté
+Dart (la session vit dans le pot des WebViews), et passer par le WebView hors écran de
+`RouteCatalogFetch` pour lire un numéro serait beaucoup de machinerie. Effet de bord
+utile : le contrôle marche encore quand la session a expiré.
+
+La carte ouvre la page **dans Chrome** (`url_launcher`, `externalApplication`) et non
+dans un WebView : `webview_flutter` ne gère pas les téléchargements, c'est Chrome qui
+détient la session du site, et c'est lui qu'Android enchaîne sur l'installateur.
+
 ## Conventions de code
 
 - **Les commentaires sont en français et disent le _pourquoi_**, pas le quoi :
@@ -502,10 +536,22 @@ position est une information, pas un trou.
 - `arrived` est **collant** côté web (remis à faux seulement au chargement d'un
   tracé) : tout ce qui s'en sert doit en détecter le **front**, pas le niveau,
   sous peine d'épingler le cycliste sur la carte pour le reste de la sortie.
-- Le paquet s'appelle encore `com.example.sports_scope_companion` : tant que
-  c'est le cas, l'App Link vérifié `https://` ne peut pas être activé et le
-  passage de session repose sur le schéma `sportsscope://` + un jeton à usage
-  unique (voir les notes de sécurité de `HOWTO.md`).
+- **`applicationId` et clé de signature sont définitifs.** Le paquet est
+  `ch.logicraft.sports.companion` et la release se signe avec le keystore
+  désigné par `android/key.properties` (hors dépôt, cf. `HOWTO.md`). Changer
+  l'un ou l'autre après diffusion donne une application qu'Android tient pour
+  étrangère : pas de mise à jour, désinstallation obligatoire, donc perte des
+  capteurs appairés, de la session et des sorties non exportées. Un build de
+  release sans clé **échoue** au lieu de retomber sur la clé de debug — ce repli
+  est précisément le piège, puisqu'il ne se voit qu'à la mise à jour suivante.
+  Le `+N` de `version:` (pubspec) est le `versionCode` : à incrémenter à chaque
+  APK diffusé.
+- L'App Link vérifié `https://` est déclaré dans le manifeste mais **inactif**
+  tant que le site ne publie pas l'empreinte SHA-256 de la clé de release ; d'ici
+  là le passage de session repose sur le schéma `sportsscope://` + un jeton à
+  usage unique (voir les notes de sécurité de `HOWTO.md`). Côté Rails,
+  `WellKnownController` ne sert qu'**un seul** paquet, celui du TWA : en faire
+  cohabiter deux demande de toucher au dépôt voisin.
 - Contre le serveur de dev, la connexion Keycloak ne peut pas aboutir depuis le
   téléphone (`keycloak.localtest.me` résout sur le téléphone lui-même). Tester
   la connexion contre la prod.

@@ -1,4 +1,4 @@
-package com.example.sports_scope_companion
+package ch.logicraft.sports.companion
 
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity

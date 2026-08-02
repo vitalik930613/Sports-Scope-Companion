@@ -1,7 +1,10 @@
 name: sports_scope_companion
 description: Enregistrement de capteurs vélo (Di2, puissance, cadence, cardio, GPS) et navigation.
 publish_to: none
-version: 0.1.0
+# Le `+N` est le versionCode Android. Sans lui, Flutter retombe sur 1 : deux APK
+# différents porteraient le même numéro, et le second refuserait de s'installer
+# par-dessus le premier. À incrémenter à chaque fichier diffusé.
+version: 0.1.0+1
 
 environment:
   sdk: ">=3.12.0 <4.0.0"
@@ -36,6 +39,16 @@ dependencies:
   # baisser la musique le temps du bip au lieu de la couper. Les tonalités sont
   # générées par `tool/radar_tones.dart`.
   audioplayers: ^6.1.0
+  # Le versionCode qui tourne réellement, pour le comparer à celui que publie le
+  # site (lib/update/). Le lire à l'exécution plutôt que de recopier le pubspec
+  # dans une constante Dart : deux sources pour le même numéro finissent toujours
+  # par diverger, et celle qui ment ici ne propose plus jamais de mise à jour.
+  package_info_plus: ^10.2.1
+
+  # Ouvre la page de téléchargement dans Chrome. Pas dans un WebView de l'appli :
+  # `webview_flutter` ne gère pas les téléchargements, et c'est de toute façon au
+  # navigateur qu'Android confie l'installation d'un APK.
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

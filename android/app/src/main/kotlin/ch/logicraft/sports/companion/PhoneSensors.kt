@@ -1,4 +1,4 @@
-package com.example.sports_scope_companion
+package ch.logicraft.sports.companion
 
 import android.content.Context
 import android.hardware.GeomagneticField
