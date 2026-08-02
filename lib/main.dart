@@ -10,9 +10,9 @@ import 'account/rider_profile_store.dart';
 import 'account/site_session.dart';
 import 'account/threshold_gap.dart';
 import 'ble/sensor_hub.dart';
-import 'dashboard/ride_preset.dart';
 import 'dashboard/companion_settings_fetch.dart';
 import 'dashboard/companion_settings_store.dart';
+import 'dashboard/ride_preset.dart';
 import 'devices/device_linker.dart';
 import 'devices/known_devices_store.dart';
 import 'devices/sensor_status_strip.dart';
@@ -20,6 +20,7 @@ import 'devices/sensors_page.dart';
 import 'drivetrain.dart';
 import 'navigation/navigation_picker_sheet.dart';
 import 'navigation/navigation_target.dart';
+import 'navigation/route_catalog_fetch.dart';
 import 'navigation/route_catalog_store.dart';
 import 'phone/phone_sensors.dart';
 import 'phone/rider_compass.dart';
@@ -167,11 +168,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
   /// ligne avant de partir est le cas banal, le cache fait autorité, et « les
   /// réglages n'ont pas pu être relus » n'est pas une information à poser sur
   /// l'écran d'avant-départ.
-  Future<void> _refreshSettings() async {
-    final result = await const CompanionSettingsFetch().run();
-    if (result.status != SettingsFetchStatus.ok) return;
-    await widget.settings.record(result.document);
-  }
+  Future<void> _refreshSettings() => refreshCompanionSettings(widget.settings);
 
   /// « Ouvrir dans l'appli » depuis le site, ou un lien d'itinéraire partagé.
   ///
@@ -499,10 +496,50 @@ class _HomePageState extends State<HomePage> {
     ));
   }
 
-  void _openAccount() {
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => AccountPage(session: widget.session),
+  /// L'écran Compte, et **ce qu'il faut aller chercher au retour**.
+  ///
+  /// La page rend `true` quand la connexion vient d'aboutir. Ça n'est pas une
+  /// politesse : tout ce que le site réserve aux connectés a été demandé en vain
+  /// jusque-là — la liste d'itinéraires est vide, les profils de sortie sont
+  /// restés sur le tableau de bord intégré. Sans ce rattrapage, il fallait
+  /// relancer l'appli pour que la connexion serve à quelque chose, ou ouvrir la
+  /// feuille de départ en espérant qu'elle rafraîchisse.
+  Future<void> _openAccount() async {
+    final justSignedIn = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => AccountPage(session: widget.session)),
+    );
+
+    if (justSignedIn != true || !mounted) return;
+    await _fetchWhatTheSessionUnlocks();
+  }
+
+  /// Les deux choses que seule une session ouverte permet de lire.
+  ///
+  /// En parallèle : ce sont deux WebViews hors écran indépendants, et les
+  /// enchaîner doublerait l'attente devant un écran qui vient déjà de changer.
+  ///
+  /// Les échecs sont **muets**, comme partout ailleurs : le cache fait autorité,
+  /// et « le rafraîchissement a échoué » n'est pas une information à poser sur
+  /// l'écran d'avant-départ. Ce qui se dit, en revanche, c'est la connexion
+  /// elle-même — c'est ce que le cycliste vient de faire, et il doit savoir que
+  /// ça a pris.
+  Future<void> _fetchWhatTheSessionUnlocks() async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(const SnackBar(
+      content: Text('Connecté — récupération de tes itinéraires…'),
+      duration: Duration(seconds: 2),
     ));
+
+    await Future.wait([
+      _fetchRoutes(),
+      refreshCompanionSettings(widget.settings),
+    ]);
+  }
+
+  Future<void> _fetchRoutes() async {
+    final result = await const RouteCatalogFetch().run();
+    if (result.status != RouteFetchStatus.ok) return;
+    await widget.routes.record(result.routes);
   }
 
   @override

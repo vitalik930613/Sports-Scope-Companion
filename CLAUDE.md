@@ -174,6 +174,39 @@ Côté site, tout ça vit dans `app/javascript/companionBridge.ts` et
 `RouteNavigation.vue` (`inCompanionApp()`, `appOwnsChrome`) du repo Rails.
 **Toucher au protocole demande de modifier les deux dépôts.**
 
+### Se connecter, et en revenir
+
+`AccountPage` (`account/account_page.dart`) est le site dans un WebView : on ne
+réimplémente pas Keycloak, on laisse le cookie se poser dans le pot partagé.
+
+Deux règles s'y opposaient, et c'est ce qui coinçait :
+
+- le **retour système** doit défaire l'étape d'authentification en cours, sinon
+  un appui de trop abandonne une connexion à moitié faite. D'où le `PopScope` ;
+- mais une connexion Keycloak empile une dizaine d'entrées d'historique, si bien
+  qu'une fois connecté, revenir à l'accueil demandait autant d'appuis — dont
+  plusieurs qui rejouaient des étapes de l'auth.
+
+La sortie n'est donc pas dans le geste, elle est dans la **fin de l'affaire** :
+l'écran **se referme tout seul dès que la session s'ouvre**, en rendant `true`.
+La décision est un front, pas un état (`SignInWatcher`, pur et testé) — ouvrir
+Compte alors qu'on est déjà connecté, pour vérifier sa session ou pour se
+déconnecter, ne doit pas faire claquer l'écran à la seconde où il s'ouvre. Une
+page qui ne conclut rien (`null` : Keycloak, écran d'erreur) **n'efface pas** le
+« on était déconnecté » déjà observé, faute de quoi le front juste après serait
+manqué.
+
+Et parce qu'une connexion peut aussi échouer ou être abandonnée, la **flèche de
+la barre du haut quitte l'écran** au lieu de remonter l'historique : elle appelle
+`Navigator.pop`, qui ne passe pas par le `PopScope`, contrairement au `maybePop`
+de la flèche par défaut. Le retour système garde son rôle, la flèche en a un autre.
+
+Au retour, `true` déclenche ce que la session vient de rendre lisible : le
+catalogue d'itinéraires **et** les profils de sortie
+(`refreshCompanionSettings`), en parallèle. Sans ce rattrapage, il fallait
+relancer l'appli pour que la connexion serve à quelque chose — les deux caches
+avaient été remplis, ou pas, alors que personne n'était connecté.
+
 ### Appeler une API du site sans identifiants
 
 L'appli ne détient aucun jeton : la session est un cookie du pot partagé par

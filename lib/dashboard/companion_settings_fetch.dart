@@ -5,6 +5,25 @@ import 'package:flutter/foundation.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../navigation/navigation_target.dart';
+import 'companion_settings_store.dart';
+
+/// Va chercher les profils et les range, en un geste.
+///
+/// Les deux appelants n'ont rien d'autre à en faire — le lancement de l'appli et
+/// le retour d'une connexion réussie — et écrire deux fois « si ok, enregistre »
+/// finirait par donner deux politiques différentes du même échec.
+///
+/// **Un échec ne touche pas au cache** : hors ligne avant de partir est le cas
+/// banal, et un site plus ancien que l'appli répond 404 sans que ce soit une
+/// panne. Le magasin refuse de son côté un document vide de profils.
+Future<void> refreshCompanionSettings(
+  CompanionSettingsStore store, {
+  CompanionSettingsFetch fetch = const CompanionSettingsFetch(),
+}) async {
+  final result = await fetch.run();
+  if (result.status != SettingsFetchStatus.ok) return;
+  await store.record(result.document);
+}
 
 /// Comment s'est terminé un rafraîchissement des profils.
 enum SettingsFetchStatus {

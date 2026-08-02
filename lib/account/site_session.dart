@@ -100,6 +100,43 @@ class SiteSession extends ChangeNotifier {
   }
 }
 
+/// Quand l'écran Compte a fini son office.
+///
+/// La connexion est un moyen, pas une destination : une fois la session ouverte,
+/// on n'a plus rien à faire sur cette page, et l'y laisser oblige à remonter à la
+/// main tout l'historique de Keycloak — une dizaine d'appuis, dont plusieurs qui
+/// rejouent des étapes de l'authentification.
+///
+/// Trois règles, chacune gardée par un test :
+///
+/// - **C'est un front, pas un état.** Ouvrir Compte alors qu'on est déjà connecté
+///   — pour vérifier sa session, ou pour se déconnecter — ne doit pas refermer
+///   l'écran à la seconde où il s'ouvre. Il faut l'avoir vu *non connecté*.
+/// - **`null` ne dit rien.** Une page de Keycloak ou un écran d'erreur ne permet
+///   de conclure ni dans un sens ni dans l'autre : elle ne compte pour rien, et
+///   surtout elle n'efface pas le « on était déconnecté » déjà observé.
+/// - **Une seule fois.** `onPageFinished` peut tirer plusieurs fois pour une même
+///   page (cadres, redirections) et deux fermetures dépileraient l'accueil avec.
+///
+/// Classe pure, à l'image de [RadarAlertVoice] : la sonde de session demande un
+/// vrai WebView, la décision qu'on en tire non.
+class SignInWatcher {
+  bool _sawSignedOut = false;
+  bool _done = false;
+
+  /// Rend vrai **une seule fois**, à l'instant où la connexion aboutit.
+  bool read(bool? signedIn) {
+    if (signedIn == false) {
+      _sawSignedOut = true;
+      return false;
+    }
+    if (signedIn != true || !_sawSignedOut || _done) return false;
+
+    _done = true;
+    return true;
+  }
+}
+
 /// Demande à une page du site si elle est rendue pour un utilisateur connecté.
 ///
 /// Deux balises du gabarit Rails (`app/views/layouts/application.html.erb`)

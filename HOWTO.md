@@ -128,6 +128,15 @@ authentifie donc aussi la navigation, sans que le code Dart ait à transmettre
 quoi que ce soit. L'appli ne retient que « connecté / pas connecté », pour
 pouvoir l'afficher sans ouvrir de page.
 
+**Dès que la connexion aboutit, l'écran se referme tout seul** et l'appli va
+chercher ce que la session vient de rendre lisible : tes itinéraires et tes
+profils de sortie. Rien à remonter à la main — l'authentification Keycloak
+empile une dizaine de pages, et il fallait auparavant les défaire une par une.
+
+Si la connexion échoue, ou si tu changes d'avis : le **retour du téléphone**
+défait l'étape en cours (c'est ce qu'il faut au milieu d'un formulaire Keycloak),
+et la **flèche en haut à gauche** quitte l'écran d'un seul coup.
+
 ## Ce qu'on perd en anonyme
 
 Tant qu'on n'est pas connecté, la navigation s'ouvre quand même, mais en mode

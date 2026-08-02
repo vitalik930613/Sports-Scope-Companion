@@ -18,6 +18,13 @@ import 'site_session.dart';
 /// Une session ratée n'est pas une panne de l'appli mais une navigation
 /// anonyme : itinéraires sauvegardés invisibles, fond de carte par défaut à la
 /// place du sien, POI muets (leur API demande une session).
+///
+/// **L'écran se referme tout seul dès que la connexion aboutit**, en rendant
+/// `true`. Sans ça, le cycliste restait devant la page d'accueil du site après
+/// s'être connecté, et devait remonter à la main tout l'historique de Keycloak —
+/// une dizaine d'appuis, dont plusieurs qui rejouaient des étapes de l'auth. La
+/// connexion est un moyen, pas une destination : une fois faite, on n'a plus rien
+/// à faire ici.
 class AccountPage extends StatefulWidget {
   const AccountPage({
     super.key,
@@ -37,6 +44,9 @@ class _AccountPageState extends State<AccountPage> {
 
   int _progress = 0;
   String? _error;
+
+  /// Ce qui décide de refermer l'écran. Pur et testé — voir [SignInWatcher].
+  final _watcher = SignInWatcher();
 
   @override
   void initState() {
@@ -71,8 +81,18 @@ class _AccountPageState extends State<AccountPage> {
   }
 
   Future<void> _check() async {
-    await widget.session.record(await probeSignedIn(_controller));
-    if (mounted) setState(() {});
+    final signedIn = await probeSignedIn(_controller);
+    await widget.session.record(signedIn);
+    if (!mounted) return;
+
+    if (_watcher.read(signedIn)) {
+      // `true` : l'appelant sait que la session vient de s'ouvrir, et qu'il y a
+      // donc du neuf à aller chercher sur le site (itinéraires, profils).
+      Navigator.of(context).pop(true);
+      return;
+    }
+
+    setState(() {});
   }
 
   @override
@@ -92,6 +112,19 @@ class _AccountPageState extends State<AccountPage> {
       },
       child: Scaffold(
         appBar: AppBar(
+          // La flèche de la barre du haut **quitte l'écran**, elle ne remonte
+          // pas l'historique — `Navigator.pop` ne passe pas par le `PopScope`
+          // ci-dessus, contrairement au `maybePop` de la flèche par défaut.
+          //
+          // C'est la convention d'Android, et surtout la seule sortie sûre quand
+          // la connexion n'aboutit pas : le retour système, lui, reste ce qu'il
+          // doit être — défaire l'étape d'authentification en cours, et pas
+          // abandonner au premier appui.
+          leading: IconButton(
+            onPressed: () => Navigator.of(context).pop(),
+            icon: const Icon(Icons.arrow_back),
+            tooltip: 'Revenir à l\'accueil',
+          ),
           title: const Text('Compte'),
           actions: [
             IconButton(
