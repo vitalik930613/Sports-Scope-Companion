@@ -119,12 +119,17 @@ void main() {
     });
 
     test('la page qui se réveille pendant l\'alerte reprend l\'écran', () {
-      // Un virage approche : la page sort de sa veille et redemande la pleine
-      // luminosité. La carte revient, la page radar s'efface — c'est bien la
-      // navigation qu'il faut regarder, gouttières comprises.
+      // Un virage approche, ou le cycliste tape sur le voile : la page sort de
+      // sa veille et redemande la pleine luminosité. La carte revient, la page
+      // radar s'efface — c'est bien la navigation qu'il faut regarder,
+      // gouttières comprises.
       policy.pageRequested(true);
       policy.radarAwake(true);
 
+      // Le drapeau rendu est **faux** : le rétroéclairage ne bouge pas, le
+      // radar tenait déjà l'écran allumé. C'est tout le piège — la coquille ne
+      // peut pas conditionner son rendu à ce drapeau, sinon le noir de la page
+      // radar reste jusqu'au passage de la voiture (voir `_applyScreen`).
       expect(policy.pageRequested(false), isFalse);
       expect(policy.radarWake, isFalse);
       expect(policy.dimmed, isFalse);

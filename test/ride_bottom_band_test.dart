@@ -72,6 +72,76 @@ void main() {
         ),
       );
 
+  /// Le bandeau avec la calibration branchée, pour les taps sur les watts.
+  Future<void> pumpBandWithCalibration(
+    WidgetTester tester, {
+    required VoidCallback onCalibratePower,
+  }) =>
+      tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.bottomCenter,
+              child: RideBottomBand(
+                hub: hub,
+                recorder: recorder,
+                nav: nav,
+                riderProfile: profiles,
+                page: RidePage.navigation,
+                onGoToPage: (_) {},
+                onCalibratePower: onCalibratePower,
+              ),
+            ),
+          ),
+        ),
+      );
+
+  testWidgets('un tap sur les watts demande la calibration', (tester) async {
+    var asked = 0;
+    await pumpBandWithCalibration(tester, onCalibratePower: () => asked++);
+
+    // Le jeu « sortie » d'abord : c'est celui qu'on a sous les yeux quand une
+    // puissance qui dérive se remarque.
+    await tester.tap(find.text('W'));
+    await tester.pump();
+    expect(asked, 1);
+
+    await tester.fling(find.byType(RideBottomBand), const Offset(-200, 0), 800);
+    await tester.pumpAndSettle();
+
+    // La case de zone aussi : elle est aussi fausse que le chiffre quand le
+    // capteur dérive, et rien ne dit laquelle des deux le doigt vise.
+    await tester.tap(find.text('zone W'));
+    await tester.pump();
+    expect(asked, 2);
+  });
+
+  testWidgets('un glissé parti des watts change de jeu, sans calibrer',
+      (tester) async {
+    var asked = 0;
+    await pumpBandWithCalibration(tester, onCalibratePower: () => asked++);
+
+    // Le geste du bandeau reste prioritaire là où il commence : ouvrir une boîte
+    // de dialogue en pleine descente parce qu'on a glissé sur la mauvaise case
+    // vaudrait mieux ne jamais brancher le tap.
+    await tester.fling(find.text('W'), const Offset(-200, 0), 800);
+    await tester.pumpAndSettle();
+
+    expect(asked, 0);
+    expect(find.text('zone W'), findsOneWidget);
+  });
+
+  testWidgets('les autres cases du bandeau ne calibrent rien', (tester) async {
+    var asked = 0;
+    await pumpBandWithCalibration(tester, onCalibratePower: () => asked++);
+
+    await tester.tap(find.text('km/h'));
+    await tester.tap(find.text('durée'));
+    await tester.pump();
+
+    expect(asked, 0);
+  });
+
   testWidgets('un glissé change de jeu de valeurs, pas de page',
       (tester) async {
     var pageAsked = false;

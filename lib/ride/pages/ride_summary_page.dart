@@ -34,6 +34,7 @@ class RideSummaryPage extends StatelessWidget {
     this.onChooseRoute,
     this.onClearRoute,
     this.onCalibratePower,
+    this.onLeaveRide,
   });
 
   final RideRecorder recorder;
@@ -53,6 +54,15 @@ class RideSummaryPage extends StatelessWidget {
   /// un capteur connecté sait le faire — le menu ne montre pas une commande qui
   /// n'aurait que « non » à répondre.
   final VoidCallback? onCalibratePower;
+
+  /// Rentrer : fermer la sortie et retrouver l'accueil.
+  ///
+  /// Ici parce qu'il n'y avait **aucun chemin nommé** pour sortir — le bouton
+  /// retour du téléphone, et lui seul, ce qui laissait le cycliste appuyer
+  /// plusieurs fois sans savoir combien. Une commande écrite en toutes lettres
+  /// répond à la question « comment on rentre ? », qu'un geste ne répond
+  /// jamais.
+  final VoidCallback? onLeaveRide;
 
   @override
   Widget build(BuildContext context) {
@@ -98,7 +108,8 @@ class RideSummaryPage extends StatelessWidget {
         ),
         if (onChooseRoute != null ||
             onClearRoute != null ||
-            onCalibratePower != null)
+            onCalibratePower != null ||
+            onLeaveRide != null)
           _actionsMenu(),
       ],
     );
@@ -150,6 +161,20 @@ class RideSummaryPage extends StatelessWidget {
                   title: Text('Calibrer la puissance'),
                 ),
               ),
+            // En dernier, après un séparateur : les autres commandes restent
+            // dans la sortie, celle-ci en sort. Les mettre au même rang ferait
+            // quitter la navigation d'un pouce qui visait « calibrer ».
+            if (onLeaveRide case final leave?) ...[
+              const PopupMenuDivider(),
+              PopupMenuItem(
+                value: leave,
+                child: const ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.home_outlined),
+                  title: Text('Revenir à l\'accueil'),
+                ),
+              ),
+            ],
           ],
         ),
       );

@@ -156,9 +156,27 @@ class NavigationWebController {
     load();
   }
 
-  Future<bool> canGoBack() => webView.canGoBack();
-
-  Future<void> goBack() => webView.goBack();
+  /// Recule d'un cran **dans la page**, et seulement si la page s'est éloignée
+  /// du tracé qu'on lui a demandé d'ouvrir. Rend vrai quand elle a reculé.
+  ///
+  /// Le bouton retour dépilait auparavant tout l'historique du WebView, ce qui
+  /// coûtait deux choses sur la route. Le nombre d'appuis pour rentrer devenait
+  /// imprévisible — chaque changement de tracé en sortie ([openTarget]) laisse
+  /// une entrée, au même titre qu'un panneau ouvert par la page — et surtout,
+  /// franchir une de nos propres entrées **rouvre l'itinéraire précédent** sans
+  /// rien dire : le retour arrière se transformait en changement de tracé.
+  ///
+  /// D'où la comparaison des chemins : tant que la page est là où on l'a
+  /// envoyée, il n'y a rien à défaire et le retour appartient à la coquille.
+  Future<bool> goBackInPage() async {
+    final left = pageLeftTarget(
+      current: await webView.currentUrl(),
+      target: _target.url(baseUrl: baseUrl),
+    );
+    if (!left || !await webView.canGoBack()) return false;
+    await webView.goBack();
+    return true;
+  }
 
   /// La page est-elle connectée au site ? `null` quand la sonde échoue.
   Future<bool?> probeSession() => probeSignedIn(webView);
@@ -210,6 +228,23 @@ class NavigationWebController {
     progress.dispose();
     error.dispose();
   }
+}
+
+/// La page a-t-elle quitté le chemin qu'on lui a demandé d'ouvrir ?
+///
+/// **Les chemins seuls, jamais les paramètres.** `/navigate?fresh=1` se
+/// réécrit en `/navigate` une fois la session de la page effacée, et
+/// `/auth/handoff?next=…` finit sur le chemin visé : comparer les URL entières
+/// ferait conclure à un égarement à chaque départ, donc reculer dans
+/// l'historique alors qu'on est exactement là où l'on voulait être.
+///
+/// Prudent par défaut — page pas encore chargée, URL illisible : on répond
+/// « elle est chez elle ». Le pire cas est alors de quitter la sortie d'un
+/// appui de trop, jamais de rouvrir un tracé qu'on croyait remplacé.
+bool pageLeftTarget({required String? current, required Uri target}) {
+  if (current == null) return false;
+  final url = Uri.tryParse(current);
+  return url != null && url.path != target.path;
 }
 
 /// Le rendu du WebView : la page, sa barre de progression, son écran d'erreur.

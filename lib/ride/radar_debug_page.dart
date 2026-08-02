@@ -144,9 +144,20 @@ class _RadarDebugPageState extends State<RadarDebugPage> {
             // du noir qu'on recouvre, jamais un fond utile.
             if (_asleep)
               Positioned.fill(
-                child: _wake.awake
-                    ? RadarWakePage(view: radar)
-                    : const ColoredBox(color: Colors.black),
+                // Le tap de réveil, rejoué : sur la route il appartient à la
+                // page web, qui retire son voile et annonce sa sortie de veille.
+                // C'est le geste qu'on vient essayer ici — une voiture qui
+                // remonte ne doit pas retenir le cycliste sur les mètres en noir
+                // jusqu'à ce qu'elle soit passée. `opaque` parce que la page
+                // radar ne prend aucun geste : sans ça, le tap tomberait dans le
+                // vide.
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => setState(() => _asleep = false),
+                  child: _wake.awake
+                      ? RadarWakePage(view: radar)
+                      : const ColoredBox(color: Colors.black),
+                ),
               ),
             for (final side in RadarGaugeSide.values)
               Positioned(

@@ -151,6 +151,13 @@ d'accueil. Une pause ne coûte rien et se défait d'un tap ; un bouton qui clôt
 sortie, à portée de pouce sur une page qu'on consulte en roulant, coûterait un
 jour une sortie entière.
 
+Pour **revenir à l'accueil**, le menu ⋮ de la page Effort porte *Revenir à
+l'accueil*, tout en bas. Le bouton retour du téléphone y mène aussi, sans rien
+demander : il ramène d'abord sur la carte, puis sort. L'accueil affiche alors en
+tête *Reprendre la navigation* — un tap et la carte rouvre là où on en était,
+tracé et progression compris. L'enregistrement, lui, n'a pas bougé pendant ce
+temps.
+
 Démarrer demande la position (et, sur Android 13+, l'autorisation de notifier),
 puis écrit un point par seconde : position, altitude, vitesse GPS, plus le
 cardio, la puissance, la cadence et les vitesses Di2 des capteurs connectés à ce

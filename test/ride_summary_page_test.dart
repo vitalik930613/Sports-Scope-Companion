@@ -82,6 +82,7 @@ void main() {
     VoidCallback? onChooseRoute,
     VoidCallback? onClearRoute,
     VoidCallback? onCalibratePower,
+    VoidCallback? onLeaveRide,
   }) =>
       tester.pumpWidget(
         MaterialApp(
@@ -92,6 +93,7 @@ void main() {
             onChooseRoute: onChooseRoute,
             onClearRoute: onClearRoute,
             onCalibratePower: onCalibratePower,
+            onLeaveRide: onLeaveRide,
           ),
         ),
       );
@@ -480,6 +482,20 @@ void main() {
 
       expect(find.text('Choisir un autre itinéraire'), findsOneWidget);
       expect(find.text('Retirer l\'itinéraire'), findsNothing);
+    });
+
+    testWidgets('rentrer est une commande écrite, pas un geste à deviner',
+        (tester) async {
+      // Le seul chemin de sortie était le bouton retour du téléphone, sans
+      // qu'on sache combien de fois l'appuyer.
+      var left = 0;
+      await pumpPage(tester, onLeaveRide: () => left++);
+
+      await openMenu(tester);
+      await tester.tap(find.text('Revenir à l\'accueil'));
+      await tester.pumpAndSettle();
+
+      expect(left, 1);
     });
   });
 }

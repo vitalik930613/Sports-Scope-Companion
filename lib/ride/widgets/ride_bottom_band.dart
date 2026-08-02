@@ -54,6 +54,7 @@ class RideBottomBand extends StatefulWidget {
     required this.riderProfile,
     required this.page,
     required this.onGoToPage,
+    this.onCalibratePower,
   });
 
   final SensorHub hub;
@@ -70,6 +71,16 @@ class RideBottomBand extends StatefulWidget {
 
   /// Demande de changement de page — la coquille possède le contrôleur.
   final void Function(RidePage page) onGoToPage;
+
+  /// Calibrer le capteur de puissance, sur un tap des watts ou de leur zone.
+  ///
+  /// La case des watts est le seul endroit de l'écran où l'on *constate* une
+  /// puissance qui dérive : c'est là qu'on tape, pas dans un menu deux pages
+  /// plus loin. Non filtré ici, contrairement au menu de la page Effort — la
+  /// coquille ne se reconstruit pas quand le capteur finit sa découverte, et un
+  /// tap devenu inerte entre-temps se lirait comme une appli figée. C'est la
+  /// boîte de dialogue qui dit pourquoi, le cas échéant.
+  final VoidCallback? onCalibratePower;
 
   /// Hauteur du contenu, hors zone système. Le bandeau s'étire ensuite de
   /// [MediaQueryData.viewPadding] vers le bas pour que ses valeurs ne passent
@@ -204,14 +215,28 @@ class _RideBottomBandState extends State<RideBottomBand> {
   /// l'œil, habitué à trouver l'intensité dans la couleur, ne la cherche plus
   /// dans le chiffre gris d'à côté. Le dégradé prolongé (cf. `zone_colors.dart`)
   /// vaut mieux que cette asymétrie.
-  Widget _power({required bool asZone}) => _effortMetric(
-        listenable: widget.hub.latestPower,
-        unit: 'W',
-        threshold: 'FTP ?',
-        hasZones: (profile) => profile.hasPowerZones,
-        zoneOf: (profile, value) => profile.powerZoneFor(value),
-        asZone: asZone,
-      );
+  Widget _power({required bool asZone}) {
+    final metric = _effortMetric(
+      listenable: widget.hub.latestPower,
+      unit: 'W',
+      threshold: 'FTP ?',
+      hasZones: (profile) => profile.hasPowerZones,
+      zoneOf: (profile, value) => profile.powerZoneFor(value),
+      asZone: asZone,
+    );
+
+    final calibrate = widget.onCalibratePower;
+    if (calibrate == null) return metric;
+
+    // Le tap et le glissé du bandeau ne se disputent pas : l'arène donne le
+    // geste au tap seulement si le doigt s'est levé sans partir de côté, donc
+    // un glissé qui commence sur les watts change bien de jeu de valeurs.
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: calibrate,
+      child: metric,
+    );
+  }
 
   /// Une mesure d'effort, ou sa zone, sur le fond de la zone du moment.
   ///

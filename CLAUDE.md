@@ -65,6 +65,14 @@ seuils, enregistrement, valeurs en direct). L'appairage, lui, est une sous-page
 tous les jours ; le scan et les listes n'ont pas à occuper l'écran qu'on ouvre
 avant chaque sortie.
 
+En tête de tout, mais **seulement quand on revient d'une sortie** : la carte
+*Reprendre la navigation*, qui rouvre la sortie quittée là où on en était. La
+cible vit dans un `ValueNotifier` de `SportsScopeApp` et non dans cet écran —
+un lien entrant ouvre la navigation sans passer par l'accueil — et **rien n'en
+est écrit sur disque** : au lancement suivant, la page peut avoir fini sa
+navigation, et une reprise gardée d'un jour sur l'autre proposerait un tracé
+qui n'existe plus (même raison que le catalogue, plus bas).
+
 Ce qui en reste sur l'accueil est `SensorStatusStrip` : **une icône par capteur
 connu, verte s'il est connecté, orange sinon**. La forme dit quel capteur, la
 couleur dit s'il mesurera quelque chose. Deux couleurs et pas trois
@@ -216,6 +224,24 @@ publiées vers la page, bouton retour, et les pages du tableau de bord.
   donner. Retirer demande confirmation : `fresh=1` efface la session de la page,
   donc la progression avec elle. L'enregistrement, lui, n'est pas concerné — il
   vit au-dessus de la navigation.
+- **Rentrer, et repartir** — un tap dans chaque sens, c'est la règle. Le bouton
+  retour du téléphone descend d'au plus trois crans : page de données → carte,
+  puis la page web **si elle s'est égarée ailleurs que sur le tracé ouvert**
+  (`pageLeftTarget` compare les *chemins*, jamais les paramètres : `fresh=1`
+  disparaît de l'URL une fois la session effacée), puis la sortie. Le cran du
+  milieu dépilait auparavant tout l'historique du WebView : nombre d'appuis
+  imprévisible, et chaque appui rouvrait au passage un tracé de la sortie — un
+  retour arrière qui change d'itinéraire. Quitter ne demande **aucune
+  confirmation** : on rentre souvent (voir l'enregistrement, un capteur) et une
+  boîte à traverser à chaque fois rendrait l'aller-retour plus cher que ce qu'on
+  va y chercher. Ce qui rend ça tenable, c'est la reprise : la coquille
+  **rend en partant** (`Navigator.pop`) une `NavigationTarget.resume()` que
+  l'accueil repropose en tête et en un tap — jamais le tracé par son token, qui
+  repartirait de son début, là où la page sait où l'on en était. Et parce qu'un
+  geste ne répond jamais à la question « comment on rentre ? », **« Revenir à
+  l'accueil » est écrit en toutes lettres** au bas du menu de la page Effort,
+  sous un séparateur : les autres commandes restent dans la sortie, celle-là en
+  sort. L'enregistrement continue — c'est l'accueil qui le termine.
 - **Catalogue circulaire** : `RidePage` (`ride_pages.dart`) liste les pages,
   navigation en tête. Le `PageView` est infini ; l'état est un index **brut**
   qui monte sans borne, replié par `pageOf()`, et `rawPageFor()` vise une page
@@ -243,6 +269,7 @@ publiées vers la page, bouton retour, et les pages du tableau de bord.
 | glissé sur une page de données | fait défiler les pages |
 | glissé sur le bandeau du bas | change de **jeu de valeurs**, jamais de page |
 | pastilles du bandeau | vont directement à une page |
+| tap sur les watts ou leur zone | ouvre la calibration du capteur de puissance |
 
   La carte a besoin du glissé horizontal et un `PageView` réclame le même : tant
   que la carte est vivante, le `PageView` est mis **entièrement hors du test de
@@ -357,6 +384,14 @@ n'ayant personne à qui répondre.
   par l'appli du constructeur ferait passer un refus de protocole pour une
   panne. La boîte prend une *fonction* et non une connexion, ce qui permet de la
   tester sans Bluetooth.
+- Troisième entrée, la plus directe : **un tap sur les watts du bandeau**, ou sur
+  leur case de zone — c'est là qu'on voit la puissance dériver, et non dans un
+  menu deux pages plus loin. Celle-là ne filtre rien : la coquille ne se
+  redessine pas quand le capteur finit sa découverte GATT, et un tap devenu
+  inerte entre-temps se lirait comme un écran gelé. C'est donc
+  `showPowerCalibrationFor` qui répond, avec un message par cas — « réveille-le »
+  pour un capteur muet, « ça passe par l'appli du fabricant » pour un boîtier
+  connecté sans Control Point, deux phrases qu'il ne faut pas confondre.
 
 ## Les capteurs du téléphone (`lib/phone/`)
 

@@ -10,10 +10,15 @@ void main() {
     WidgetTester tester, {
     PowerCalibrationRunner? run,
     String sensorName = 'Assioma',
+    String? unavailable,
   }) {
     return tester.pumpWidget(MaterialApp(
       home: Scaffold(
-        body: PowerCalibrationDialog(sensorName: sensorName, run: run),
+        body: PowerCalibrationDialog(
+          sensorName: sensorName,
+          run: run,
+          unavailable: unavailable,
+        ),
       ),
     ));
   }
@@ -33,6 +38,23 @@ void main() {
     // Pas de bouton qui ne pourrait qu'échouer.
     expect(find.text('Calibrer'), findsNothing);
     expect(find.text('Fermer'), findsOneWidget);
+  });
+
+  testWidgets('un capteur qui ne se calibre pas le dit, sans parler de panne',
+      (tester) async {
+    // Ouvert depuis le bandeau, où le tap ne filtre rien : la boîte doit
+    // distinguer « réveille le capteur » de « ce boîtier ne sait pas », sinon
+    // on cherche une panne là où il n'y a qu'un protocole absent.
+    await pumpDialog(
+      tester,
+      run: null,
+      unavailable: 'Ce capteur n\'expose pas la calibration en Bluetooth : '
+          'elle passe par l\'application du fabricant.',
+    );
+
+    expect(find.textContaining('n\'expose pas la calibration'), findsOneWidget);
+    expect(find.textContaining('Aucun capteur de puissance'), findsNothing);
+    expect(find.text('Calibrer'), findsNothing);
   });
 
   testWidgets('pendant la mesure, le bouton ne repart pas', (tester) async {

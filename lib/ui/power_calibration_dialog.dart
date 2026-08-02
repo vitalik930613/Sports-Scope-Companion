@@ -48,6 +48,14 @@ Future<void> showPowerCalibrationFor(
   BuildContext context,
   SensorConnection? connection,
 ) {
+  // Les menus ne montrent la commande que si elle peut aboutir, mais le bandeau
+  // de la sortie, lui, ouvre la boîte sur un simple tap des watts : c'est donc
+  // ici qu'on répond « pourquoi pas maintenant » plutôt que de laisser un
+  // bouton « Calibrer » qui ne saurait qu'échouer.
+  final ready = connection != null &&
+      connection.status.value == SensorStatus.connected &&
+      connection.canCalibratePower.value;
+
   return showDialog<void>(
     context: context,
     // Une calibration dure une dizaine de secondes : un tap à côté ne doit pas
@@ -56,7 +64,15 @@ Future<void> showPowerCalibrationFor(
     barrierDismissible: false,
     builder: (_) => PowerCalibrationDialog(
       sensorName: connection?.name ?? '',
-      run: connection?.calibratePower,
+      run: ready ? connection.calibratePower : null,
+      // Un capteur muet se réveille, un capteur sans Control Point ne se
+      // calibrera jamais d'ici : confondre les deux enverrait chercher une
+      // panne là où il n'y a qu'un protocole absent.
+      unavailable: connection != null &&
+              connection.status.value == SensorStatus.connected
+          ? 'Ce capteur n\'expose pas la calibration en Bluetooth : elle passe '
+              'par l\'application du fabricant.'
+          : null,
     ),
   );
 }
@@ -67,6 +83,7 @@ class PowerCalibrationDialog extends StatefulWidget {
     super.key,
     required this.sensorName,
     this.run,
+    this.unavailable,
   });
 
   /// Nommé et pas seulement « le capteur » : on calibre un boîtier précis, et
@@ -76,6 +93,10 @@ class PowerCalibrationDialog extends StatefulWidget {
   /// `null` quand aucun capteur de puissance n'est connecté : la boîte le dit
   /// et ne propose rien, plutôt que d'offrir un bouton qui échouera.
   final PowerCalibrationRunner? run;
+
+  /// Ce qu'on lit à la place de la consigne quand [run] est nul. Par défaut le
+  /// capteur manque ; l'appelant remplace la phrase quand il en sait plus.
+  final String? unavailable;
 
   @override
   State<PowerCalibrationDialog> createState() => _PowerCalibrationDialogState();
@@ -115,9 +136,10 @@ class _PowerCalibrationDialogState extends State<PowerCalibrationDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (widget.run == null)
-            const Text(
-              'Aucun capteur de puissance connecté. Réveille-le, puis '
-              'réessaie.',
+            Text(
+              widget.unavailable ??
+                  'Aucun capteur de puissance connecté. Réveille-le, puis '
+                      'réessaie.',
             )
           else ...[
             Text(widget.sensorName.isEmpty

@@ -109,6 +109,15 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
   final _appLinks = AppLinks();
   StreamSubscription<Uri>? _linkSub;
 
+  /// La sortie qu'on vient de quitter, pour que l'accueil sache la reproposer.
+  ///
+  /// À cet étage et pas dans l'accueil : la navigation s'ouvre aussi par un
+  /// lien entrant, qui ne passe par aucun écran. Rien n'en est écrit sur
+  /// disque, volontairement — au prochain lancement, la page peut avoir fini sa
+  /// navigation, et une reprise gardée d'un jour sur l'autre proposerait un
+  /// tracé qui n'existe plus (voir `RouteCatalogFetch`).
+  final _resume = ValueNotifier<NavigationTarget?>(null);
+
   @override
   void initState() {
     super.initState();
@@ -144,12 +153,14 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
       session: widget.session,
       riderProfile: widget.riderProfile,
       routes: widget.routes,
+      resume: _resume,
     );
   }
 
   @override
   void dispose() {
     _linkSub?.cancel();
+    _resume.dispose();
     _linker.dispose();
     unawaited(_compass.stop());
     _recorder.dispose();
@@ -176,6 +187,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
         session: widget.session,
         riderProfile: widget.riderProfile,
         routes: widget.routes,
+        resume: _resume,
       ),
     );
   }
@@ -196,6 +208,7 @@ Future<void> openNavigation(
   required SiteSession session,
   required RiderProfileStore riderProfile,
   required RouteCatalogStore routes,
+  required ValueNotifier<NavigationTarget?> resume,
 }) async {
   if (context == null || !context.mounted) return;
 
@@ -215,17 +228,24 @@ Future<void> openNavigation(
     if (!context.mounted) return;
   }
 
-  await Navigator.of(context).push(MaterialPageRoute(
-    builder: (_) => RideShellPage(
-      target: target,
-      hub: hub,
-      recorder: recorder,
-      compass: compass,
-      session: session,
-      riderProfile: riderProfile,
-      routes: routes,
+  final left = await Navigator.of(context).push<NavigationTarget>(
+    MaterialPageRoute(
+      builder: (_) => RideShellPage(
+        target: target,
+        hub: hub,
+        recorder: recorder,
+        compass: compass,
+        session: session,
+        riderProfile: riderProfile,
+        routes: routes,
+      ),
     ),
-  ));
+  );
+
+  // Ce que la coquille rend en partant : de quoi rouvrir la sortie là où on
+  // l'a laissée. C'est la contrepartie du départ sans confirmation — rentrer
+  // ne coûte qu'un tap, repartir non plus.
+  if (left != null) resume.value = left;
 }
 
 /// Propose de lancer l'enregistrement, juste avant de partir.
@@ -324,9 +344,15 @@ class HomePage extends StatefulWidget {
     required this.session,
     required this.riderProfile,
     required this.routes,
+    required this.resume,
   });
 
   final KnownDevicesStore devices;
+
+  /// La sortie qu'on vient de quitter, s'il y en a une. Elle appartient à
+  /// l'application et non à cet écran : un lien entrant ouvre la navigation
+  /// sans passer par ici, et sa sortie doit se retrouver dans la même carte.
+  final ValueNotifier<NavigationTarget?> resume;
 
   /// Le rattachement des capteurs. Il appartient à l'application : son
   /// balayage doit continuer pendant la sortie, écran empilé par-dessus.
@@ -460,18 +486,20 @@ class _HomePageState extends State<HomePage> {
     );
 
     if (target == null || !mounted) return;
-
-    await openNavigation(
-      context,
-      target: target,
-      hub: _hub,
-      recorder: widget.recorder,
-      compass: widget.compass,
-      session: widget.session,
-      riderProfile: widget.riderProfile,
-      routes: widget.routes,
-    );
+    await _navigate(target);
   }
+
+  Future<void> _navigate(NavigationTarget target) => openNavigation(
+        context,
+        target: target,
+        hub: _hub,
+        recorder: widget.recorder,
+        compass: widget.compass,
+        session: widget.session,
+        riderProfile: widget.riderProfile,
+        routes: widget.routes,
+        resume: widget.resume,
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -528,6 +556,9 @@ class _HomePageState extends State<HomePage> {
           12 + 72 + MediaQuery.paddingOf(context).bottom,
         ),
         children: [
+          // En tête de tout : quand on revient d'une sortie, c'est la seule
+          // chose qu'on est venu chercher une fois le coup d'œil donné.
+          _resumeCard(),
           // Bluetooth éteint, capteurs muets : autant le dire, sinon la page
           // ressemble à une panne de l'appli.
           if (_adapterState == BluetoothAdapterState.off)
@@ -592,6 +623,43 @@ class _HomePageState extends State<HomePage> {
       ),
     );
   }
+
+  /// Rouvrir la sortie qu'on vient de quitter, **en un tap et là où on en
+  /// était**.
+  ///
+  /// C'est ce qui rend le retour à l'accueil sans conséquence : on descend voir
+  /// l'enregistrement ou un capteur, on remonte. Sans elle, revenir coûtait le
+  /// sélecteur, l'attente de sa lecture du stockage de la page, puis le choix
+  /// du bon tracé — assez pour qu'on préfère ne pas rentrer du tout.
+  ///
+  /// La cible est une **reprise** ([NavigationTarget.resume]) : redemander
+  /// l'itinéraire par son token rechargerait le tracé depuis son début, alors
+  /// que la page, elle, a gardé où l'on en était.
+  ///
+  /// Rien avant la première sortie, et rien au lancement suivant : la carte
+  /// n'existe que dans la mémoire de l'application, pour ne jamais proposer de
+  /// reprendre un tracé que la page a fini depuis longtemps.
+  Widget _resumeCard() => ValueListenableBuilder<NavigationTarget?>(
+        valueListenable: widget.resume,
+        builder: (context, target, _) {
+          if (target == null) return const SizedBox.shrink();
+
+          return Card(
+            color: Theme.of(context).colorScheme.primaryContainer,
+            child: ListTile(
+              leading: const Icon(Icons.navigation),
+              title: const Text('Reprendre la navigation'),
+              subtitle: Text(
+                target.label ?? 'Là où on en était.',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _navigate(target),
+            ),
+          );
+        },
+      );
 
   /// Dit ce qui manque aux seuils, quand il manque quelque chose.
   ///

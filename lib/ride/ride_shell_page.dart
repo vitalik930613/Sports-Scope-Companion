@@ -248,8 +248,8 @@ class _RideShellPageState extends State<RideShellPage>
   /// Rallumer l'écran pour une voiture, et le rendre à la veille ensuite.
   ///
   /// Le rétroéclairage ne bouge que si la page dormait ([ScreenPolicy] arbitre) ;
-  /// le [setState], lui, est toujours nécessaire — la page radar apparaît sur
-  /// une condition qui ne vit dans aucun `ValueListenable`.
+  /// le rendu, lui, est toujours refait par [_applyScreen] — la page radar
+  /// apparaît sur une condition qui ne vit dans aucun `ValueListenable`.
   void _updateRadarWake() {
     if (!mounted) return;
 
@@ -260,7 +260,6 @@ class _RideShellPageState extends State<RideShellPage>
     if (!changed) return;
 
     _applyScreen(_screenPolicy.radarAwake(_radarWake.awake));
-    setState(() {});
   }
 
   /// Faut-il ramener le cycliste sur la carte, ou lui rendre sa page ?
@@ -366,6 +365,45 @@ class _RideShellPageState extends State<RideShellPage>
   /// c'est un message plus clair qu'un bouton grisé.
   Future<void> _calibratePower() =>
       showPowerCalibration(context, hub: widget.hub);
+
+  /// Le bouton retour du téléphone, en **trois crans au plus** et dans l'ordre
+  /// où le cycliste s'est éloigné de la carte : la page de données, puis la
+  /// page web si elle s'est égarée ailleurs que sur le tracé ouvert, et enfin
+  /// la sortie elle-même.
+  ///
+  /// Le cran du milieu était sans fond : il dépilait l'historique du WebView
+  /// entier, si bien qu'il fallait parfois appuyer cinq fois pour rentrer — et
+  /// que les premiers appuis rouvraient au passage les tracés de la sortie.
+  /// [NavigationWebController.goBackInPage] le borne désormais à ce que la page
+  /// a réellement empilé par-dessus l'itinéraire.
+  Future<void> _handleBack() async {
+    if (_page != RidePage.navigation) {
+      _goToPage(RidePage.navigation);
+      return;
+    }
+    if (await _web.goBackInPage()) return;
+    if (mounted) _leaveRide();
+  }
+
+  /// Quitter la sortie et retrouver l'accueil, **d'un seul geste**.
+  ///
+  /// Sans confirmation : rentrer est une chose qu'on fait souvent — jeter un
+  /// œil à l'enregistrement, à un capteur — et une boîte à traverser à chaque
+  /// fois rendrait le trajet aller-retour plus coûteux que ce qu'on va y
+  /// chercher. Ce qui rend l'absence de garde-fou tenable, c'est la reprise :
+  /// la sortie qu'on quitte est rendue à l'accueil, qui la repropose en tête
+  /// et en un tap. Un départ par mégarde ne coûte donc plus qu'un tap et le
+  /// rechargement de la carte.
+  ///
+  /// L'enregistrement, lui, n'est jamais concerné : il vit au-dessus de la
+  /// navigation et continue d'écrire pendant qu'on est à l'accueil.
+  void _leaveRide() {
+    // La reprise, et pas le tracé qu'on avait ouvert : c'est la page qui sait
+    // où l'on en était (son `localStorage`), et redemander `/routes/<token>/
+    // navigate` repartirait du début du tracé. Le nom, lui, ne sert qu'à
+    // l'annoncer à l'accueil.
+    Navigator.of(context).pop(NavigationTarget.resume(label: _web.target.label));
+  }
 
   /// Charge un autre tracé dans la page déjà montée.
   ///
@@ -473,13 +511,22 @@ class _RideShellPageState extends State<RideShellPage>
   /// N'appelle le réglage de luminosité que sur les transitions : la page peut
   /// redemander sa veille à chaque rechargement, et changer la luminosité
   /// globale du téléphone n'est pas une opération à répéter pour rien.
+  ///
+  /// Le **rendu**, lui, est refait à chaque fois, et c'est le point : la page
+  /// radar tient à `radarWake`, pas à `dimmed`, et les deux ne changent pas
+  /// ensemble. Le cycliste qui tape pour réveiller la navigation pendant une
+  /// alerte ne touche pas à la luminosité — le radar tenait déjà l'écran
+  /// allumé — et se retrouvait donc devant les mètres en noir jusqu'à ce que la
+  /// voiture passe, sans moyen de revenir à la carte.
   void _applyScreen(bool changed) {
-    if (!changed) return;
-    if (_screenPolicy.dimmed) {
-      _screen.dim();
-    } else {
-      _screen.restore();
+    if (changed) {
+      if (_screenPolicy.dimmed) {
+        _screen.dim();
+      } else {
+        _screen.restore();
+      }
     }
+    if (mounted) setState(() {});
   }
 
   @override
@@ -515,23 +562,10 @@ class _RideShellPageState extends State<RideShellPage>
     final bandHeight = RideBottomBand.heightFor(context);
 
     return PopScope(
-      // Le bouton retour dépile dans l'ordre où le cycliste s'est éloigné de la
-      // carte : d'abord la page de données, puis l'historique de la page web
-      // (une dialogue ouverte, un panneau), et seulement alors la sortie.
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
-        if (_page != RidePage.navigation) {
-          _goToPage(RidePage.navigation);
-          return;
-        }
-        // Capturé avant l'attente : le WebView peut disparaître entre-temps.
-        final navigator = Navigator.of(context);
-        if (await _web.canGoBack()) {
-          await _web.goBack();
-        } else {
-          navigator.pop();
-        }
+        await _handleBack();
       },
       child: Scaffold(
         backgroundColor: Colors.black,
@@ -584,6 +618,7 @@ class _RideShellPageState extends State<RideShellPage>
                           onCalibratePower: powerCalibrationAvailable(widget.hub)
                               ? _calibratePower
                               : null,
+                          onLeaveRide: _leaveRide,
                         ),
                     },
                   ),
@@ -619,6 +654,10 @@ class _RideShellPageState extends State<RideShellPage>
                 riderProfile: widget.riderProfile,
                 page: _page,
                 onGoToPage: _goToPage,
+                // Toujours branché, sans passer par [powerCalibrationAvailable]
+                // : la coquille ne se redessine pas à la découverte GATT, et un
+                // tap qui ne ferait rien serait pris pour un écran gelé.
+                onCalibratePower: _calibratePower,
               ),
             ),
             // Le cadre par-dessus tout, bandeau compris : l'alerte n'appartient
