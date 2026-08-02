@@ -356,6 +356,57 @@ void main() {
     });
   });
 
+  group('énergie et calories', () {
+    test('une heure à 200 W vaut 720 kJ, donc 720 kcal', () {
+      final stats = RideStats();
+      for (var i = 0; i <= 3600; i++) {
+        stats.add(point(second: i, power: 200));
+      }
+
+      expect(stats.kilojoules, closeTo(720, 0.001));
+      expect(stats.calories, 720);
+    });
+
+    test('rien sans capteur de puissance — un tiret, jamais un zéro', () {
+      // Le cardio ne suffit pas : sans âge ni sexe, l'estimation cardio n'est
+      // pas calculable ici, et un zéro se lirait comme une sortie gratuite.
+      final stats = RideStats();
+      for (var i = 0; i < 600; i++) {
+        stats.add(point(second: i, heartRate: 150));
+      }
+
+      expect(stats.kilojoules, isNull);
+      expect(stats.calories, isNull);
+    });
+
+    test('un capteur qui décroche ne produit pas de watts pendant son trou', () {
+      // 10 s à 300 W, 60 s sans rien, 10 s à 300 W : 20 intervalles crédités,
+      // pas 80. Même règle que la puissance normalisée — un trou est un trou.
+      final stats = RideStats();
+      for (var i = 0; i <= 10; i++) {
+        stats.add(point(second: i, power: 300));
+      }
+      for (var i = 11; i <= 70; i++) {
+        stats.add(point(second: i));
+      }
+      for (var i = 71; i <= 80; i++) {
+        stats.add(point(second: i, power: 300));
+      }
+
+      expect(stats.kilojoules, closeTo(300 * 20 / 1000, 0.001));
+    });
+
+    test('une pause ne crédite que le plafond, pas tout le trou', () {
+      // Le point qui reprend après vingt minutes ne dit rien de ces vingt
+      // minutes : sans plafond, 250 W × 1200 s ajouteraient 300 kJ imaginaires.
+      final stats = RideStats(maxEnergyGapS: 5);
+      stats.add(point(second: 0, power: 250));
+      stats.add(point(second: 1200, distanceM: 9600, power: 250));
+
+      expect(stats.kilojoules, closeTo(250 * 5 / 1000, 0.001));
+    });
+  });
+
   group('cohérence entre le direct et le lot', () {
     test('of() donne le même résultat que add() point par point', () {
       // C'est ce qui garantit que le chiffre lu sur le guidon est celui que le

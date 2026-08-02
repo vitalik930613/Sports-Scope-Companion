@@ -114,6 +114,7 @@ class FitWriter {
       _FieldDef(7, _BaseType.uint32), // total_elapsed_time
       _FieldDef(8, _BaseType.uint32), // total_timer_time
       _FieldDef(9, _BaseType.uint32), // total_distance
+      _FieldDef(11, _BaseType.uint16), // total_calories
       _FieldDef(13, _BaseType.uint16), // avg_speed
       _FieldDef(14, _BaseType.uint16), // max_speed
       _FieldDef(15, _BaseType.uint8), // avg_heart_rate
@@ -139,6 +140,7 @@ class FitWriter {
       7: _milliseconds(elapsed),
       8: _milliseconds(timer),
       9: _centimetres(summary.distanceM),
+      11: summary.calories,
       13: _millimetresPerSecond(summary.avgSpeedMps),
       14: _millimetresPerSecond(summary.maxSpeedMps),
       15: summary.avgHeartRate,
@@ -166,6 +168,10 @@ class FitWriter {
       _FieldDef(7, _BaseType.uint32), // total_elapsed_time
       _FieldDef(8, _BaseType.uint32), // total_timer_time
       _FieldDef(9, _BaseType.uint32), // total_distance
+      // Sans capteur de puissance, la valeur reste invalide plutôt que nulle :
+      // le site n'affiche sa pastille que si le champ porte quelque chose, et
+      // « 0 kcal » se lirait comme une sortie qui n'a rien coûté.
+      _FieldDef(11, _BaseType.uint16), // total_calories
       _FieldDef(14, _BaseType.uint16), // avg_speed
       _FieldDef(15, _BaseType.uint16), // max_speed
       _FieldDef(16, _BaseType.uint8), // avg_heart_rate
@@ -193,6 +199,7 @@ class FitWriter {
       7: _milliseconds(elapsed),
       8: _milliseconds(timer),
       9: _centimetres(summary.distanceM),
+      11: summary.calories,
       14: _millimetresPerSecond(summary.avgSpeedMps),
       15: _millimetresPerSecond(summary.maxSpeedMps),
       16: summary.avgHeartRate,

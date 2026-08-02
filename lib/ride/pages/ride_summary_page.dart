@@ -381,6 +381,10 @@ class RideSummaryPage extends StatelessWidget {
                 lines: [
                   'Cadence ${_or(stats.avgCadence)} tr/min moyenne',
                   'Dénivelé positif ${stats.ascentM.round()} m',
+                  // Le tiret dit ici « pas de capteur de puissance », le seul
+                  // cas où l'on ne sait pas : les calories se déduisent du
+                  // travail mécanique, jamais du cardio (cf. RideStats).
+                  'Dépense ${_or(stats.calories)} kcal',
                 ],
               ),
             ],

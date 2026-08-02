@@ -104,6 +104,32 @@ void main() {
     expect(messages.where((m) => m.global == 0), hasLength(1));
   });
 
+  test('les calories sont le travail mécanique, et manquent sans watts', () {
+    // Une heure à 200 W : 720 kJ, donc 720 kcal (le rendement brut fait que les
+    // deux nombres se confondent, cf. RideStats.calories).
+    final withPower = [
+      for (var i = 0; i <= 3600; i++)
+        TrackPoint(
+          at: start.add(Duration(seconds: i)),
+          distanceM: i * 8.0,
+          power: 200,
+        ),
+    ];
+    final summary = _parse(FitWriter.build(session: session, points: withPower))
+        .firstWhere((m) => m.global == 18);
+    expect(summary.uint16(11), 720);
+
+    // Sans capteur, le champ reste à l'invalide : un « 0 kcal » se lirait comme
+    // une sortie qui n'a rien coûté, là où on ne sait simplement pas.
+    final noPower = [
+      for (var i = 0; i < 5; i++)
+        TrackPoint(at: start.add(Duration(seconds: i)), distanceM: i * 8.0),
+    ];
+    final blank = _parse(FitWriter.build(session: session, points: noPower))
+        .firstWhere((m) => m.global == 18);
+    expect(blank.uint16(11), 0xFFFF);
+  });
+
   test('un arrêt sépare le temps en mouvement du temps chronométré', () {
     // Sans `total_moving_time`, un lecteur retombe sur `total_timer_time` et
     // compte le feu rouge comme du roulage — vitesse moyenne fausse d'autant.

@@ -22,6 +22,7 @@ class RideStats {
     this.normalizedWindow = defaultNormalizedWindow,
     this.stationarySpeedMps = defaultStationarySpeedMps,
     this.maxVerticalSpeedMps = defaultMaxVerticalSpeedMps,
+    this.maxEnergyGapS = defaultMaxEnergyGapS,
   });
 
   /// Seuil de bruit du dénivelé : l'altitude GPS oscille de quelques mètres à
@@ -66,6 +67,15 @@ class RideStats {
   /// recale la référence sans rien compter.
   static const defaultMaxVerticalSpeedMps = 5.0;
 
+  /// Intervalle au-delà duquel on ne crédite plus d'énergie, en secondes.
+  ///
+  /// Les points tombent à la seconde (`RideRecorder.tickPeriod`) ; un intervalle
+  /// plus long est une pause, ou une reprise après un blocage, et les watts du
+  /// point qui *arrive* ne disent rien du trou qui précède. Sans ce plafond, une
+  /// pause déjeuner suivie d'une relance à 250 W ajouterait des centaines de kJ
+  /// que personne n'a produits.
+  static const defaultMaxEnergyGapS = 5.0;
+
   /// Fenêtre de la moyenne glissante de la puissance normalisée, en points.
   /// Les points sont capturés une fois par seconde, donc 30 points ≈ 30 s —
   /// la fenêtre de la définition d'origine.
@@ -84,6 +94,7 @@ class RideStats {
   final int normalizedWindow;
   final double stationarySpeedMps;
   final double maxVerticalSpeedMps;
+  final double maxEnergyGapS;
 
   /// Temps passé par palier de mesure : borne basse du palier → nombre de points.
   ///
@@ -136,6 +147,10 @@ class RideStats {
   double _speedSum = 0;
   int _speedCount = 0;
 
+  // Le travail mécanique, cumulé point par point : la seule grandeur d'ici qui
+  // dépende de la *durée* d'un point et pas seulement de sa valeur.
+  double _kilojoules = 0;
+
   // Le dénivelé se lit entre la référence et le point courant, pas entre deux
   // points consécutifs : sous le seuil de bruit la référence ne bouge pas, et
   // c'est ce qui laisse une pente douce finir par être comptée. D'où la date de
@@ -180,6 +195,26 @@ class RideStats {
   /// qu'un tiret.
   int? get normalizedPowerW =>
       _npCount > 0 ? math.pow(_npFourthSum / _npCount, 0.25).round() : null;
+
+  /// Le travail mécanique fourni depuis le départ, en kilojoules.
+  /// `null` sans capteur de puissance — voir [calories].
+  double? get kilojoules => hasPower ? _kilojoules : null;
+
+  /// La dépense énergétique de la sortie, en kilocalories.
+  ///
+  /// **kcal = kJ**, et ce n'est pas un raccourci : 1 kcal vaut 4,184 kJ et le
+  /// rendement brut d'un cycliste tourne autour de 24 %, donc
+  /// kJ ÷ 4,184 ÷ 0,239 = kJ × 1,0006. La coïncidence est connue, c'est elle que
+  /// Garmin, Strava et TrainingPeaks appliquent : une sortie exportée d'ici ne
+  /// doit pas afficher 15 % d'écart avec la même sortie lue d'un compteur. Le
+  /// rendement *brut* comptant déjà tout ce que le corps dissipe pour produire
+  /// ces watts, il n'y a pas de métabolisme de base à rajouter par-dessus.
+  ///
+  /// Rien sans capteur de puissance, plutôt qu'une estimation cardio : la
+  /// formule de référence (Keytel) demande l'âge et le sexe, que ni l'appli ni
+  /// le site ne connaissent, et sort ±20 % même bien nourrie. Un tiret vaut
+  /// mieux qu'un chiffre qu'on ne pourrait pas défendre.
+  int? get calories => hasPower ? _kilojoules.round() : null;
 
   /// La vitesse d'un point : celle du GPS, ou à défaut celle du capteur de roue.
   ///
@@ -266,6 +301,15 @@ class RideStats {
       maxPower = _max(maxPower, power);
       _bucket(powerHistogram, power, powerBucketW);
       _addNormalized(power);
+
+      // L'énergie se compte sur l'intervalle *réel*, pas sur une seconde
+      // supposée : la capture peut prendre du retard, et un point sans
+      // puissance ne crédite rien — même règle que la puissance normalisée, un
+      // capteur qui décroche trente secondes n'a pas produit de watts pour
+      // autant. D'où l'accumulation ici, à l'intérieur du `if`.
+      if (seconds != null && seconds > 0) {
+        _kilojoules += power * math.min(seconds, maxEnergyGapS) / 1000;
+      }
     }
 
     final speed = speedOf(point);
@@ -365,6 +409,7 @@ class RideStats {
     _powerSum = _powerCount = 0;
     _speedSum = 0;
     _speedCount = 0;
+    _kilojoules = 0;
     _altitudeReference = null;
     _referenceAt = null;
     _referenceFromBaro = false;

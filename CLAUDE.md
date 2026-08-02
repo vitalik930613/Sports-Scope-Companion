@@ -248,7 +248,7 @@ publiées vers la page, bouton retour, et les pages du tableau de bord.
   par le chemin court.
 - **La page Effort dit le cumul, le bandeau dit l'instant** : temps passé par
   zone depuis le départ (barre + légende, **une carte pour le cardio et une pour
-  la puissance**), moyennes cardio/puissance, cadence, D+. Tout vient de
+  la puissance**), moyennes cardio/puissance, cadence, D+, calories. Tout vient de
   l'enregistreur — **hors enregistrement, elle n'affiche rien** plutôt que des
   zéros. Le temps par zone se calcule d'un **histogramme** de mesures
   (`RideStats.hrHistogram` et `powerHistogram`, paliers de 5 bpm et 25 W comme le
@@ -467,6 +467,16 @@ lisible. Le `.fit` est **reconstruit depuis le JSONL à chaque export** : le
 JSONL garde ce que le `.fit` ne sait pas porter (positions Di2, précision GPS,
 pression brute et altitude GPS quand le baromètre a pris le relais — le format
 n'a qu'un seul champ d'altitude).
+
+Les **calories** se déduisent du seul travail mécanique : `RideStats` cumule les
+kJ (puissance × intervalle réel, plafonné pour qu'une pause ne crédite pas son
+trou), et **kcal = kJ** — 1 kcal vaut 4,184 kJ, le rendement brut d'un cycliste
+~24 %, donc le facteur est 1,00. Même convention que Garmin et Strava, sinon la
+même sortie afficherait deux chiffres selon l'écran qui la montre. **Sans capteur
+de puissance, il n'y a pas de calories** : la formule cardio de référence
+(Keytel) demande l'âge et le sexe, que ni l'appli ni le site ne détiennent, et
+sort ±20 % même bien nourrie. `total_calories` (champ 11 de `session` et de
+`lap`) reste alors à l'invalide, et le site n'affiche pas sa pastille.
 
 Le cadencement est régulier, pas déclenché par le GPS : à l'arrêt ou sous un
 tunnel, la trace continue de porter le cardio et la puissance. Un point sans
