@@ -5,6 +5,7 @@ import '../account/rider_profile.dart';
 import '../account/rider_profile_store.dart';
 import '../ble/sensor_hub.dart';
 import '../recording/ride_recorder.dart';
+import '../recording/ride_stats.dart';
 import '../ride/nav_state.dart';
 import '../training/training_budget_store.dart';
 import '../ui/formats.dart';
@@ -41,6 +42,7 @@ enum MetricId {
   cadenceAvg('cadence_avg', 'tr/min moy', Icons.autorenew),
   ascent('ascent', 'm D+', Icons.trending_up),
   altitude('altitude', 'm', Icons.terrain),
+  grade('grade', '% pente', Icons.north_east),
   calories('calories', 'kcal', Icons.local_fire_department),
   gears('gears', 'braquet', Icons.settings),
   routeRemaining('route_remaining', 'restant', Icons.flag_outlined),
@@ -200,6 +202,10 @@ enum MetricId {
       MetricId.altitude => MetricReading(
           sources.recorder.lastFix?.altitudeM?.round().toString(),
         ),
+      // La pente vient de l'enregistreur et pas du dernier point : c'est un
+      // rapport entre deux endroits du parcours, elle n'existe pas avant le
+      // départ ni sur un rouleau, où l'on ne se déplace pas.
+      MetricId.grade => MetricReading(active ? _grade(stats) : null),
       MetricId.calories => MetricReading(stats.calories?.toString()),
       MetricId.gears => MetricReading(_gears(sources)),
       MetricId.routeRemaining => MetricReading(_remaining(sources)),
@@ -227,6 +233,16 @@ enum MetricId {
     if (fix == null) return null;
     if (now.difference(fix.at) > RideRecorder.fixTtl) return null;
     return _kmh(fix.speedMps);
+  }
+
+  /// La pente à l'entier près, signe compris.
+  ///
+  /// Pas de décimale : la fenêtre qui la mesure ne la donne qu'à un demi-point
+  /// près (cf. [RideStats.defaultGradeWindowM]), et une décimale qui danse
+  /// pendant qu'on la lit afficherait une précision qu'on n'a pas. Le signe, lui,
+  /// reste — c'est la seule chose qui distingue un mur d'un plongeon.
+  static String? _grade(RideStats stats) {
+    return stats.gradePercent?.round().toString();
   }
 
   static String? _remaining(MetricSources sources) {

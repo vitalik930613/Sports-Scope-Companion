@@ -147,6 +147,113 @@ void main() {
     });
   });
 
+  group('pente courante', () {
+    test('rien tant que la fenêtre n\'est pas parcourue', () {
+      // 40 m parcourus pour une fenêtre de 60 : un rapport calculé là-dessus
+      // serait du bruit, et un « 0 % » se lirait comme du plat.
+      final stats = RideStats();
+      for (var i = 0; i < 6; i++) {
+        stats.add(point(second: i, baroAltitudeM: 500 + i * 0.5));
+      }
+
+      expect(stats.gradePercent, isNull);
+    });
+
+    test('une montée régulière rend sa pente', () {
+      // 0,5 m gagnés tous les 8 m parcourus : 6,25 %.
+      final stats = RideStats();
+      for (var i = 0; i < 40; i++) {
+        stats.add(point(second: i, baroAltitudeM: 500 + i * 0.5));
+      }
+
+      expect(stats.gradePercent, closeTo(6.25, 0.01));
+    });
+
+    test('une descente rend une pente négative', () {
+      final stats = RideStats();
+      for (var i = 0; i < 40; i++) {
+        stats.add(point(second: i, baroAltitudeM: 500 - i * 0.5));
+      }
+
+      expect(stats.gradePercent, closeTo(-6.25, 0.01));
+    });
+
+    test('le bruit du baromètre ne fait pas danser la pente', () {
+      final stats = RideStats();
+      final noise = math.Random(7);
+      for (var i = 0; i < 200; i++) {
+        stats.add(point(
+            second: i,
+            baroAltitudeM: 500 + i * 0.5 + (noise.nextDouble() - 0.5) * 0.3));
+      }
+
+      expect(stats.gradePercent, closeTo(6.25, 0.5));
+    });
+
+    test('la fenêtre suit le terrain, elle ne s\'allonge pas', () {
+      // Le mur puis le replat : c'est le replat qu'on doit lire, sinon la pente
+      // afficherait encore le col une fois arrivé dessus.
+      final stats = RideStats();
+      for (var i = 0; i < 100; i++) {
+        stats.add(point(second: i, baroAltitudeM: 500 + i * 0.8));
+      }
+      for (var i = 1; i <= 30; i++) {
+        stats.add(point(second: 100 + i, baroAltitudeM: 580));
+      }
+
+      expect(stats.gradePercent, closeTo(0, 0.01));
+    });
+
+    test('la dérive d\'une pause n\'est pas une pente', () {
+      // Le pendant du dénivelé à l'arrêt : roue immobile, la pression continue
+      // de monter. Passé le délai, la fenêtre s'éteint plutôt que de lire cette
+      // dérive comme un mur.
+      final stats = RideStats();
+      for (var i = 0; i < 100; i++) {
+        stats.add(point(second: i, baroAltitudeM: 500 + i * 0.5));
+      }
+      for (var i = 1; i <= 200; i++) {
+        stats.add(point(
+            second: 100 + i, distanceM: 792, baroAltitudeM: 550 + i * 0.05));
+      }
+
+      expect(stats.gradePercent, isNull);
+    });
+
+    test('sans baromètre, la fenêtre est bien plus longue', () {
+      // L'altitude GPS oscille de plusieurs mètres : sur 60 m elle donnerait
+      // n'importe quoi. On attend d'en avoir 200 sous les roues.
+      final short = RideStats();
+      for (var i = 0; i < 20; i++) {
+        short.add(point(second: i, altitudeM: 500 + i * 0.5));
+      }
+      expect(short.gradePercent, isNull);
+
+      final long = RideStats();
+      for (var i = 0; i < 40; i++) {
+        long.add(point(second: i, altitudeM: 500 + i * 0.5));
+      }
+      expect(long.gradePercent, closeTo(6.25, 0.01));
+    });
+
+    test('le passage du GPS au baromètre ne fabrique pas de mur', () {
+      // Les deux sources sont décalées de plusieurs mètres. Une fenêtre à cheval
+      // lirait ces 200 m d'écart comme un gouffre à -250 %.
+      final stats = RideStats();
+      for (var i = 0; i < 40; i++) {
+        stats.add(point(second: i, altitudeM: 700));
+      }
+      stats.add(point(second: 40, altitudeM: 700, baroAltitudeM: 500));
+      expect(stats.gradePercent, isNull);
+
+      for (var i = 1; i < 40; i++) {
+        stats.add(point(
+            second: 40 + i, altitudeM: 700, baroAltitudeM: 500 + i * 0.5));
+      }
+      expect(stats.gradePercent, closeTo(6.25, 0.01));
+    });
+  });
+
   group('dénivelé à l\'arrêt', () {
     test('une pause ne gravit rien, même si le baromètre dérive', () {
       // Le seuil barométrique est dix fois plus fin que celui du GPS : à l'arrêt

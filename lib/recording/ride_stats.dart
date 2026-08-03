@@ -23,6 +23,9 @@ class RideStats {
     this.stationarySpeedMps = defaultStationarySpeedMps,
     this.maxVerticalSpeedMps = defaultMaxVerticalSpeedMps,
     this.maxEnergyGapS = defaultMaxEnergyGapS,
+    this.gradeWindowM = defaultGradeWindowM,
+    this.gpsGradeWindowM = defaultGpsGradeWindowM,
+    this.gradeMaxAgeS = defaultGradeMaxAgeS,
   });
 
   /// Seuil de bruit du dénivelé : l'altitude GPS oscille de quelques mètres à
@@ -81,6 +84,35 @@ class RideStats {
   /// la fenêtre de la définition d'origine.
   static const defaultNormalizedWindow = 30;
 
+  /// Longueur de la fenêtre sur laquelle se mesure la pente courante, en mètres
+  /// parcourus, quand l'altitude vient du baromètre.
+  ///
+  /// La pente est un rapport entre un dénivelé et une distance, tous deux
+  /// mesurés : c'est la **longueur** de la fenêtre qui décide de sa précision.
+  /// Avec les 0,3 m de bruit d'un baromètre MEMS, 60 m de parcours donnent
+  /// ±0,5 % — l'écart entre 6 % et 7 %, celui qu'on sent dans les jambes. Plus
+  /// court, le chiffre danserait ; plus long, le mur au bout du faux plat
+  /// arriverait après qu'on l'a gravi.
+  static const defaultGradeWindowM = 60.0;
+
+  /// La même fenêtre, sans baromètre — plus de trois fois plus longue, pour la
+  /// raison qui rend le seuil de bruit dix fois plus grossier : l'altitude GPS
+  /// oscille de plusieurs mètres. Le compromis est assumé et va dans le bon
+  /// sens : une longue montée sera juste, un lacet sera en retard, et aucun des
+  /// deux ne racontera un 15 % qui n'existe pas.
+  static const defaultGpsGradeWindowM = 200.0;
+
+  /// Âge au-delà duquel un échantillon ne dit plus rien du terrain sous les
+  /// roues, en secondes.
+  ///
+  /// Ce n'est pas lui qui borne la fenêtre — c'est la distance — mais lui qui
+  /// **éteint la pente à l'arrêt** : la pression dérive avec la météo, et une
+  /// pause finirait par afficher cette dérive comme une pente, la roue à
+  /// l'arrêt. Même piège que celui qui valait 253 m de D+ à
+  /// [defaultStationarySpeedMps], pris par l'autre bout. Trois minutes couvrent
+  /// 60 m à 1,2 km/h et 200 m à 4 km/h : en dessous, on pousse le vélo.
+  static const defaultGradeMaxAgeS = 180.0;
+
   /// Largeur d'un palier des histogrammes, en bpm et en watts.
   ///
   /// Les mêmes que le site (`ZoneDistribution::HR_BUCKET`, `POWER_BUCKET`) : les
@@ -95,6 +127,9 @@ class RideStats {
   final double stationarySpeedMps;
   final double maxVerticalSpeedMps;
   final double maxEnergyGapS;
+  final double gradeWindowM;
+  final double gpsGradeWindowM;
+  final double gradeMaxAgeS;
 
   /// Temps passé par palier de mesure : borne basse du palier → nombre de points.
   ///
@@ -178,6 +213,13 @@ class RideStats {
   double? _lastDistanceM;
   double _movingMs = 0;
 
+  // La pente se lit entre deux échantillons *distants*, jamais entre deux points
+  // consécutifs : en une seconde on parcourt une dizaine de mètres et on monte
+  // de quelques centimètres, soit l'ordre de grandeur du bruit — le rapport des
+  // deux ne serait que du bruit, amplifié.
+  final Queue<_GradeSample> _gradeWindow = Queue<_GradeSample>();
+  bool _gradeFromBaro = false;
+
   // Puissance normalisée : moyenne glissante sur la fenêtre, puis racine
   // quatrième de la moyenne des puissances quatrièmes de cette moyenne.
   final Queue<int> _npWindow = Queue<int>();
@@ -229,6 +271,26 @@ class RideStats {
   /// le site ne connaissent, et sort ±20 % même bien nourrie. Un tiret vaut
   /// mieux qu'un chiffre qu'on ne pourrait pas défendre.
   int? get calories => hasPower ? _kilojoules.round() : null;
+
+  /// La pente sous les roues, en pourcents et **signée** — une descente rend un
+  /// nombre négatif.
+  ///
+  /// `null` tant qu'on n'a pas parcouru de quoi la mesurer, et non `0` : au
+  /// départ, un « 0 % » se lirait comme du plat alors qu'on ne sait encore rien
+  /// du terrain. Même chose après un arrêt assez long pour que la fenêtre se
+  /// vide (cf. [defaultGradeMaxAgeS]) : la dérive de pression d'une pause n'est
+  /// pas une pente.
+  double? get gradePercent {
+    if (_gradeWindow.length < 2) return null;
+
+    final oldest = _gradeWindow.first;
+    final newest = _gradeWindow.last;
+    final run = newest.distanceM - oldest.distanceM;
+    if (run < _gradeSpanM) return null;
+    return (newest.altitudeM - oldest.altitudeM) / run * 100;
+  }
+
+  double get _gradeSpanM => hasBaroAltitude ? gradeWindowM : gpsGradeWindowM;
 
   /// La vitesse d'un point : celle du GPS, ou à défaut celle du capteur de roue.
   ///
@@ -288,7 +350,10 @@ class RideStats {
     // Un trou vaut mieux qu'une marche : la référence est conservée, et le
     // dénivelé reprend exactement où il s'était arrêté.
     final altitude = hasBaroAltitude ? point.baroAltitudeM : point.altitudeM;
-    if (altitude != null) _addAltitude(altitude, point.at, moving);
+    if (altitude != null) {
+      _addAltitude(altitude, point.at, moving);
+      _addGrade(altitude, point.at, point.distanceM);
+    }
 
     final heartRate = point.heartRate;
     if (heartRate != null) {
@@ -386,6 +451,37 @@ class RideStats {
     _referenceAt = at;
   }
 
+  /// Range un échantillon dans la fenêtre de la pente, et jette ce qui n'y a
+  /// plus sa place.
+  void _addGrade(double altitude, DateTime at, double distanceM) {
+    // Changement de source (GPS → baromètre) : les deux échelles sont décalées
+    // de plusieurs mètres. Une fenêtre à cheval sur les deux lirait ce décalage
+    // comme un mur, ou comme un gouffre. Même règle que la référence du
+    // dénivelé, pour la même raison.
+    if (_gradeFromBaro != hasBaroAltitude) {
+      _gradeWindow.clear();
+      _gradeFromBaro = hasBaroAltitude;
+    }
+
+    _gradeWindow.addLast(_GradeSample(at, distanceM, altitude));
+
+    // À l'avant on ne garde que le plus récent des échantillons qui couvrent
+    // encore la fenêtre : ceux d'avant ne feraient que l'allonger, c'est-à-dire
+    // faire traîner la pente derrière le terrain.
+    while (_gradeWindow.length > 2 &&
+        distanceM - _gradeWindow.elementAt(1).distanceM >= _gradeSpanM) {
+      _gradeWindow.removeFirst();
+    }
+
+    // Et ce qui est vieux s'en va, même si la fenêtre n'est plus couverte : elle
+    // s'éteint alors, ce qui est le but. Voir [defaultGradeMaxAgeS].
+    while (_gradeWindow.length > 1 &&
+        at.difference(_gradeWindow.first.at).inMilliseconds / 1000 >
+            gradeMaxAgeS) {
+      _gradeWindow.removeFirst();
+    }
+  }
+
   /// Range une mesure dans son palier. Une mesure nulle ou négative est écartée :
   /// un capteur qui renvoie zéro n'a rien mesuré, et ce zéro-là ferait grossir la
   /// zone la plus basse d'un temps qui n'a pas été passé à pédaler doucement.
@@ -443,6 +539,8 @@ class RideStats {
     _npCount = 0;
     hrHistogram.clear();
     powerHistogram.clear();
+    _gradeWindow.clear();
+    _gradeFromBaro = false;
   }
 
   static int _max(int? current, int value) =>
@@ -450,4 +548,14 @@ class RideStats {
 
   static int _min(int? current, int value) =>
       current == null || value < current ? value : current;
+}
+
+/// Un échantillon de la fenêtre de pente : quand, où le long du parcours, et à
+/// quelle altitude.
+class _GradeSample {
+  const _GradeSample(this.at, this.distanceM, this.altitudeM);
+
+  final DateTime at;
+  final double distanceM;
+  final double altitudeM;
 }
