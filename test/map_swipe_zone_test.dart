@@ -200,6 +200,89 @@ void main() {
     expect(mapWon, isNotEmpty);
   });
 
+  group('rendre le doigt sans attendre le relâchement', () {
+    // Le cœur du sujet : une vue de plateforme **met les événements en cache**
+    // tant qu'un recognizer n'a pas tranché, et ne les lui remet qu'en gagnant
+    // son arène. Tant que le glissé attendait le lever du doigt pour se
+    // retirer, la page web ne recevait son `pointerdown` qu'au relâchement —
+    // et l'appui long qui met le site en veille (700 ms d'immobilité) ne
+    // démarrait donc jamais dans l'appli.
+
+    testWidgets('l\'appui immobile part à la page web, doigt encore posé',
+        (tester) async {
+      await pumpZone(tester);
+
+      final finger = await tester.startGesture(const Offset(400, 300));
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(mapWon, isNotEmpty,
+          reason: 'sans ça, la page ne peut pas compter ses 700 ms');
+      expect(shell.page, mapPage);
+
+      await finger.up();
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('un appui qui tremble un peu reste un appui', (tester) async {
+      // Une main gantée sur un vélo qui roule n'est pas immobile. Le site
+      // tolère 16 px de dérive : en rendre moins reviendrait à ne rendre que
+      // les appuis qu'on fait à l'arrêt.
+      await pumpZone(tester);
+
+      final finger = await tester.startGesture(const Offset(400, 300));
+      for (var step = 0; step < 4; step++) {
+        await finger.moveBy(const Offset(2, 1));
+        await tester.pump(const Duration(milliseconds: 60));
+      }
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(mapWon, isNotEmpty);
+      expect(shell.page, mapPage);
+
+      await finger.up();
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('le glissé vertical est rendu tout de suite', (tester) async {
+      // Le tiroir de commandes du site s'ouvre d'un glissé vers le haut : livré
+      // d'un bloc au relâchement, il ne s'ouvrait pas.
+      await pumpZone(tester);
+
+      final finger = await tester.startGesture(const Offset(400, 300));
+      for (var step = 0; step < 3; step++) {
+        await finger.moveBy(const Offset(0, -20));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+
+      expect(mapWon, isNotEmpty);
+
+      await finger.up();
+      await tester.pumpAndSettle();
+      expect(shell.page, mapPage);
+    });
+
+    testWidgets('un glissé qui démarre lentement change quand même de page',
+        (tester) async {
+      // Le compteur d'immobilité se réarme à chaque mouvement, et c'est ce qui
+      // sauve le geste mou : l'annuler définitivement au premier tic aurait
+      // rendu le changement de page capricieux là où il compte le plus.
+      await pumpZone(tester);
+
+      final start = shell.raw.toDouble();
+      final finger = await tester.startGesture(const Offset(400, 300));
+      for (var step = 0; step < 10; step++) {
+        await finger.moveBy(const Offset(-6, 0));
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(shell.pages.page, greaterThan(start));
+      expect(mapWon, isEmpty, reason: 'c\'est un glissé, pas un appui');
+
+      await finger.up();
+      await tester.pumpAndSettle();
+    });
+  });
+
   testWidgets('hors de la carte, les pages prennent leurs glissés',
       (tester) async {
     // La zone reste montée partout — c'est ce qui permet à un glissé de survivre

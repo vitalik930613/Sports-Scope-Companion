@@ -7,6 +7,7 @@ import '../ble/samples.dart';
 import '../ble/sensor_connection.dart';
 import '../ble/sensor_hub.dart';
 import '../ble/sensor_profile.dart';
+import '../sleep/screen_sleep.dart';
 import '../ui/power_calibration_dialog.dart';
 import '../ui/sensor_icons.dart';
 import 'device_linker.dart';
@@ -151,8 +152,13 @@ class _SensorsPageState extends State<SensorsPage> {
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
+  // L'appui long endort l'écran ici comme partout ailleurs sauf à l'accueil :
+  // on vient souvent sur cette page téléphone déjà sur son support, capteur
+  // récalcitrant en main.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ScreenSleep(child: _screen(context));
+
+  Widget _screen(BuildContext context) {
     final known = _devices.devices;
     // Un capteur déjà connu n'a rien à faire dans les résultats de scan : il
     // est déjà listé au-dessus, avec son état réel.

@@ -51,6 +51,7 @@ lib/
   phone/                 # capteurs du téléphone : baromètre, lumière, boussole
   recording/             # enregistreur, magasin de sorties, agrégats, .fit
   ride/                  # le tableau de bord de sortie (la coquille, ses pages, ses blocs)
+  sleep/                 # la veille par appui long : le geste, l'anneau, le voile
   training/              # le budget de charge du jour (calculé par le site) + le TSS de la sortie
   ui/                    # tuiles et formats partagés entre écrans
   update/                # « une version plus récente existe » (diffusion hors Play Store)
@@ -368,8 +369,10 @@ Un profil de home-trainer n'a pas d'entrée `map`. Alors **le
 service worker, ni tuiles. Le garder monté sous des pages opaques coûterait de la
 batterie pour une carte que personne ne regardera. En contrepartie, tout ce qui
 venait du pont disparaît — état de navigation, retour automatique (la politique
-est **inerte**, `mapPage` valant `null`), veille demandée par la page, et donc
-page de réveil radar. La vitesse du bandeau change alors de source : elle vient de
+est **inerte**, `mapPage` valant `null`), veille demandée par la page. La veille,
+elle, ne disparaît pas pour autant : l'appui long de l'appli s'applique alors à
+tout l'écran (voir « La veille par appui long »), et avec lui la page de réveil
+radar. La vitesse du bandeau change en revanche de source : elle vient de
 `recorder.lastFix.speedMps` (la vitesse Doppler du point, plus stable que la
 dérivée des positions) au lieu de `NavState.speedKmh`.
 
@@ -476,6 +479,7 @@ publiées vers la page, bouton retour, et les pages du tableau de bord.
 | glissé horizontal **d'un doigt** sur la carte | page précédente / suivante |
 | glissé **à deux doigts** sur la carte, pincement | déplace et zoome la carte (ils appartiennent à MapLibre) |
 | tap sur la carte | appartient à la page web (réveil, POI) |
+| **appui long immobile** (700 ms) | met l'écran en veille — voir « La veille par appui long » |
 | glissé/tap sur une bande de bord (`MapEdgeHandle`, 22 pt) | page précédente / suivante |
 | glissé sur une page de données | fait défiler les pages |
 | glissé sur le bandeau du bas | change de **jeu de valeurs**, jamais de page |
@@ -608,6 +612,85 @@ entend est ce qui sortira sur la route. « Débrancher le radar » y coupe les
 trames pour vérifier que la perte du capteur ne s'annonce pas comme une voie
 libre, et « Simuler la veille » pose le voile noir pour juger le réveil radar de
 bout en bout (le rétroéclairage, lui, ne bouge pas sur le banc).
+
+## La veille par appui long (`lib/sleep/`)
+
+**Le tap n'endort plus rien.** En roulant on tape l'écran pour tout et pour rien —
+fermer une bulle, viser un bouton qu'on rate, se rattraper sur un cahot — et
+l'écran s'éteignait au moment précis où on le regardait. La veille demande donc
+un geste qu'on ne fait pas par accident : **700 ms de doigt immobile**, avec un
+anneau qui se remplit dessous. Le réveil, lui, reste un tap n'importe où sur le
+voile : sortir de veille doit rester le geste le plus facile de l'écran, gant
+compris.
+
+La décision vient du site (`useSleepHold.ts`, dépôt Rails) et **les constantes
+sont partagées avec lui** : `sleepHoldDuration` (700 ms) et `sleepHoldDrift`
+(16 px de dérive tolérée). Deux durées différentes se sentiraient d'une page à
+l'autre comme un écran qui répond mal.
+
+### Deux détecteurs, jamais deux à la fois
+
+| Où | Qui détecte | Ce qui s'endort |
+|---|---|---|
+| la carte | **le site**, dans le WebView | la page : elle gèle son rendu, pose son voile, se réveille seule au virage (zoom de découverte), et demande le rétroéclairage par le message `screen` |
+| partout ailleurs (pages de données, bandeau, bilans, Capteurs, Compte, Sorties) | **l'appli** (`SleepHoldZone`) | l'appli : son voile (`SleepVeil`) et son rétroéclairage |
+| l'accueil | personne | c'est l'écran qu'on ouvre les mains libres ; un écran qui noircit tout seul s'y lirait comme une panne |
+
+Sur la carte, `SleepHoldZone` est **débranchée** (`enabled: !_onMap`) : la
+laisser gagner l'appui priverait la page de sa veille à elle, qui est plus riche
+qu'un voile noir.
+
+### Ce qui cassait, et qu'il ne faut pas refaire
+
+Une vue de plateforme **met les événements en cache** tant qu'un recognizer n'a
+pas tranché son arène, et ne les lui remet qu'en gagnant. Le glissé de
+`MapSwipeZone` attendant le lever du doigt pour se retirer, la page web ne
+recevait son `pointerdown` **qu'au relâchement** : un tap passait (l'arène se
+résout au lever), un appui immobile jamais — l'appui long du site ne démarrait
+donc pas dans l'appli, et un glissé vertical (le tiroir de commandes) lui
+arrivait d'un bloc, trop tard.
+
+`OneFingerHorizontalDragRecognizer` rend donc le doigt **avant** d'avoir perdu,
+dans les deux cas où il est déjà sûr de perdre :
+
+- **150 ms sans bouger** → c'est un appui, il part à la page. Le compteur **se
+  réarme à chaque mouvement** plutôt que de s'annuler : un glissé qui démarre
+  lentement — main gantée, vélo qui tape — garderait sinon sa chance perdue
+  d'avance. Et passé `sleepHoldDrift`, plus rien n'est rendu : le site ne
+  s'endormirait pas non plus.
+- **franchement vertical** (deux fois plus de vertical que d'horizontal) → c'est
+  un geste de la page.
+
+Le prix est de ~150 ms ajoutées à l'appui long **sur la carte seulement** : il
+faut que l'appli renonce avant que le site puisse commencer à compter.
+
+### L'arbitrage, et le voile
+
+`SleepHoldZone` est **translucide** — elle ne prend que l'appui immobile et
+laisse passer taps, défilements et glissés du bandeau — mais **gagne son arène**
+à la seconde où l'appui aboutit. C'est ce qui annule le tap du widget du
+dessous : sans ça, un appui sur les watts endormirait l'écran *et* ouvrirait la
+calibration au relâchement. Le voile, lui, est **opaque** : un écran endormi
+qu'on effleure au fond d'une poche ne doit rien déclencher.
+
+Dans la sortie, la veille de l'appli est une **deuxième source** pour
+`ScreenPolicy`, qui garde le dernier mot (`holdRequested`) :
+
+- la demande de la page ne vaut **que sur la carte** (`_onMap`), celle de l'appli
+  vaut là où le doigt s'est posé — les fondre en un drapeau éteindrait l'écran
+  d'un cycliste en train de lire ses watts ;
+- le **radar** suspend l'une comme l'autre, et `RadarWakePage` paraît sous les
+  deux voiles indifféremment ;
+- une **alerte de virage** lève le voile de l'appli : le retour automatique
+  ramène la carte, et l'annoncer sous du noir revient à ne pas l'annoncer ;
+- le **bouton retour** ne fait que réveiller tant que le voile est là — on ne
+  quitte pas un écran qu'on ne voit pas.
+
+Hors sortie, `ScreenSleep` enveloppe l'écran et n'a que ces deux morceaux à
+tenir. Il ne pose **pas** de `PopScope` : l'écran Compte en a déjà un (défaire
+une étape de Keycloak), les deux se déclencheraient ensemble, et on se
+réveillerait sur une page qui a reculé toute seule. Le retour quitte donc
+l'écran, et `dispose` rend la luminosité.
 
 ## Calibrer un capteur de puissance
 

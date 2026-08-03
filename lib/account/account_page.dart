@@ -4,6 +4,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../navigation/navigation_target.dart';
+import '../sleep/screen_sleep.dart';
 import 'site_session.dart';
 
 /// L'écran de connexion au site — le site lui-même, dans un WebView.
@@ -95,8 +96,14 @@ class _AccountPageState extends State<AccountPage> {
     setState(() {});
   }
 
+  // La veille par appui long, comme sur tous les écrans sauf l'accueil. Elle
+  // coûte ici l'appui long du WebView — la sélection de texte d'une page web —
+  // et c'est un prix qu'on paie volontiers : on ne vient pas surligner du texte
+  // sur un écran de connexion.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ScreenSleep(child: _screen(context));
+
+  Widget _screen(BuildContext context) {
     return PopScope(
       // La connexion Keycloak est une suite de pages : le bouton retour doit
       // d'abord défaire l'étape en cours, pas quitter l'écran.

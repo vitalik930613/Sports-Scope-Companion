@@ -18,6 +18,16 @@
 class ScreenPolicy {
   bool _requested = false;
 
+  /// La veille demandée par **l'appui long de l'appli**, hors de la carte.
+  ///
+  /// Séparée de celle de la page web parce qu'elle ne se retient pas de la même
+  /// façon : celle de la page ne vaut que sur la carte, la nôtre vaut là où le
+  /// doigt s'est posé — une page de données, le bandeau, un bilan ouvert depuis
+  /// le menu. Les fondre en un seul drapeau ferait éteindre l'écran d'un
+  /// cycliste qui lit ses watts, ce que [_onMap] existe précisément pour
+  /// empêcher.
+  bool _held = false;
+
   /// Le cycliste est-il sur la carte ? Un booléen et non un index : la carte se
   /// place où l'on veut dans le profil, et certains profils n'en ont pas du tout
   /// (home-trainer). Comparer à zéro revenait à supposer les deux.
@@ -29,15 +39,28 @@ class ScreenPolicy {
   /// L'écran doit-il être assombri, tout compte fait ?
   bool get dimmed => _dimmed;
 
+  /// L'écran est endormi, d'où que vienne la demande.
+  bool get _asleep => _held || (_requested && _onMap);
+
   /// La veille est-elle interrompue par le radar, et par lui seul ? C'est ce qui
-  /// met la page radar à l'écran : sous le voile noir de la page web, il n'y a
-  /// rien d'autre à regarder. Hors veille, la carte et ses gouttières disent
-  /// déjà tout, et il n'y a rien à recouvrir.
-  bool get radarWake => _requested && _onMap && _radarAwake;
+  /// met la page radar à l'écran : sous un voile noir — celui de la page web ou
+  /// le nôtre — il n'y a rien d'autre à regarder. Hors veille, la carte et ses
+  /// gouttières disent déjà tout, et il n'y a rien à recouvrir.
+  bool get radarWake => _asleep && _radarAwake;
+
+  /// Le voile de l'appli est-il posé ? Celui de la page web, lui, est peint par
+  /// la page : quand elle s'endort, l'appli n'a rien à recouvrir.
+  bool get veiled => _held && !_radarAwake;
 
   /// La page entre ou sort de sa veille.
   bool pageRequested(bool dim) {
     _requested = dim;
+    return _settle();
+  }
+
+  /// L'appui long de l'appli endort, un tap sur le voile réveille.
+  bool holdRequested(bool dim) {
+    _held = dim;
     return _settle();
   }
 
@@ -65,7 +88,7 @@ class ScreenPolicy {
   /// Rend vrai quand l'état effectif vient de changer — la coquille n'appelle le
   /// réglage de luminosité que sur les transitions, pas à chaque message.
   bool _settle() {
-    final next = _requested && _onMap && !_radarAwake;
+    final next = _asleep && !_radarAwake;
     if (next == _dimmed) return false;
     _dimmed = next;
     return true;

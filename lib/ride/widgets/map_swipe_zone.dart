@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+
+import '../../sleep/sleep_hold.dart';
 
 /// Le glissé horizontal **en plein milieu de la carte**, qui change de page.
 ///
@@ -13,6 +17,15 @@ import 'package:flutter/material.dart';
 /// de page, deux appartiennent à la carte. Tout le reste — l'appui qui réveille
 /// l'écran, le pincement, le doigt vertical — traverse jusqu'au WebView, d'où
 /// [HitTestBehavior.translucent] et l'absence de `onTap`.
+///
+/// « Traverse », à condition de **se retirer à temps** : une vue de plateforme
+/// met les événements en cache tant qu'un recognizer n'a pas tranché, et ne les
+/// lui remet qu'en gagnant son arène. Un tap s'en accommode (l'arène se résout
+/// au lever du doigt), un appui immobile jamais — la page ne recevait son
+/// `pointerdown` qu'au relâchement, et l'appui long qui met le site en veille ne
+/// démarrait donc **jamais** dans l'appli. D'où les deux abandons de
+/// [OneFingerHorizontalDragRecognizer], qui rendent le doigt dès qu'il est clair
+/// qu'il ne fait pas ce qu'on attendait.
 ///
 /// Le glissé n'est pas *interprété* puis converti en changement de page : il est
 /// **transmis tel quel au défilement** ([ScrollPosition.drag], la primitive dont
@@ -148,11 +161,46 @@ class _MapSwipeZoneState extends State<MapSwipeZone> {
 /// ne se rend pas. En pratique les deux doigts se posent à quelques dizaines de
 /// millisecondes l'un de l'autre, bien avant que le premier n'ait parcouru les
 /// pixels qui feraient gagner le glissé.
+///
+/// Il rend aussi le doigt de lui-même dans deux cas où il est déjà sûr de
+/// perdre, et c'est ce qui rend la page web utilisable :
+///
+/// - **le doigt qui ne bouge pas** ([_stillness]) est un appui, donc peut-être
+///   la mise en veille du site (700 ms d'immobilité). Attendre le relâchement
+///   pour se retirer revenait à ne la lui livrer qu'une fois finie.
+/// - **le doigt franchement vertical** appartient à la page (son tiroir de
+///   commandes s'ouvre d'un glissé vers le haut). Un glissé horizontal, lui,
+///   n'a rien à craindre d'un peu de biais : il faut deux fois plus de vertical
+///   que d'horizontal pour abandonner.
+///
+/// Le compteur d'immobilité **se réarme à chaque mouvement** plutôt que de
+/// s'annuler : un glissé qui démarre lentement — la main gantée, le vélo qui
+/// tape — garderait sinon sa chance perdue d'avance, et le changement de page
+/// se serait mis à rater sur les gestes les plus mous. Et passé la dérive
+/// qu'un appui tolère ([sleepHoldDrift]), plus rien n'est rendu : le site ne
+/// s'endormirait pas non plus.
 class OneFingerHorizontalDragRecognizer extends HorizontalDragGestureRecognizer {
   OneFingerHorizontalDragRecognizer({required this.alone, super.debugOwner});
 
+  /// Combien de temps sans bouger avant de rendre le doigt à la page web.
+  ///
+  /// Court, parce qu'il retarde d'autant l'appui long du site : le cycliste
+  /// tient alors 700 ms + ceci. Mais pas nul — c'est le temps qu'un vrai glissé
+  /// met à démarrer.
+  static const _stillness = Duration(milliseconds: 150);
+
+  /// Ce qui compte comme « le doigt a bougé ». Sous ce seuil, c'est le tremblé
+  /// d'une main posée, pas un geste.
+  static const _wiggle = 4.0;
+
   /// Ce pointeur qui se pose est-il le seul sur la carte ?
   final bool Function() alone;
+
+  Timer? _still;
+  Offset _origin = Offset.zero;
+
+  /// Le dernier endroit d'où l'on a réarmé le compteur.
+  Offset _last = Offset.zero;
 
   @override
   void addAllowedPointer(PointerDownEvent event) {
@@ -163,5 +211,55 @@ class OneFingerHorizontalDragRecognizer extends HorizontalDragGestureRecognizer 
       return;
     }
     super.addAllowedPointer(event);
+    _origin = event.position;
+    _last = event.position;
+    _armStillness();
+  }
+
+  @override
+  void handleEvent(PointerEvent event) {
+    if (event is PointerMoveEvent) {
+      final drift = event.position - _origin;
+      if (drift.dy.abs() > kTouchSlop && drift.dy.abs() > 2 * drift.dx.abs()) {
+        // Verticalement franc : c'est un geste de la page, rendu tout de suite.
+        _stopStillness();
+        resolve(GestureDisposition.rejected);
+        return;
+      }
+      if ((event.position - _last).distance > _wiggle) {
+        _last = event.position;
+        _armStillness();
+      }
+    }
+    super.handleEvent(event);
+  }
+
+  void _armStillness() {
+    _still?.cancel();
+    _still = Timer(_stillness, _yieldToPage);
+  }
+
+  void _stopStillness() {
+    _still?.cancel();
+    _still = null;
+  }
+
+  /// Le doigt est resté en place : à la page web d'en faire ce qu'elle veut.
+  void _yieldToPage() {
+    _still = null;
+    if ((_last - _origin).distance > sleepHoldDrift) return;
+    resolve(GestureDisposition.rejected);
+  }
+
+  @override
+  void didStopTrackingLastPointer(int pointer) {
+    _stopStillness();
+    super.didStopTrackingLastPointer(pointer);
+  }
+
+  @override
+  void dispose() {
+    _stopStillness();
+    super.dispose();
   }
 }

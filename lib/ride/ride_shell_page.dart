@@ -18,6 +18,8 @@ import '../navigation/route_catalog_store.dart';
 import '../navigation/screen_dimmer.dart';
 import '../phone/rider_compass.dart';
 import '../recording/ride_recorder.dart';
+import '../sleep/screen_sleep.dart';
+import '../sleep/sleep_hold.dart';
 import '../ui/power_calibration_dialog.dart';
 import 'auto_return_policy.dart';
 import 'nav_state.dart';
@@ -356,6 +358,12 @@ class _RideShellPageState extends State<RideShellPage>
       ),
     );
 
+    // Une alerte lève la veille de l'appli : le retour automatique ramène la
+    // carte, et l'annoncer sous un voile noir reviendrait à ne pas l'annoncer.
+    // La veille de la page web, elle, se réveille toute seule — c'est elle qui
+    // a vu le virage venir.
+    if (alert != RideAlert.none && _screenPolicy.veiled) _wakeFromHold();
+
     // Une alerte referme la page du menu, **avant** que la politique ne décide.
     //
     // Deux raisons, et la seconde est la plus fourbe : d'abord une page opaque
@@ -452,6 +460,13 @@ class _RideShellPageState extends State<RideShellPage>
   /// rentrer — et que les premiers appuis rouvraient au passage les tracés de la
   /// sortie.
   Future<void> _handleBack() async {
+    // Sous le voile, le retour ne fait que réveiller : on ne quitte pas un
+    // écran qu'on ne voit pas, et le cran suivant se déciderait à l'aveugle.
+    if (_screenPolicy.veiled) {
+      _wakeFromHold();
+      return;
+    }
+
     // Une page ouverte depuis le menu se referme d'abord : elle recouvre tout le
     // reste, et c'est de là qu'on s'est le plus éloigné.
     if (_menuPage != null) {
@@ -611,6 +626,21 @@ class _RideShellPageState extends State<RideShellPage>
         );
     }
   }
+
+  /// L'appui long a abouti, ailleurs que sur la carte.
+  ///
+  /// **Sur la carte, c'est le site qui tient le geste** : il gèle son rendu,
+  /// pose son propre voile, se réveille de lui-même à l'approche d'un virage
+  /// avec son zoom de découverte, et demande le rétroéclairage par le message
+  /// `screen`. Rien de tout ça ne se refait ici — la couche d'appui de l'appli
+  /// y est simplement débranchée (voir la pile, plus bas).
+  ///
+  /// Ailleurs — page de données, bilan ouvert depuis le menu, profil sans carte
+  /// — personne d'autre ne peut le faire : la veille est alors celle de l'appli,
+  /// avec son voile et son rétroéclairage.
+  void _sleepByHold() => _applyScreen(_screenPolicy.holdRequested(true));
+
+  void _wakeFromHold() => _applyScreen(_screenPolicy.holdRequested(false));
 
   /// N'appelle le réglage de luminosité que sur les transitions : la page peut
   /// redemander sa veille à chaque rechargement, et changer la luminosité
@@ -815,6 +845,28 @@ class _RideShellPageState extends State<RideShellPage>
                 child: RidePageFlash(page: _page, count: _pageCount),
               ),
             ),
+            // L'appui long qui endort l'écran — **partout sauf sur la carte**,
+            // où c'est le site qui le détecte et s'endort lui-même (cf.
+            // `_sleepByHold`). Deux détecteurs pour un seul geste, mais jamais
+            // deux à la fois : la couche est débranchée sur la carte.
+            //
+            // Tout en haut de la pile, bandeau compris, et translucide : elle
+            // ne prend que l'appui immobile, et laisse passer les taps, les
+            // glissés de page et ceux du bandeau. Gagner l'arène au bout des
+            // 700 ms est ce qui empêche le relâchement d'être en plus compté
+            // comme un tap par le widget du dessous.
+            Positioned.fill(
+              key: const ValueKey('appui-veille'),
+              child: SleepHoldZone(enabled: !_onMap, onSleep: _sleepByHold),
+            ),
+            // Le voile de l'appli. Sous le cadre et les mètres du radar, qui
+            // restent la seule chose qu'on ait le droit de voir en veille — et
+            // qui de toute façon suspendent celle-ci.
+            if (_screenPolicy.veiled)
+              Positioned.fill(
+                key: const ValueKey('voile-veille'),
+                child: SleepVeil(onWake: _wakeFromHold),
+              ),
             // Le cadre par-dessus tout, bandeau compris : l'alerte n'appartient
             // pas à la carte, elle appartient à la sortie.
             //
