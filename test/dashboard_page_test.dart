@@ -192,7 +192,7 @@ void main() {
     // s'en apercevoir.
     expect(find.text('Enregistrement en pause'), findsOneWidget);
     // Les agrégats restent affichés : la sortie n'est pas terminée.
-    expect(find.text('Cardio'), findsOneWidget);
+    expect(find.text('Cardio (bpm)'), findsOneWidget);
 
     await tester.tap(find.text('Enregistrement en pause'));
     await tester.pump();

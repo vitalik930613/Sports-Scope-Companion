@@ -68,10 +68,9 @@ int swipeDirection({required double dx, required double velocity}) {
 ///
 /// La carte a besoin du glissé horizontal pour se déplacer, et un `PageView` le
 /// réclame pour lui. Tant que la carte est à l'écran et posée, le défilement est
-/// donc coupé net : on la quitte par les bandes des deux bords ou par les
-/// pastilles — jamais par un glissé en plein milieu de la carte, qui appartient
-/// à MapLibre. Sur les pages de données, rien ne dispute le geste et toute la
-/// surface fait défiler.
+/// donc coupé net : on la quitte par les bandes des deux bords — jamais par un
+/// glissé en plein milieu de la carte, qui appartient à MapLibre. Sur les pages
+/// de données, rien ne dispute le geste et toute la surface fait défiler.
 ///
 /// Volontairement piloté par « la carte est-elle vivante » et non par l'index :
 /// bascule à mi-glissé, la physique changerait au milieu du geste et

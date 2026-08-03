@@ -35,6 +35,7 @@ import 'widgets/radar_frame.dart';
 import 'widgets/radar_side_gauge.dart';
 import 'widgets/radar_wake_page.dart';
 import 'widgets/ride_bottom_band.dart';
+import 'widgets/ride_page_flash.dart';
 
 /// La coquille d'une sortie : ce qui appartient à l'écran, pas à la page web.
 ///
@@ -152,8 +153,8 @@ class _RideShellPageState extends State<RideShellPage>
   /// Le défilement et le menu, séparés une fois pour toutes.
   ///
   /// Calculés au montage et non à chaque trame : le profil est figé pour la
-  /// durée de la sortie, et ces deux listes sont lues par le `build`, les
-  /// pastilles du bandeau et le retour automatique.
+  /// durée de la sortie, et ces deux listes sont lues par le `build`, le numéro
+  /// de page et le retour automatique.
   late final List<RidePageSpec> _ridePages;
   late final List<RidePageSpec> _menuPages;
 
@@ -548,13 +549,13 @@ class _RideShellPageState extends State<RideShellPage>
     _applyScreen(_screenPolicy.movedTo(onMap: _onMap));
   }
 
-  /// Emmène le cycliste sur une page nommée : pastille, bouton retour, retour
-  /// automatique. Par le chemin le plus court dans la boucle, jamais par le tour
-  /// complet.
+  /// Emmène le cycliste sur une page nommée : bouton retour, chargement d'un
+  /// tracé, retour automatique. Par le chemin le plus court dans la boucle,
+  /// jamais par le tour complet.
   ///
   /// Referme au passage la page du menu : elle est opaque et par-dessus tout le
   /// défilement, donc y « aller » sans la retirer ne changerait rien à l'écran —
-  /// c'est le cas d'une pastille du bandeau tapée depuis un bilan.
+  /// c'est le cas du bouton retour pressé depuis un bilan.
   void _goToPage(int page, {bool auto = false}) {
     _setMenuPage(null);
     _animateTo(
@@ -771,14 +772,30 @@ class _RideShellPageState extends State<RideShellPage>
               child: RideBottomBand(
                 bands: _preset.bands,
                 sources: _sources,
-                page: _page,
-                pageCount: _pageCount,
-                onGoToPage: _goToPage,
                 // Toujours branché, sans filtrer sur la découverte GATT : la
                 // coquille ne se redessine pas quand le capteur finit sa
                 // découverte, et un tap qui ne ferait rien serait pris pour un
                 // écran gelé.
                 onCalibratePower: _calibratePower,
+              ),
+            ),
+            // Le numéro de la page, juste au-dessus du bandeau et le temps de le
+            // lire. C'est ce qui remplace les pastilles qu'il portait.
+            //
+            // Au-dessus du bandeau et pas au milieu de l'écran : le regard y est
+            // déjà — c'est de là que part le glissé des bandes du bord — et un
+            // chiffre en plein centre recouvrirait la case de grille ou le
+            // virage qu'on venait justement chercher.
+            //
+            // Après le bandeau dans la pile, donc par-dessus les pages et la
+            // page du menu. Sous le cadre d'alerte en revanche : une voiture qui
+            // remonte passe avant de savoir sur quelle page on est.
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: bandHeight + 12,
+              child: Center(
+                child: RidePageFlash(page: _page, count: _pageCount),
               ),
             ),
             // Le cadre par-dessus tout, bandeau compris : l'alerte n'appartient

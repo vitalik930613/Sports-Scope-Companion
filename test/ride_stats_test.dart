@@ -282,6 +282,32 @@ void main() {
       expect(stats.maxHeartRate, 180);
     });
 
+    test('les minima suivent la même population que les moyennes', () {
+      // Le zéro d'une roue libre EST le minimum de la puissance : c'est le même
+      // point que celui qui tire la moyenne vers le bas. Le cardio, lui, n'a
+      // pas de zéro et garde donc un minimum qui a du sens.
+      final stats = RideStats()
+        ..add(point(second: 0, power: 350, heartRate: 180, cadence: 95))
+        ..add(point(second: 1, power: 0, heartRate: 165, cadence: 0))
+        ..add(point(second: 2, power: 100, heartRate: 120, cadence: 60));
+
+      expect(stats.minPower, 0);
+      expect(stats.minHeartRate, 120);
+      expect(stats.minCadence, 0);
+      expect(stats.maxPower, 350);
+    });
+
+    test('un trou de capteur ne fait pas un minimum à zéro', () {
+      // Même règle que pour la moyenne : un point sans puissance n'est pas un
+      // point à 0 W.
+      final stats = RideStats()
+        ..add(point(second: 0, power: 200))
+        ..add(point(second: 1))
+        ..add(point(second: 2, power: 240));
+
+      expect(stats.minPower, 200);
+    });
+
     test('la vitesse retombe sur le capteur de roue', () {
       // Le GPS d'abord, la roue en secours (tunnel, forêt dense).
       final stats = RideStats()
@@ -444,6 +470,10 @@ void main() {
       expect(live.maxCadence, batch.maxCadence);
       expect(live.avgSpeedMps, batch.avgSpeedMps);
       expect(live.maxSpeedMps, batch.maxSpeedMps);
+      expect(live.minPower, batch.minPower);
+      expect(live.minHeartRate, batch.minHeartRate);
+      expect(live.minCadence, batch.minCadence);
+      expect(live.minSpeedMps, batch.minSpeedMps);
       expect(live.normalizedPowerW, batch.normalizedPowerW);
       expect(live.firstLat, batch.firstLat);
       expect(live.lastLng, batch.lastLng);
@@ -502,6 +532,7 @@ void main() {
       expect(stats.ascentM, 0);
       expect(stats.avgPower, isNull);
       expect(stats.maxPower, isNull);
+      expect(stats.minPower, isNull);
       expect(stats.normalizedPowerW, isNull);
       expect(stats.hasPower, isFalse);
       expect(stats.firstLat, isNull);

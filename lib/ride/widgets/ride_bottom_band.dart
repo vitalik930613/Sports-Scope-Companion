@@ -12,7 +12,16 @@ import 'swipe_zone.dart';
 /// dessous de lui, donc un geste qui y démarre lui appartient sans ambiguïté, et
 /// c'est le seul endroit où l'on peut faire défiler des chiffres sans les
 /// perdre de vue. Changer de page, c'est l'affaire des bandes du bord de la
-/// carte et des pastilles, à droite d'ici.
+/// carte ; savoir où l'on vient d'arriver, celle de `RidePageFlash`.
+///
+/// **Il ne porte plus aucun repère de position** — ni la colonne de pastilles de
+/// page à son extrémité, ni la rangée de pastilles de jeu de valeurs sur son
+/// bord haut. Les deux étaient dessinées à huit et quatre points de côté dans un
+/// bandeau de soixante-douze de haut : lisibles à l'arrêt, c'est-à-dire au seul
+/// moment où l'on sait déjà où l'on est. Et la colonne des pages débordait dès
+/// qu'un profil en comptait quatre — vingt-deux points par pastille, il n'y en
+/// avait la place que de trois. Toute la hauteur va donc aux chiffres, qui sont
+/// ce qu'on vient y lire.
 ///
 /// **Les jeux de valeurs viennent du profil de sortie**, plus d'une énumération :
 /// c'est le site qui dit lesquels, dans quel ordre, et avec quelles mesures. Ce
@@ -28,9 +37,6 @@ class RideBottomBand extends StatefulWidget {
     super.key,
     required this.bands,
     required this.sources,
-    required this.page,
-    required this.pageCount,
-    required this.onGoToPage,
     this.onCalibratePower,
   });
 
@@ -39,13 +45,6 @@ class RideBottomBand extends StatefulWidget {
 
   /// D'où les mesures se lisent — et de quoi elles dépendent.
   final MetricSources sources;
-
-  /// La page affichée et leur nombre, pour les pastilles.
-  final int page;
-  final int pageCount;
-
-  /// Demande de changement de page — la coquille possède le contrôleur.
-  final void Function(int page) onGoToPage;
 
   /// Calibrer le capteur de puissance, sur un tap des watts ou de leur zone.
   ///
@@ -102,39 +101,16 @@ class _RideBottomBandState extends State<RideBottomBand> {
           color: Color(0xFF101214),
           border: Border(top: BorderSide(color: Colors.white24)),
         ),
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: Padding(
-                padding: EdgeInsets.only(
-                  bottom: MediaQuery.viewPaddingOf(context).bottom,
-                ),
-                child: Row(
-                  children: [
-                    for (final metric in widget.bands[_set].metrics)
-                      Expanded(child: _metric(metric)),
-                    _PageDots(
-                      current: widget.page,
-                      count: widget.pageCount,
-                      onTap: widget.onGoToPage,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            // Le rappel du jeu affiché, tout en haut : à peine visible, mais
-            // c'est ce qui distingue « j'ai glissé » de « le bandeau a changé
-            // tout seul ». Un seul jeu, rien à rappeler.
-            if (widget.bands.length > 1)
-              Positioned(
-                top: 3,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: _SetDots(current: _set, count: widget.bands.length),
-                ),
-              ),
-          ],
+        child: Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.viewPaddingOf(context).bottom,
+          ),
+          child: Row(
+            children: [
+              for (final metric in widget.bands[_set].metrics)
+                Expanded(child: _metric(metric)),
+            ],
+          ),
         ),
       ),
     );
@@ -224,97 +200,17 @@ class _BandMetric extends StatelessWidget {
 
     if (background == null) return content;
 
-    // La marge du haut dégage les pastilles du jeu de valeurs, posées à 3 pt du
-    // bord : sans elle, l'aplat de la case du milieu passerait dessous.
+    // Symétrique depuis que les pastilles du jeu de valeurs ont quitté le bord
+    // haut : la marge de 9 pt qui les dégageait ne tenait plus qu'à elles, et
+    // l'aplat de zone gagne à couvrir toute la hauteur de sa case — c'est aussi
+    // une surface de lecture.
     return Container(
-      margin: const EdgeInsets.fromLTRB(2, 9, 2, 3),
+      margin: const EdgeInsets.fromLTRB(2, 3, 2, 3),
       decoration: BoxDecoration(
         color: background,
         borderRadius: BorderRadius.circular(6),
       ),
       child: content,
-    );
-  }
-}
-
-/// Les pastilles de page, à l'extrémité du bandeau.
-///
-/// Elles disent où on est, et permettent d'y aller directement : le glissé sur
-/// le bord de la carte est pratique à deux pages, il l'est moins à cinq — et un
-/// profil peut en avoir cinq.
-class _PageDots extends StatelessWidget {
-  const _PageDots({
-    required this.current,
-    required this.count,
-    required this.onTap,
-  });
-
-  final int current;
-  final int count;
-  final void Function(int page) onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          for (var page = 0; page < count; page++)
-            GestureDetector(
-              onTap: () => onTap(page),
-              behavior: HitTestBehavior.opaque,
-              // La pastille fait 8 points, sa zone tactile 22 : à vélo, on vise
-              // mal.
-              child: SizedBox(
-                width: 22,
-                height: 22,
-                child: Center(
-                  child: Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: page == current ? Colors.white : Colors.white30,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Les pastilles du jeu de valeurs, en haut du bandeau.
-///
-/// Horizontales, contrairement à celles des pages : elles disent dans quel sens
-/// glisser. Et minuscules — c'est un repère, pas une commande ; on change de jeu
-/// en glissant sur le bandeau, qui offre une cible autrement plus large qu'un
-/// point de quatre points de côté.
-class _SetDots extends StatelessWidget {
-  const _SetDots({required this.current, required this.count});
-
-  final int current;
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (var set = 0; set < count; set++)
-          Container(
-            width: 4,
-            height: 4,
-            margin: const EdgeInsets.symmetric(horizontal: 2),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: set == current ? Colors.white54 : Colors.white24,
-            ),
-          ),
-      ],
     );
   }
 }

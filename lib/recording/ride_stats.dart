@@ -135,6 +135,20 @@ class RideStats {
   int? maxPower;
   double? maxSpeedMps;
 
+  /// Les minima, sur **exactement la même population que les moyennes** : tout
+  /// point qui porte la mesure, zéros compris. C'est ce qui les rend lisibles
+  /// ensemble — un minimum calculé sur les seuls points « en action » ne serait
+  /// pas la borne basse de la moyenne affichée juste au-dessus.
+  ///
+  /// La conséquence est assumée : dès la première roue libre, la puissance et
+  /// la cadence minimales valent 0 pour le reste de la sortie. Ce n'est pas une
+  /// erreur de mesure, c'est la borne basse de ce qu'on a enregistré — et le
+  /// cardio, lui, où le zéro n'existe pas, en tire un minimum qui a du sens.
+  int? minHeartRate;
+  int? minCadence;
+  int? minPower;
+  double? minSpeedMps;
+
   // Sommes courantes : les moyennes sont des accesseurs, pour qu'une valeur lue
   // en cours de sortie soit toujours celle des points déjà vus — pas celle d'un
   // total figé au dernier calcul.
@@ -282,6 +296,7 @@ class RideStats {
       _hrSum += heartRate;
       _hrCount++;
       maxHeartRate = _max(maxHeartRate, heartRate);
+      minHeartRate = _min(minHeartRate, heartRate);
       _bucket(hrHistogram, heartRate, hrBucketBpm);
     }
 
@@ -291,6 +306,7 @@ class RideStats {
       _cadenceSum += cadence;
       _cadenceCount++;
       maxCadence = _max(maxCadence, cadence.round());
+      minCadence = _min(minCadence, cadence.round());
     }
 
     final power = point.power;
@@ -299,6 +315,7 @@ class RideStats {
       _powerSum += power;
       _powerCount++;
       maxPower = _max(maxPower, power);
+      minPower = _min(minPower, power);
       _bucket(powerHistogram, power, powerBucketW);
       _addNormalized(power);
 
@@ -319,6 +336,8 @@ class RideStats {
       _speedCount++;
       maxSpeedMps =
           maxSpeedMps == null || speed > maxSpeedMps! ? speed : maxSpeedMps;
+      minSpeedMps =
+          minSpeedMps == null || speed < minSpeedMps! ? speed : minSpeedMps;
     }
   }
 
@@ -403,6 +422,8 @@ class RideStats {
     hasCadence = hasPower = hasSpeed = false;
     maxHeartRate = maxCadence = maxPower = null;
     maxSpeedMps = null;
+    minHeartRate = minCadence = minPower = null;
+    minSpeedMps = null;
     _hrSum = _hrCount = 0;
     _cadenceSum = 0;
     _cadenceCount = 0;
@@ -426,4 +447,7 @@ class RideStats {
 
   static int _max(int? current, int value) =>
       current == null || value > current ? value : current;
+
+  static int _min(int? current, int value) =>
+      current == null || value < current ? value : current;
 }

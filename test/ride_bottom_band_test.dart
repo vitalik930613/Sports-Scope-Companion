@@ -80,9 +80,6 @@ void main() {
               child: RideBottomBand(
                 bands: bands,
                 sources: sources,
-                page: 0,
-                pageCount: 2,
-                onGoToPage: (_) {},
               ),
             ),
           ),
@@ -102,9 +99,6 @@ void main() {
               child: RideBottomBand(
                 bands: bands,
                 sources: sources,
-                page: 0,
-                pageCount: 2,
-                onGoToPage: (_) {},
                 onCalibratePower: onCalibratePower,
               ),
             ),
@@ -160,23 +154,7 @@ void main() {
 
   testWidgets('un glissé change de jeu de valeurs, pas de page',
       (tester) async {
-    var pageAsked = false;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Align(
-            alignment: Alignment.bottomCenter,
-            child: RideBottomBand(
-              bands: bands,
-              sources: sources,
-              page: 0,
-              pageCount: 2,
-              onGoToPage: (_) => pageAsked = true,
-            ),
-          ),
-        ),
-      ),
-    );
+    await pumpBand(tester);
 
     expect(find.text('durée'), findsOneWidget);
     expect(find.text('zone bpm'), findsNothing);
@@ -192,8 +170,24 @@ void main() {
     expect(find.text('zone W'), findsOneWidget);
     expect(find.text('durée'), findsNothing);
     // Le point de tout ce chantier : le bandeau ne déplace plus le tableau de
-    // bord, il ne fait que changer ce qu'il montre.
-    expect(pageAsked, isFalse);
+    // bord, il ne fait que changer ce qu'il montre. Il n'a d'ailleurs plus rien
+    // pour le déplacer — le paramètre de changement de page est parti avec les
+    // pastilles.
+  });
+
+  testWidgets('le bandeau ne porte plus aucune pastille', (tester) async {
+    await pumpBand(tester);
+
+    // Les pastilles de page tenaient dans 22 pt de haut chacune, empilées dans
+    // un bandeau de 72 : à quatre pages, la colonne débordait. Rien de rond ne
+    // doit repousser ici sans qu'on ait revu cette hauteur.
+    final round = tester.widgetList<Container>(find.byType(Container)).where(
+          (c) =>
+              c.decoration is BoxDecoration &&
+              (c.decoration! as BoxDecoration).shape == BoxShape.circle,
+        );
+
+    expect(round, isEmpty);
   });
 
   testWidgets('le glissé boucle : deux jeux, deux gestes, retour au départ',

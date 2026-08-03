@@ -6,8 +6,8 @@ import 'radar_side_gauge.dart';
 /// La page qui s'invite pendant la veille : le radar, en gros, sur du noir.
 ///
 /// Elle **ne fait pas partie du catalogue** ([RidePage]) et ne se fait pas
-/// défiler : l'y ajouter changerait le nombre de pages, donc les pastilles, les
-/// gestes et la boucle, pour un écran qu'on ne choisit jamais d'ouvrir. Elle
+/// défiler : l'y ajouter changerait le nombre de pages, donc le numéro annoncé,
+/// les gestes et la boucle, pour un écran qu'on ne choisit jamais d'ouvrir. Elle
 /// apparaît quand une voiture remonte alors que l'écran dormait, et repart
 /// quand c'est passé — voir [RadarWakePolicy] et [ScreenPolicy].
 ///

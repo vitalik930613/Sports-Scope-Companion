@@ -98,6 +98,134 @@ class BlockCard extends StatelessWidget {
       );
 }
 
+/// Une ligne de [StatCard] : ce qu'on mesure à gauche, ce que ça vaut à droite.
+@immutable
+class StatRow {
+  const StatRow(this.label, this.value);
+
+  final String label;
+  final String value;
+}
+
+/// La carte des moyennes : un titre, puis des lignes en **deux colonnes**.
+///
+/// Une [BlockCard] écrit des phrases (« Max 178 bpm »), qu'on relit chacune en
+/// entier pour retrouver le chiffre. Ici les trois chiffres d'une même mesure
+/// sont l'un sous l'autre, alignés à droite : on les compare d'un coup d'œil,
+/// et c'est tout ce qu'on demande à un bilan de moyennes.
+///
+/// L'unité est dans le titre et pas sur chaque ligne : elle vaut pour les trois,
+/// et la colonne des valeurs tient alors dans une demi-case.
+///
+/// Elle se dégrade comme sa cousine — les lignes qui ne tiennent plus partent
+/// par le bas — à ceci près que **la première à partir est « Min »** : entre les
+/// trois, c'est celle qui apprend le moins, et un maximum tronqué se lirait
+/// comme un maximum.
+class StatCard extends StatelessWidget {
+  const StatCard({
+    super.key,
+    required this.title,
+    required this.rows,
+    this.metrics,
+  });
+
+  final String title;
+  final List<StatRow> rows;
+
+  /// Les tailles, quand l'appelant les a déjà calculées — même rôle que sur
+  /// [BlockCard], et même raison : plusieurs cartes dans une même case doivent
+  /// partager la densité de la case, et un `LayoutBuilder` ne sait pas mesurer
+  /// sous un `IntrinsicHeight`.
+  final BlockMetrics? metrics;
+
+  @override
+  Widget build(BuildContext context) {
+    final given = metrics;
+    if (given != null) {
+      return BlockSurface(metrics: given, child: _content(given, rows));
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final metrics = BlockMetrics.of(constraints);
+        final room =
+            metrics.linesIn(constraints.maxHeight, wanted: rows.length);
+
+        return BlockSurface(
+          metrics: metrics,
+          child: FittedProse(
+            metrics: metrics,
+            constraints: constraints,
+            child: _content(metrics, _keep(room)),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Les [room] lignes qu'on garde. Au-delà de la simple troncature : à deux
+  /// lignes sur trois, c'est « Min » qu'on laisse tomber, pas « Max ».
+  List<StatRow> _keep(int room) {
+    if (room >= rows.length) return rows;
+    if (room <= 0) return const [];
+    if (room == rows.length - 1 && rows.length == 3) {
+      return [rows.first, rows.last];
+    }
+    return rows.take(room).toList();
+  }
+
+  Widget _content(BlockMetrics metrics, List<StatRow> shown) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (metrics.showTitle) ...[
+            Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: metrics.titleSize,
+              ),
+            ),
+            SizedBox(height: metrics.gap),
+          ],
+          for (final row in shown)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  // Le libellé cède la place le premier : c'est « Moyen » qu'on
+                  // devine d'un mot tronqué, jamais un chiffre.
+                  Expanded(
+                    child: Text(
+                      row.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: metrics.lineSize,
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: metrics.gap),
+                  Text(
+                    row.value,
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: metrics.lineSize,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      );
+}
+
 /// Le cadre commun de tous les composants : le fond des cartes, l'arrondi, le
 /// rembourrage de la densité.
 ///

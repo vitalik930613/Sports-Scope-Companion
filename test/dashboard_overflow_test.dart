@@ -301,12 +301,17 @@ void main() {
     // c'est ce que dit `densityFor` d'une contrainte non bornée.
     expect(find.text('Z7'), findsOneWidget);
 
-    // Les moyennes gardent leurs trois cartes. Il faut aller les chercher : une
-    // page qui défile ne construit que ce qu'elle montre, et deux répartitions
-    // en zones tiennent déjà tout l'écran.
-    await tester.scrollUntilVisible(find.text('Cardio'), 200);
-    expect(find.text('Cardio'), findsOneWidget);
-    expect(find.text('Puissance'), findsOneWidget);
+    // Les moyennes gardent leurs quatre cartes, et chacune ses trois lignes. Il
+    // faut aller les chercher : une page qui défile ne construit que ce qu'elle
+    // montre, et deux répartitions en zones tiennent déjà tout l'écran.
+    await tester.scrollUntilVisible(find.text('Cardio (bpm)'), 200);
+    expect(find.text('Cardio (bpm)'), findsOneWidget);
+    expect(find.text('Puissance (W)'), findsOneWidget);
+    expect(find.text('Cadence (tr/min)'), findsOneWidget);
+    expect(find.text('Vitesse (km/h)'), findsOneWidget);
+    expect(find.text('Moyen'), findsNWidgets(4));
+    expect(find.text('Min'), findsNWidgets(4));
+    expect(find.text('Max'), findsNWidgets(4));
   });
 }
 
