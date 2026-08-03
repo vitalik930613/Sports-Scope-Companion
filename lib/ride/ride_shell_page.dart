@@ -150,6 +150,11 @@ class _RideShellPageState extends State<RideShellPage>
 
   bool get _onMap => _mapPage != null && _page == _mapPage;
 
+  /// L'habillage radar plein écran est-il posé ? Le capteur coupé le retire
+  /// aussi : sans trame, la jauge et le cadre ne dessinent déjà rien, et le
+  /// test évite de monter trois écouteurs pour rien.
+  bool get _overlay => _preset.radar.overlay && _preset.sensors.radar;
+
   /// Un défilement est-il en cours ? Sert à ne basculer la carte en « vivante »
   /// qu'une fois le geste terminé : le faire à mi-glissé couperait le geste au
   /// milieu, et le défilement s'arrêterait en travers.
@@ -678,24 +683,32 @@ class _RideShellPageState extends State<RideShellPage>
             ),
             // Le cadre par-dessus tout, bandeau compris : l'alerte n'appartient
             // pas à la carte, elle appartient à la sortie.
-            Positioned.fill(
-              child: ValueListenableBuilder<RadarView>(
-                valueListenable: _radar,
-                builder: (context, radar, _) =>
-                    RadarFrame(severity: radar.severity),
+            //
+            // Sauf profil qui a coupé l'habillage : le radar ne se voit alors
+            // que dans les composants posés exprès. Le capteur, lui, tourne
+            // toujours — les tonalités et le réveil d'écran ne dépendent pas
+            // d'ici.
+            if (_overlay)
+              Positioned.fill(
+                child: ValueListenableBuilder<RadarView>(
+                  valueListenable: _radar,
+                  builder: (context, radar, _) =>
+                      RadarFrame(severity: radar.severity),
+                ),
               ),
-            ),
             // Les mètres dans la bande de l'encoche, au-dessus du cadre : c'est
             // le chiffre qu'on va chercher, il ne doit être recouvert par rien.
-            Positioned(
-              left: 0,
-              right: 0,
-              top: 0,
-              child: ValueListenableBuilder<RadarView>(
-                valueListenable: _radar,
-                builder: (context, radar, _) => RadarDistanceBadges(view: radar),
+            if (_overlay)
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                child: ValueListenableBuilder<RadarView>(
+                  valueListenable: _radar,
+                  builder: (context, radar, _) =>
+                      RadarDistanceBadges(view: radar),
+                ),
               ),
-            ),
           ],
         ),
       ),
@@ -752,7 +765,8 @@ class _RideShellPageState extends State<RideShellPage>
           width: RadarSideGauge.width,
           child: Stack(
             children: [
-              Positioned.fill(child: RadarSideGauge(view: radar, side: side)),
+              if (_overlay)
+                Positioned.fill(child: RadarSideGauge(view: radar, side: side)),
               if (_onMap)
                 Positioned(
                   left: left ? 0 : null,
@@ -762,7 +776,12 @@ class _RideShellPageState extends State<RideShellPage>
                   child: MapEdgeHandle(
                     direction: left ? -1 : 1,
                     onStep: _stepPage,
-                    showBar: !radar.isAlerting,
+                    // Le repère ne s'efface que devant une jauge : sans
+                    // habillage, la gouttière n'a rien d'autre à montrer, et
+                    // faire disparaître le seul repère de changement de page
+                    // au moment où une voiture remonte se lirait comme un
+                    // écran gelé.
+                    showBar: !_overlay || !radar.isAlerting,
                   ),
                 ),
             ],

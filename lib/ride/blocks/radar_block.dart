@@ -50,7 +50,8 @@ class RadarBlockView extends StatelessWidget {
         return ValueListenableBuilder<RadarView>(
           valueListenable: radar,
           builder: (context, view, _) => switch (mode) {
-            RadarMode.gauge => _gauge(view, metrics),
+            RadarMode.gauge => _gauge(view, metrics, vertical: false),
+            RadarMode.gaugeVertical => _gauge(view, metrics, vertical: true),
             RadarMode.distance => _distance(view, metrics),
           },
         );
@@ -111,23 +112,46 @@ class RadarBlockView extends StatelessWidget {
     );
   }
 
-  /// La jauge de la gouttière, à l'horizontale d'une cellule. Les mêmes
-  /// positions et les mêmes couleurs que sur les bords de la carte : deux
-  /// affichages du même capteur ne doivent pas raconter deux histoires.
-  /// Sa largeur est celle de la gouttière, en dur : dans une case plus étroite,
+  /// La jauge de la gouttière, posée dans une cellule. Les mêmes positions et
+  /// les mêmes couleurs que sur les bords de la carte : deux affichages du même
+  /// capteur ne doivent pas raconter deux histoires.
+  ///
+  /// Debout ou couchée selon le mode, et **c'est la seule différence** : le
+  /// dessin est le même, tourné d'un quart de tour. Une cellule large et une
+  /// cellule haute ne veulent pas de la même jauge — mise à l'échelle dans la
+  /// mauvaise, elle finit en réglette de la largeur d'un doigt au milieu d'une
+  /// case vide.
+  ///
+  /// Couchée, un véhicule entre **par la gauche** et arrive à droite : c'est la
+  /// jauge du bord gauche tournée dans le sens des aiguilles, donc le haut
+  /// (la roue) qui devient la droite. Les pointes suivent la rotation et
+  /// désignent alors le haut.
+  ///
+  /// Sa taille est celle de la gouttière, en dur : dans une case plus étroite,
   /// elle est mise à l'échelle plutôt que rognée — une jauge coupée dans sa
-  /// largeur montrerait une voiture ailleurs qu'où elle est. `contain` et non
-  /// `scaleDown` : elle remplissait la hauteur de sa case avant, et doit
-  /// continuer.
-  Widget _gauge(RadarView view, BlockMetrics metrics) => BlockSurface(
-        metrics: metrics,
-        child: FittedBox(
-          fit: BoxFit.contain,
-          child: SizedBox(
-            width: RadarSideGauge.width,
-            height: RadarSideGauge.width * 2,
-            child: RadarSideGauge(view: view, side: RadarGaugeSide.left),
-          ),
-        ),
-      );
+  /// longueur montrerait une voiture ailleurs qu'où elle est. `contain` et non
+  /// `scaleDown` : elle remplit la case, et doit continuer.
+  Widget _gauge(
+    RadarView view,
+    BlockMetrics metrics, {
+    required bool vertical,
+  }) {
+    final gauge = SizedBox(
+      width: RadarSideGauge.width,
+      height: RadarSideGauge.width * 2,
+      child: RadarSideGauge(view: view, side: RadarGaugeSide.left),
+    );
+
+    return BlockSurface(
+      metrics: metrics,
+      child: FittedBox(
+        fit: BoxFit.contain,
+        // `RotatedBox` et non `Transform.rotate` : la rotation est prise en
+        // compte à la mise en page, si bien que le `FittedBox` mesure le
+        // rectangle couché et non le rectangle debout — sinon la jauge
+        // déborderait de sa case d'un côté et flotterait de l'autre.
+        child: vertical ? gauge : RotatedBox(quarterTurns: 1, child: gauge),
+      ),
+    );
+  }
 }

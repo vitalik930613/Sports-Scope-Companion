@@ -384,6 +384,7 @@ class RadarSettings {
   const RadarSettings({
     this.closeM = 40,
     this.rangeM = 140,
+    this.overlay = true,
     this.sounds = true,
     this.wakeScreen = true,
     this.wakeHold = const Duration(seconds: 5),
@@ -391,6 +392,20 @@ class RadarSettings {
 
   final double closeM;
   final double rangeM;
+
+  /// L'habillage plein écran : les jauges des gouttières, le cadre qui s'embrase
+  /// et les mètres dans la bande de l'encoche — le radar par-dessus toutes les
+  /// pages, qu'on les ait demandées ou non.
+  ///
+  /// Coupé, **le capteur continue de tourner** : les tonalités restent, le
+  /// réveil d'écran aussi, et le radar ne se voit plus que là où le profil a
+  /// posé un [RadarBlock]. C'est le réglage de qui veut ses mètres dans une case
+  /// et un écran par ailleurs intact.
+  ///
+  /// Vrai par défaut, y compris quand la clé manque : le site peut être plus
+  /// ancien que l'appli, et une alerte perdue en silence est la dernière chose
+  /// qu'on veut découvrir sur la route.
+  final bool overlay;
 
   /// Les tonalités d'alerte. Coupées, le radar reste visible — c'est le son
   /// qu'on retire, pas l'information.
@@ -410,6 +425,9 @@ class RadarSettings {
     return RadarSettings(
       closeM: _double(raw['close_m'], fallback.closeM),
       rangeM: _double(raw['range_m'], fallback.rangeM),
+      overlay: raw['overlay'] is bool
+          ? raw['overlay'] as bool
+          : fallback.overlay,
       sounds: raw['sounds'] is bool ? raw['sounds'] as bool : fallback.sounds,
       wakeScreen: raw['wake_screen'] is bool
           ? raw['wake_screen'] as bool

@@ -235,6 +235,24 @@ void main() {
       expect((block! as MetricBlock).mode, MetricMode.big);
     });
 
+    test('la jauge radar se pose dans les deux sens', () {
+      // Deux clés et non un booléen : c'est le mode qui décide du dessin, ici
+      // comme partout, et le site en déplie une vignette par sens.
+      expect(
+        DashboardBlock.parse({'kind': 'radar', 'mode': 'gauge_vertical'}),
+        const RadarBlock(mode: RadarMode.gaugeVertical),
+      );
+      expect(
+        DashboardBlock.parse({'kind': 'radar', 'mode': 'gauge'}),
+        const RadarBlock(mode: RadarMode.gauge),
+      );
+      // Le premier de la liste, comme pour tout mode inconnu.
+      expect(
+        DashboardBlock.parse({'kind': 'radar', 'mode': 'renversée'}),
+        const RadarBlock(mode: RadarMode.distance),
+      );
+    });
+
     test('une mesure inconnue retire la cellule plutôt que d\'afficher un tiret',
         () {
       expect(
@@ -401,6 +419,26 @@ void main() {
       // Non mentionné : la valeur de la carte de diagnostic, pour que les deux
       // affichages racontent la même chose du même capteur.
       expect(radar.rangeM, 140);
+      // L'habillage non plus n'est pas mentionné : il reste posé.
+      expect(radar.overlay, isTrue);
+    });
+
+    test('l\'habillage radar se coupe sans couper le capteur', () {
+      // Le profil qui ne veut du radar que dans ses composants : les tonalités
+      // et le réveil d'écran, eux, ne dépendent pas de l'habillage.
+      final settings = parse({
+        'presets': [
+          preset({
+            'radar': {'overlay': false},
+          }),
+        ],
+      });
+
+      final radar = settings.presets.single.radar;
+      expect(radar.overlay, isFalse);
+      expect(radar.sounds, isTrue);
+      expect(radar.wakeScreen, isTrue);
+      expect(settings.presets.single.sensors.radar, isTrue);
     });
 
     test('la veille ne descend jamais sous 1 %', () {
