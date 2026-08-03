@@ -18,6 +18,8 @@ import 'package:sports_scope_companion/recording/ride_store.dart';
 import 'package:sports_scope_companion/recording/track_point.dart';
 import 'package:sports_scope_companion/ride/nav_state.dart';
 import 'package:sports_scope_companion/ride/pages/dashboard_page.dart';
+import 'package:sports_scope_companion/training/training_budget.dart';
+import 'package:sports_scope_companion/training/training_budget_store.dart';
 
 /// **Rien ne doit déborder de sa case.**
 ///
@@ -39,6 +41,7 @@ void main() {
   late SensorHub hub;
   late RideRecorder recorder;
   late RiderProfileStore profiles;
+  late TrainingBudgetStore budgets;
   late MetricSources sources;
   late _FakeGps gps;
   final nav = ValueNotifier<NavState?>(null);
@@ -78,10 +81,12 @@ void main() {
       tickPeriod: const Duration(seconds: 1),
     );
     profiles = RiderProfileStore(File(p.join(root.path, 'profile.json')));
+    budgets = TrainingBudgetStore(File(p.join(root.path, 'budget.json')));
     sources = MetricSources(
       hub: hub,
       recorder: recorder,
       riderProfile: profiles,
+      trainingBudget: budgets,
       nav: nav,
     );
   });
@@ -113,6 +118,20 @@ void main() {
     }
     hub.latestHeartRate.value = 155;
     hub.latestPower.value = 200;
+    // Le budget de charge dans son état le plus encombrant : un chiffre à quatre
+    // caractères de chaque côté du trait, un plafond, et ses deux pastilles.
+    await tester.runAsync(() => budgets.record(TrainingBudget(
+          date: DateTime.now(),
+          day: const DayBudget(done: 124, target: 185, max: 220),
+          week: const WeekBudget(
+            target: 620,
+            done: 418,
+            planned: 162,
+            remaining: 140,
+          ),
+          form: const RiderForm(ctl: 62, atl: 74, tsb: -12, zone: 'productive'),
+          risk: const InjuryRisk(acwr: 1.18, zone: 'optimal'),
+        )));
     nav.value = NavState(
       at: DateTime.now(),
       onRoute: true,
@@ -167,6 +186,8 @@ void main() {
         AveragesBlock(),
         RecordingBlock(),
         NavStateBlock(),
+        TrainingBudgetBlock(),
+        TrainingBudgetBlock(mode: TrainingBudgetMode.week),
         MetricBlock(metric: MetricId.duration, mode: MetricMode.gauge),
         MetricBlock(metric: MetricId.power, mode: MetricMode.gauge),
         MetricBlock(metric: MetricId.heartRate, mode: MetricMode.compact),

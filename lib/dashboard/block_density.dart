@@ -147,6 +147,12 @@ class BlockMetrics {
   /// qu'une grille se pense en hauteur.
   static const legendWidth = 150.0;
 
+  /// Ce qu'il faut de largeur aux deux pastilles du budget de charge (la
+  /// fraîcheur, le risque) posées côte à côte : une icône, un chiffre, et la
+  /// gouttière entre elles. En dessous elles se marchent dessus — la case garde
+  /// alors son chiffre et sa barre, qui portent l'essentiel.
+  static const budgetChipsWidth = 120.0;
+
   /// L'interligne dont on tient compte pour décider. Majoré exprès : trop
   /// prudent, on retire une ligne de trop ; trop juste, on déborde — et déborder
   /// est précisément ce qu'on vient corriger.
@@ -206,6 +212,41 @@ class BlockMetrics {
     if (room <= 0) return 0;
 
     return (room ~/ lineHeight).clamp(0, wanted);
+  }
+
+  /// La hauteur du « 62 / 85 » du budget de charge : plus gros qu'une ligne
+  /// ordinaire sans aller jusqu'au plein cadre — il se lit d'un coup d'œil, mais
+  /// il en faut deux (le fait et la cible) et une barre en dessous.
+  double get budgetFigureSize => (lineSize * 1.6).roundToDouble();
+
+  double get budgetFigureHeight =>
+      (budgetFigureSize * _leading).roundToDouble();
+
+  /// La troisième ligne du budget de charge tient-elle : les pastilles fraîcheur
+  /// et risque en mode « aujourd'hui », le reste à placer en mode « la semaine » ?
+  ///
+  /// Elle se lit **en diagonale** — c'est le contexte du chiffre, pas le chiffre —
+  /// donc elle part la première quand la case se resserre, comme la légende des
+  /// zones. Ce qui reste (« 62 / 85 » et sa barre) répond encore à la question
+  /// qu'on se pose au guidon ; une pastille de couleur toute seule, non.
+  ///
+  /// **Recopié dans `companionSettings.ts`**, comme tous les seuils de ce
+  /// fichier : sans ça, l'éditeur du site montrerait un contexte que le téléphone
+  /// retirera. Les deux jeux de tests portent les mêmes attentes exprès.
+  bool budgetContextFits(
+    double height, {
+    required double width,
+    bool withTitle = true,
+  }) {
+    if (width - padding * 2 < budgetChipsWidth) return false;
+    if (!height.isFinite) return true;
+
+    var room = height - padding * 2;
+    if (withTitle && showTitle) room -= titleHeight + gap;
+    room -= budgetFigureHeight + gap;
+    room -= barHeight + gap;
+
+    return room >= lineHeight;
   }
 
   /// La légende de [zones] lignes tient-elle dans une case de [width] ×

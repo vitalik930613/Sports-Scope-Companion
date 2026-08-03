@@ -181,4 +181,49 @@ void main() {
       );
     });
   });
+
+  /// La troisième ligne du budget de charge : les pastilles fraîcheur / risque en
+  /// mode « aujourd'hui », le reste à placer en mode « la semaine ».
+  ///
+  /// **Ces attentes sont les mêmes que celles de `companionSettings.test.ts`, et
+  /// c'est exprès** : le site recopie ces seuils pour dessiner ses aperçus, donc
+  /// quand l'un bouge, l'autre tombe.
+  group('budgetContextFits', () {
+    bool fitsIn(int rows, int cols) {
+      final size = cell(rows, cols);
+      return BlockMetrics.forCell(width: size.width, height: size.height)
+          .budgetContextFits(size.height, width: size.width);
+    }
+
+    test('une page qui défile porte tout', () {
+      expect(
+        BlockMetrics.forDensity(BlockDensity.comfortable)
+            .budgetContextFits(double.infinity, width: 328),
+        isTrue,
+      );
+    });
+
+    test('une pleine page et une grille de 2 × 2 le gardent', () {
+      expect(fitsIn(1, 1), isTrue);
+      expect(fitsIn(2, 2), isTrue);
+    });
+
+    test('trois colonnes ne portent plus deux pastilles côte à côte', () {
+      // 104 de large : la fraîcheur et le risque se marcheraient dessus. Il reste
+      // le chiffre et sa barre, qui répondent encore à la question qu'on se pose.
+      expect(fitsIn(3, 3), isFalse);
+    });
+
+    test('une case large et plate le garde, si basse soit-elle', () {
+      // Une ligne d'une grille de 6 : 93 px de haut, donc la densité minimale — et
+      // pourtant les pastilles tiennent. C'est la largeur qui leur manquait
+      // ailleurs, pas la hauteur.
+      final size = cell(6, 1);
+      expect(
+        BlockMetrics.densityFor(width: size.width, height: size.height),
+        BlockDensity.minimal,
+      );
+      expect(fitsIn(6, 1), isTrue);
+    });
+  });
 }

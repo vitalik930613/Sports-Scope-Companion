@@ -13,6 +13,7 @@ import 'package:sports_scope_companion/dashboard/ride_preset.dart';
 import 'package:sports_scope_companion/ride/nav_state.dart';
 import 'package:sports_scope_companion/ride/widgets/ride_bottom_band.dart';
 import 'package:sports_scope_companion/ui/zone_colors.dart';
+import 'package:sports_scope_companion/training/training_budget_store.dart';
 
 /// Les fonds peints entre la racine et ce texte : c'est là que se trouve la
 /// couleur de zone, la case étant peinte autour de son chiffre.
@@ -34,6 +35,7 @@ void main() {
   late SensorHub hub;
   late RideRecorder recorder;
   late RiderProfileStore profiles;
+  late TrainingBudgetStore budgets;
   late MetricSources sources;
   final nav = ValueNotifier<NavState?>(null);
 
@@ -54,10 +56,12 @@ void main() {
       tickPeriod: const Duration(days: 1),
     );
     profiles = RiderProfileStore(File(p.join(root.path, 'profile.json')));
+    budgets = TrainingBudgetStore(File(p.join(root.path, 'budget.json')));
     sources = MetricSources(
       hub: hub,
       recorder: recorder,
       riderProfile: profiles,
+      trainingBudget: budgets,
       nav: nav,
     );
   });

@@ -38,6 +38,9 @@ sealed class DashboardBlock {
       'nav_state' =>
         NavStateBlock(mode: _modeOf(raw['mode'], NavStateMode.values)),
       'radar' => RadarBlock(mode: _modeOf(raw['mode'], RadarMode.values)),
+      'training_budget' => TrainingBudgetBlock(
+          mode: _modeOf(raw['mode'], TrainingBudgetMode.values),
+        ),
       'empty' => const EmptyBlock(),
       _ => null,
     };
@@ -259,6 +262,43 @@ enum RadarMode with BlockMode {
   gaugeVertical('gauge_vertical');
 
   const RadarMode(this.key);
+
+  @override
+  final String key;
+}
+
+/// Le budget de charge : ce qu'il reste à faire, et jusqu'où on peut aller.
+///
+/// **Le seul composant dont la donnée ne vient pas des capteurs.** Elle est
+/// calculée par le site — qui seul a l'historique des sorties, l'objectif
+/// d'entraînement et la cible de la semaine — et poussée par la page de
+/// navigation. Un profil sans carte n'en recevra donc jamais : il n'y a pas de
+/// WebView pour la porter, et le composant le dit au lieu d'afficher des zéros.
+class TrainingBudgetBlock extends DashboardBlock {
+  const TrainingBudgetBlock({this.mode = TrainingBudgetMode.day});
+
+  final TrainingBudgetMode mode;
+
+  @override
+  bool operator ==(Object other) =>
+      other is TrainingBudgetBlock && other.mode == mode;
+
+  @override
+  int get hashCode => mode.hashCode;
+}
+
+enum TrainingBudgetMode with BlockMode {
+  /// Aujourd'hui : ce qui est déjà encaissé plus la sortie en cours, la cible du
+  /// jour, le plafond que la fatigue autorise. Mode par défaut, donc en tête —
+  /// c'est celui qui répond à « je continue ou je rentre ? », la question qu'on
+  /// se pose au guidon. La semaine, elle, se regarde à l'arrêt.
+  day('day'),
+
+  /// La semaine : la cible, ce qui est fait depuis lundi, ce qui est déjà prévu
+  /// sur les jours à venir, ce qu'il reste à placer.
+  week('week');
+
+  const TrainingBudgetMode(this.key);
 
   @override
   final String key;

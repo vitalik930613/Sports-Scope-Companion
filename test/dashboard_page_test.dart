@@ -12,11 +12,13 @@ import 'package:sports_scope_companion/recording/gps_source.dart';
 import 'package:sports_scope_companion/recording/ride_recorder.dart';
 import 'package:sports_scope_companion/recording/ride_store.dart';
 import 'package:sports_scope_companion/recording/track_point.dart';
+import 'package:sports_scope_companion/dashboard/dashboard_block.dart';
 import 'package:sports_scope_companion/dashboard/metric_id.dart';
 import 'package:sports_scope_companion/dashboard/ride_preset.dart';
 import 'package:sports_scope_companion/ride/nav_state.dart';
 import 'package:sports_scope_companion/ride/pages/dashboard_page.dart';
 import 'package:sports_scope_companion/ui/zone_colors.dart';
+import 'package:sports_scope_companion/training/training_budget_store.dart';
 
 /// La page Effort dit le cumul, là où le bandeau dit l'instant. Ce qui se
 /// vérifie ici : elle ne montre rien quand elle ne sait rien, et la répartition
@@ -31,6 +33,7 @@ void main() {
   late SensorHub hub;
   late RideRecorder recorder;
   late RiderProfileStore profiles;
+  late TrainingBudgetStore budgets;
   late MetricSources sources;
   final nav = ValueNotifier<NavState?>(null);
 
@@ -80,10 +83,12 @@ void main() {
       tickPeriod: const Duration(seconds: 1),
     );
     profiles = RiderProfileStore(File(p.join(root.path, 'profile.json')));
+    budgets = TrainingBudgetStore(File(p.join(root.path, 'budget.json')));
     sources = MetricSources(
       hub: hub,
       recorder: recorder,
       riderProfile: profiles,
+      trainingBudget: budgets,
       nav: nav,
     );
   });
@@ -97,6 +102,9 @@ void main() {
 
   Future<void> pumpPage(
     WidgetTester tester, {
+    List<RidePageSpec> menuPages = const [],
+    ValueChanged<int>? onOpenMenuPage,
+    VoidCallback? onClose,
     VoidCallback? onChooseRoute,
     VoidCallback? onClearRoute,
     VoidCallback? onCalibratePower,
@@ -107,6 +115,9 @@ void main() {
           home: DashboardPage(
             page: effortPage,
             sources: sources,
+            menuPages: menuPages,
+            onOpenMenuPage: onOpenMenuPage,
+            onClose: onClose,
             onChooseRoute: onChooseRoute,
             onClearRoute: onClearRoute,
             onCalibratePower: onCalibratePower,
@@ -523,6 +534,68 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(left, 1);
+    });
+
+    // Les pages que le profil range derrière le menu : on va les chercher au
+    // lieu de tomber dessus. C'est ce qui rend tenable une page qu'on ne lit pas
+    // en roulant — un bilan, des répartitions — sans la mettre à un glissé de la
+    // carte.
+    const bilan = ListPageSpec(
+      title: 'Bilan',
+      blocks: [AveragesBlock()],
+      menu: true,
+    );
+
+    testWidgets('les pages rangées s\'ouvrent depuis le menu', (tester) async {
+      var opened = -1;
+      await pumpPage(
+        tester,
+        menuPages: const [bilan],
+        onOpenMenuPage: (index) => opened = index,
+      );
+
+      await openMenu(tester);
+      // Le titre du profil sert de libellé : c'est celui qu'on a écrit dans
+      // l'éditeur, donc celui qu'on cherche.
+      await tester.tap(find.text('Bilan'));
+      await tester.pumpAndSettle();
+
+      expect(opened, 0);
+    });
+
+    testWidgets('une page rangée suffit à faire un menu', (tester) async {
+      // Sans aucune commande d'itinéraire — un profil de home-trainer — le menu
+      // doit quand même exister : c'est le seul chemin vers ces pages.
+      await pumpPage(
+        tester,
+        menuPages: const [bilan],
+        onOpenMenuPage: (_) {},
+      );
+
+      expect(find.byIcon(Icons.more_vert), findsOneWidget);
+    });
+
+    testWidgets('la page ouverte depuis le menu se referme, sans menu',
+        (tester) async {
+      // Elle n'a aucun voisin : une page du défilement se quitte au glissé,
+      // celle-ci n'a que ce bouton. Et pas de menu par-dessus — on referme
+      // d'abord, plutôt que d'empiler des pages qu'on quitte une par une en
+      // roulant.
+      var closed = 0;
+      await pumpPage(
+        tester,
+        onClose: () => closed++,
+        menuPages: const [bilan],
+        onOpenMenuPage: (_) {},
+        onLeaveRide: () {},
+      );
+
+      expect(find.byIcon(Icons.more_vert), findsNothing);
+
+      await tester.tap(find.byIcon(Icons.close));
+      await tester.pumpAndSettle();
+
+      expect(closed, 1);
     });
   });
 }

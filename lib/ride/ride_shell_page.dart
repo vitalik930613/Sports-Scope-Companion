@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 
 import '../account/rider_profile.dart';
 import '../account/rider_profile_store.dart';
+import '../training/training_budget.dart';
+import '../training/training_budget_store.dart';
 import '../account/site_session.dart';
 import '../ble/samples.dart';
 import '../ble/sensor_hub.dart';
@@ -68,6 +70,7 @@ class RideShellPage extends StatefulWidget {
     this.compass,
     required this.session,
     required this.riderProfile,
+    required this.trainingBudget,
     required this.routes,
     this.onGridMeasured,
     this.baseUrl = sportsScopeBaseUrl,
@@ -107,6 +110,11 @@ class RideShellPage extends StatefulWidget {
   /// demander elle-même.
   final RiderProfileStore riderProfile;
 
+  /// Le budget de charge du jour. Même chemin que les seuils, et pour la même
+  /// raison : c'est la page qui va le chercher, l'appli n'a aucun identifiant à
+  /// présenter. Il se périme en revanche, lui, d'où la date qu'il porte.
+  final TrainingBudgetStore trainingBudget;
+
   /// La place qu'une page de grille a réellement eue sur cet écran. Transmise
   /// telle quelle au magasin des profils, qui l'annonce au site au prochain
   /// rafraîchissement : l'éditeur y dimensionne ses aperçus, et supposait
@@ -140,15 +148,35 @@ class _RideShellPageState extends State<RideShellPage>
   late int _rawPage;
 
   RidePreset get _preset => widget.preset;
-  int get _pageCount => _preset.pages.length;
 
-  /// La page affichée, index dans le profil.
+  /// Le défilement et le menu, séparés une fois pour toutes.
+  ///
+  /// Calculés au montage et non à chaque trame : le profil est figé pour la
+  /// durée de la sortie, et ces deux listes sont lues par le `build`, les
+  /// pastilles du bandeau et le retour automatique.
+  late final List<RidePageSpec> _ridePages;
+  late final List<RidePageSpec> _menuPages;
+
+  /// La page ouverte depuis le menu, index dans [_menuPages]. `null` la plupart
+  /// du temps — c'est une page qu'on va chercher, pas une page où l'on est.
+  int? _menuPage;
+
+  int get _pageCount => _ridePages.length;
+
+  /// La page affichée, index dans le défilement.
   int get _page => pageOf(_rawPage, count: _pageCount);
 
-  /// Où est la carte, `null` quand le profil n'en a pas.
+  /// Où est la carte dans le défilement, `null` quand le profil n'en a pas.
   int? get _mapPage => _preset.mapPageIndex;
 
-  bool get _onMap => _mapPage != null && _page == _mapPage;
+  /// La carte est-elle sous les yeux ?
+  ///
+  /// **Une page du menu par-dessus suffit à répondre non**, et c'est le point de
+  /// passage obligé : occlusion de la page web, rétroéclairage, bandes de
+  /// changement de page et physique du défilement lisent tous ce prédicat. Sans
+  /// le voile ici, la carte continuerait d'animer sous une page opaque, et les
+  /// bandes des bords feraient défiler ce qu'on ne voit pas.
+  bool get _onMap => _menuPage == null && _mapPage != null && _page == _mapPage;
 
   /// L'habillage radar plein écran est-il posé ? Le capteur coupé le retire
   /// aussi : sans trame, la jauge et le cadre ne dessinent déjà rien, et le
@@ -220,6 +248,9 @@ class _RideShellPageState extends State<RideShellPage>
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     WidgetsBinding.instance.addObserver(this);
 
+    _ridePages = _preset.ridePages;
+    _menuPages = _preset.menuPages;
+
     _rawPage = rawPageOriginFor(_pageCount);
     _pages = PageController(initialPage: _rawPage);
 
@@ -259,6 +290,7 @@ class _RideShellPageState extends State<RideShellPage>
       hub: widget.hub,
       recorder: widget.recorder,
       riderProfile: widget.riderProfile,
+      trainingBudget: widget.trainingBudget,
       // Sans carte, aucune page ne publiera d'état : les mesures qui en
       // dépendent s'abstiennent au lieu d'attendre pour toujours.
       nav: _preset.hasMap ? _nav : null,
@@ -335,6 +367,16 @@ class _RideShellPageState extends State<RideShellPage>
         now: now,
       ),
     );
+
+    // Une alerte referme la page du menu, **avant** que la politique ne décide.
+    //
+    // Deux raisons, et la seconde est la plus fourbe : d'abord une page opaque
+    // en travers de la carte est exactement ce qu'un virage vient chercher.
+    // Ensuite, la politique juge sur `currentPage` : la page ouverte n'en est
+    // pas une, si bien qu'un virage annoncé alors qu'on lit son bilan au-dessus
+    // de la carte se serait lu « il est déjà sur la carte, rien à faire » — et
+    // le cycliste aurait manqué le virage devant un tableau de chiffres.
+    if (alert != RideAlert.none) _setMenuPage(null);
 
     final decision = _autoReturn.update(
       now: now,
@@ -422,6 +464,13 @@ class _RideShellPageState extends State<RideShellPage>
   /// rentrer — et que les premiers appuis rouvraient au passage les tracés de la
   /// sortie.
   Future<void> _handleBack() async {
+    // Une page ouverte depuis le menu se referme d'abord : elle recouvre tout le
+    // reste, et c'est de là qu'on s'est le plus éloigné.
+    if (_menuPage != null) {
+      _setMenuPage(null);
+      return;
+    }
+
     final home = _mapPage ?? 0;
     if (_page != home) {
       _goToPage(home);
@@ -484,13 +533,35 @@ class _RideShellPageState extends State<RideShellPage>
     _publishInsets();
   }
 
+  /// Ouvre ou referme une page rangée derrière le menu.
+  ///
+  /// Le seul endroit qui touche à [_menuPage], parce que ce n'est jamais le seul
+  /// effet : la carte passe sous une page opaque ou en ressort, et l'occlusion
+  /// de la page web comme le rétroéclairage se lisent tous deux de [_onMap].
+  /// Les répartir sur les appelants — le menu, le bouton fermer, le bouton
+  /// retour, l'alerte — reviendrait à en oublier un.
+  void _setMenuPage(int? index) {
+    if (_menuPage == index) return;
+
+    setState(() => _menuPage = index);
+    _web?.setOccluded(!_onMap);
+    _applyScreen(_screenPolicy.movedTo(onMap: _onMap));
+  }
+
   /// Emmène le cycliste sur une page nommée : pastille, bouton retour, retour
   /// automatique. Par le chemin le plus court dans la boucle, jamais par le tour
   /// complet.
-  void _goToPage(int page, {bool auto = false}) => _animateTo(
-        rawPageFor(page, from: _rawPage, count: _pageCount),
-        auto: auto,
-      );
+  ///
+  /// Referme au passage la page du menu : elle est opaque et par-dessus tout le
+  /// défilement, donc y « aller » sans la retirer ne changerait rien à l'écran —
+  /// c'est le cas d'une pastille du bandeau tapée depuis un bilan.
+  void _goToPage(int page, {bool auto = false}) {
+    _setMenuPage(null);
+    _animateTo(
+      rawPageFor(page, from: _rawPage, count: _pageCount),
+      auto: auto,
+    );
+  }
 
   /// Avance ou recule d'une page, sans se soucier de laquelle : c'est ce que
   /// demandent les bandes du bord, qui parlent en gestes et pas en destinations.
@@ -532,6 +603,8 @@ class _RideShellPageState extends State<RideShellPage>
   /// correspondant — ce qu'un navigateur ne sait pas faire lui-même.
   /// `nav` : où en est la navigation (virage, hors-trace, arrivée, col).
   /// `rider_profile` : les seuils du cycliste, relayés depuis le site.
+  /// `training_budget` : ce qu'il reste à faire aujourd'hui, et le plafond que la
+  /// fatigue autorise — calculés par le site, qui seul a l'historique.
   void _onPageMessage(Map<dynamic, dynamic> message) {
     switch (message['type']) {
       case 'ready':
@@ -540,6 +613,10 @@ class _RideShellPageState extends State<RideShellPage>
         _nav.accept(message);
       case 'rider_profile':
         widget.riderProfile.record(RiderProfile.fromJson(message['profile']));
+      case 'training_budget':
+        widget.trainingBudget.record(
+          TrainingBudget.fromJson(message['budget']),
+        );
       case 'screen':
         _applyScreen(
           _screenPolicy.pageRequested(message['state'] == 'dimmed'),
@@ -648,6 +725,29 @@ class _RideShellPageState extends State<RideShellPage>
                 ),
               ),
             ),
+            // La page ouverte depuis le menu, par-dessus le défilement et la
+            // carte.
+            //
+            // Dans la même pile et pas dans une route poussée : le bandeau, les
+            // jauges du radar, le cadre d'alerte et les mètres de l'encoche
+            // appartiennent à la coquille, et une route par-dessus les
+            // emporterait tous. On consulte un bilan **pendant une sortie** —
+            // une voiture qui remonte doit se voir de là comme d'ailleurs.
+            if (_menuPage case final index?)
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                bottom: bandHeight,
+                child: DashboardPage(
+                  page: _menuPages[index],
+                  sources: _sources,
+                  radar: _preset.sensors.radar ? _radar : null,
+                  // Ni liste de pages ni commandes : on referme pour retrouver
+                  // celles de la page d'où l'on vient. Cf. `DashboardPage.onClose`.
+                  onClose: () => _setMenuPage(null),
+                ),
+              ),
             // La page radar : le seul écran qui s'invite. Elle ne paraît que
             // pendant la veille, là où la page web est sous son voile noir et n'a
             // rien à dire d'une voiture qu'elle ne voit pas.
@@ -715,18 +815,22 @@ class _RideShellPageState extends State<RideShellPage>
     );
   }
 
-  /// La page d'un index du profil.
+  /// La page d'un index du défilement.
   ///
   /// La carte ne se dessine pas ici — elle est au fond de la pile, et cette
   /// entrée du `PageView` est donc transparente.
   Widget _pageAt(int index) {
-    final page = _preset.pages[index];
+    final page = _ridePages[index];
     if (page is MapPageSpec) return const SizedBox.shrink();
 
     return DashboardPage(
       page: page,
       sources: _sources,
       radar: _preset.sensors.radar ? _radar : null,
+      // Les pages rangées derrière le menu se retrouvent depuis n'importe
+      // laquelle : elles n'appartiennent à aucune en particulier.
+      menuPages: _menuPages,
+      onOpenMenuPage: _setMenuPage,
       // Sans carte, il n'y a aucune page à qui adresser un itinéraire : les deux
       // commandes disparaissent plutôt que de répondre « non ».
       onChooseRoute: _preset.hasMap ? _chooseRoute : null,

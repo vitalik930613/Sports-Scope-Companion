@@ -14,6 +14,7 @@ import 'package:sports_scope_companion/recording/ride_recorder.dart';
 import 'package:sports_scope_companion/recording/ride_store.dart';
 import 'package:sports_scope_companion/ride/blocks/metric_view.dart';
 import 'package:sports_scope_companion/ride/pages/dashboard_page.dart';
+import 'package:sports_scope_companion/training/training_budget_store.dart';
 
 /// Une page en grille, montée pour de vrai.
 ///
@@ -26,6 +27,7 @@ void main() {
   late SensorHub hub;
   late RideRecorder recorder;
   late RiderProfileStore profiles;
+  late TrainingBudgetStore budgets;
   late MetricSources sources;
 
   setUp(() async {
@@ -38,8 +40,14 @@ void main() {
       tickPeriod: const Duration(days: 1),
     );
     profiles = RiderProfileStore(File(p.join(root.path, 'profile.json')));
+    budgets = TrainingBudgetStore(File(p.join(root.path, 'budget.json')));
     sources =
-        MetricSources(hub: hub, recorder: recorder, riderProfile: profiles);
+        MetricSources(
+      hub: hub,
+      recorder: recorder,
+      riderProfile: profiles,
+      trainingBudget: budgets,
+    );
   });
 
   tearDown(() async {

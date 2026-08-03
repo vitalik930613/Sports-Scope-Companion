@@ -13,6 +13,7 @@ import 'package:sports_scope_companion/recording/gps_source.dart';
 import 'package:sports_scope_companion/recording/ride_recorder.dart';
 import 'package:sports_scope_companion/recording/ride_store.dart';
 import 'package:sports_scope_companion/ride/nav_state.dart';
+import 'package:sports_scope_companion/training/training_budget_store.dart';
 
 /// Le catalogue des mesures : le vocabulaire partagé avec le site.
 ///
@@ -25,6 +26,7 @@ void main() {
   late SensorHub hub;
   late RideRecorder recorder;
   late RiderProfileStore profile;
+  late TrainingBudgetStore budgets;
   late ValueNotifier<NavState?> nav;
   late MetricSources sources;
 
@@ -38,11 +40,13 @@ void main() {
       tickPeriod: const Duration(days: 1),
     );
     profile = RiderProfileStore(File(p.join(root.path, 'profile.json')));
+    budgets = TrainingBudgetStore(File(p.join(root.path, 'budget.json')));
     nav = ValueNotifier<NavState?>(null);
     sources = MetricSources(
       hub: hub,
       recorder: recorder,
       riderProfile: profile,
+      trainingBudget: budgets,
       nav: nav,
     );
   });
@@ -123,9 +127,10 @@ void main() {
       // Le profil home-trainer : pas de carte, donc pas de page pour publier un
       // état de navigation.
       orphan = MetricSources(
-        hub: hub,
-        recorder: recorder,
-        riderProfile: profile,
+      hub: hub,
+      recorder: recorder,
+      riderProfile: profile,
+      trainingBudget: budgets,
       );
     });
 

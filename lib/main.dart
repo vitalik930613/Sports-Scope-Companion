@@ -7,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import 'account/account_page.dart';
 import 'account/rider_profile_store.dart';
+import 'training/training_budget_store.dart';
 import 'account/site_session.dart';
 import 'account/threshold_gap.dart';
 import 'ble/sensor_hub.dart';
@@ -51,6 +52,10 @@ Future<void> main() async {
   // Les seuils du cycliste sont relus au démarrage : ils viennent du site, donc
   // une sortie lancée hors réseau n'aurait sinon aucune zone à afficher.
   final riderProfile = await RiderProfileStore.open();
+  // Le budget de charge est relu pour la même raison, et une de plus : c'est
+  // précisément la sortie qui part sans réseau — en montagne, un dimanche matin —
+  // où l'on se demande jusqu'où pousser.
+  final trainingBudget = await TrainingBudgetStore.open();
   // Et les itinéraires du compte, pour la même raison encore : on choisit son
   // tracé au départ, c'est-à-dire à l'endroit de la sortie où le réseau manque
   // le plus souvent.
@@ -64,6 +69,7 @@ Future<void> main() async {
     rides: rides,
     session: session,
     riderProfile: riderProfile,
+    trainingBudget: trainingBudget,
     routes: routes,
     settings: settings,
   ));
@@ -76,6 +82,7 @@ class SportsScopeApp extends StatefulWidget {
     required this.rides,
     required this.session,
     required this.riderProfile,
+    required this.trainingBudget,
     required this.routes,
     required this.settings,
   });
@@ -85,6 +92,11 @@ class SportsScopeApp extends StatefulWidget {
   final RouteCatalogStore routes;
   final SiteSession session;
   final RiderProfileStore riderProfile;
+
+  /// Le budget de charge, tenu à jour par la page de navigation comme les
+  /// seuils. Il appartient à l'application : une sortie ouverte par un lien
+  /// entrant doit trouver le même.
+  final TrainingBudgetStore trainingBudget;
 
   /// Les profils de sortie et celui qu'on a choisi.
   final CompanionSettingsStore settings;
@@ -197,6 +209,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
       compass: _compass,
       session: widget.session,
       riderProfile: widget.riderProfile,
+      trainingBudget: widget.trainingBudget,
       routes: widget.routes,
       settings: widget.settings,
       resume: _resume,
@@ -234,6 +247,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
         rides: widget.rides,
         session: widget.session,
         riderProfile: widget.riderProfile,
+        trainingBudget: widget.trainingBudget,
         routes: widget.routes,
         resume: _resume,
         updates: _updates,
@@ -256,6 +270,7 @@ Future<void> openNavigation(
   required RiderCompass compass,
   required SiteSession session,
   required RiderProfileStore riderProfile,
+  required TrainingBudgetStore trainingBudget,
   required RouteCatalogStore routes,
   required CompanionSettingsStore settings,
   required ValueNotifier<NavigationTarget?> resume,
@@ -297,6 +312,7 @@ Future<void> openNavigation(
         recorder: recorder,
         session: session,
         riderProfile: riderProfile,
+        trainingBudget: trainingBudget,
         routes: routes,
         // Ce que le tableau de bord mesure part au site au prochain
         // rafraîchissement : son éditeur cesse alors de supposer un téléphone.
@@ -407,6 +423,7 @@ class HomePage extends StatefulWidget {
     required this.rides,
     required this.session,
     required this.riderProfile,
+    required this.trainingBudget,
     required this.routes,
     required this.settings,
     required this.resume,
@@ -453,6 +470,10 @@ class HomePage extends StatefulWidget {
   /// depuis le site. Cet écran ne les affiche pas, il signale seulement ce qui
   /// leur manque pour que les zones du bandeau de sortie existent.
   final RiderProfileStore riderProfile;
+
+  /// Le budget de charge, transmis à la navigation qui le tient à jour depuis le
+  /// site. Cet écran ne l'affiche pas — un budget se lit en roulant, pas avant.
+  final TrainingBudgetStore trainingBudget;
 
   /// Le contrôle de mise à jour, interrogé une fois au lancement par
   /// l'application. Cet écran ne fait que montrer son résultat, quand il y en a
@@ -616,6 +637,7 @@ class _HomePageState extends State<HomePage> {
         compass: widget.compass,
         session: widget.session,
         riderProfile: widget.riderProfile,
+        trainingBudget: widget.trainingBudget,
         routes: widget.routes,
         settings: widget.settings,
         resume: widget.resume,

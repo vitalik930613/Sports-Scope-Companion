@@ -6,6 +6,7 @@ import '../account/rider_profile_store.dart';
 import '../ble/sensor_hub.dart';
 import '../recording/ride_recorder.dart';
 import '../ride/nav_state.dart';
+import '../training/training_budget_store.dart';
 import '../ui/formats.dart';
 
 /// Le catalogue des mesures affichables, et **le vocabulaire partagé avec le
@@ -291,6 +292,7 @@ class MetricSources {
     required this.hub,
     required this.recorder,
     required this.riderProfile,
+    required this.trainingBudget,
     this.nav,
   });
 
@@ -300,6 +302,11 @@ class MetricSources {
   /// Les seuils du cycliste, d'où sortent les zones. **Jamais une zone calculée
   /// sur un seuil par défaut** : sans seuil, la case l'annonce en toutes lettres.
   final RiderProfileStore riderProfile;
+
+  /// Le budget de charge, calculé par le site et poussé par la page de
+  /// navigation. Le magasin est toujours là ; c'est **son contenu** qui peut
+  /// manquer (compte tout neuf, jamais connecté), et le composant le dit.
+  final TrainingBudgetStore trainingBudget;
 
   /// Ce que la page web publie de la navigation. **Nul dans un profil sans
   /// carte** : il n'y a alors pas de page pour le dire, et les mesures qui en

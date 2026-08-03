@@ -85,13 +85,69 @@ class RidePreset {
   final LightingSettings lighting;
   final ScreenSettings screen;
 
-  /// Où se trouve la carte, `null` quand le profil n'en a pas.
+  /// Les pages qu'on fait défiler, dans l'ordre.
+  List<RidePageSpec> get ridePages {
+    final promoted = _promotedPage;
+    return [
+      for (final page in pages)
+        if (!page.menu || identical(page, promoted)) page,
+    ];
+  }
+
+  /// Les pages rangées derrière le menu d'actions.
+  ///
+  /// On va les chercher au lieu de tomber dessus : c'est ce qui rend tenable une
+  /// page qu'on ne lit **pas** en roulant — un bilan, des répartitions — sans la
+  /// mettre à un glissé de la carte.
+  List<RidePageSpec> get menuPages {
+    final promoted = _promotedPage;
+    return [
+      for (final page in pages)
+        if (page.menu && !identical(page, promoted)) page,
+    ];
+  }
+
+  /// La page rangée qu'on rend malgré tout au défilement, ou `null` — le cas
+  /// ordinaire.
+  ///
+  /// Une page rangée derrière le menu doit rester joignable, et il y faut une
+  /// page du défilement **qui ne soit pas la carte** : c'est l'en-tête d'une
+  /// page de données qui porte le menu, la carte n'en dessine pas (tout ce
+  /// qu'on y poserait volerait des pixels à ce qu'on y cherche). Deux façons de
+  /// se retrouver sans rien, donc, et la seconde est la sournoise :
+  ///
+  ///  • tout ranger derrière le menu — il ne resterait rien à faire défiler ;
+  ///  • ne laisser que la carte — le défilement existe, mais aucune de ses
+  ///    pages n'a de menu, et ce qu'on avait rangé n'est atteignable par aucun
+  ///    geste.
+  ///
+  /// Dans les deux cas, la première page rangée reprend sa place. Même règle
+  /// côté site (`keep_one_swipeable`), et un test de chaque côté.
+  RidePageSpec? get _promotedPage {
+    if (pages.any((page) => !page.menu && page is! MapPageSpec)) return null;
+
+    for (final page in pages) {
+      if (page.menu) return page;
+    }
+    // Rien de rangé : un profil qui n'a qu'une carte n'a rien à repêcher.
+    return null;
+  }
+
+  /// Où se trouve la carte **dans [ridePages]**, `null` quand le profil n'en a
+  /// pas.
   ///
   /// C'est ce qui remplace l'ancien « la carte est la page 0 » : elle se place
   /// où l'on veut, et un profil de home-trainer s'en passe complètement.
+  ///
+  /// L'index porte sur le défilement et non sur [pages] : c'est ce que
+  /// manipulent le `PageView`, les pastilles du bandeau et le retour
+  /// automatique. Une carte ne peut de toute façon pas être derrière le menu
+  /// ([MapPageSpec.menu] est faux par construction), les deux index ne
+  /// divergent donc que par les pages rangées avant elle.
   int? get mapPageIndex {
-    for (var i = 0; i < pages.length; i++) {
-      if (pages[i] is MapPageSpec) return i;
+    final swipe = ridePages;
+    for (var i = 0; i < swipe.length; i++) {
+      if (swipe[i] is MapPageSpec) return i;
     }
     return null;
   }
@@ -166,18 +222,31 @@ class RidePreset {
 /// consulte à l'arrêt et peut être longue.
 @immutable
 sealed class RidePageSpec {
-  const RidePageSpec({required this.title});
+  const RidePageSpec({required this.title, this.menu = false});
 
   final String title;
+
+  /// Rangée derrière le menu d'actions plutôt que dans le défilement.
+  ///
+  /// **Faux par défaut, y compris quand la clé manque** : un document plus
+  /// ancien que l'appli garde ses pages là où elles étaient, et une appli plus
+  /// ancienne qu'un document ignore la clé et les montre toutes. L'erreur va
+  /// donc toujours vers « visible », jamais vers « introuvable » — c'est le seul
+  /// sens acceptable pour une page qu'on aurait composée exprès.
+  final bool menu;
 
   static RidePageSpec? parse(Object? raw) {
     if (raw is! Map) return null;
     final title = raw['title'] is String ? raw['title'] as String : null;
+    final menu = raw['menu'] == true;
 
     return switch (raw['kind']) {
+      // Jamais derrière le menu, et pas par oubli : la carte est le WebView
+      // peint au fond de la pile pour toute la sortie, pas une page qu'on ouvre
+      // et qu'on referme.
       'map' => const MapPageSpec(),
-      'grid' => GridPageSpec.parse(raw, title: title),
-      'list' => ListPageSpec.parse(raw, title: title),
+      'grid' => GridPageSpec.parse(raw, title: title, menu: menu),
+      'list' => ListPageSpec.parse(raw, title: title, menu: menu),
       _ => null,
     };
   }
@@ -204,6 +273,7 @@ class GridPageSpec extends RidePageSpec {
     required this.rows,
     required this.cols,
     required this.cells,
+    super.menu,
   });
 
   final int rows;
@@ -217,7 +287,11 @@ class GridPageSpec extends RidePageSpec {
   /// en roulant — c'est la même raison qui borne le bandeau à quatre cases.
   static const maxSide = 6;
 
-  static GridPageSpec? parse(Map<dynamic, dynamic> raw, {String? title}) {
+  static GridPageSpec? parse(
+    Map<dynamic, dynamic> raw, {
+    String? title,
+    bool menu = false,
+  }) {
     final rows = _side(raw['rows']);
     final cols = _side(raw['cols']);
 
@@ -242,6 +316,7 @@ class GridPageSpec extends RidePageSpec {
       rows: rows,
       cols: cols,
       cells: cells,
+      menu: menu,
     );
   }
 
@@ -268,17 +343,25 @@ class GridCell {
 /// La page qui défile, celle d'aujourd'hui : une pile de blocs qu'on consulte à
 /// l'arrêt d'un col ou au feu rouge.
 class ListPageSpec extends RidePageSpec {
-  const ListPageSpec({required super.title, required this.blocks});
+  const ListPageSpec({
+    required super.title,
+    required this.blocks,
+    super.menu,
+  });
 
   final List<DashboardBlock> blocks;
 
-  static ListPageSpec? parse(Map<dynamic, dynamic> raw, {String? title}) {
+  static ListPageSpec? parse(
+    Map<dynamic, dynamic> raw, {
+    String? title,
+    bool menu = false,
+  }) {
     final blocks = [
       for (final entry in (raw['blocks'] is List ? raw['blocks'] as List : []))
         if (DashboardBlock.parse(entry) case final block?) block,
     ];
     if (blocks.isEmpty) return null;
-    return ListPageSpec(title: title ?? 'Sortie', blocks: blocks);
+    return ListPageSpec(title: title ?? 'Sortie', blocks: blocks, menu: menu);
   }
 }
 

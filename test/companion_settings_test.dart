@@ -221,6 +221,112 @@ void main() {
     });
   });
 
+  group('les pages rangées derrière le menu', () {
+    /// Une page qui défile, nommée, éventuellement rangée derrière le menu.
+    Map<String, dynamic> listPage(String title, {bool menu = false}) => {
+          'kind': 'list',
+          'title': title,
+          'blocks': [
+            {'kind': 'recording'},
+          ],
+          if (menu) 'menu': true,
+        };
+
+    RidePreset presetOf(List<Object> pages) => parse({
+          'presets': [
+            preset({'pages': pages}),
+          ],
+        }).presets.single;
+
+    test('la clé absente laisse la page dans le défilement', () {
+      // Le sens qui compte : un document plus ancien que l'appli garde ses pages
+      // là où elles étaient. L'erreur va vers « visible », jamais vers
+      // « introuvable ».
+      final ride = presetOf([listPage('Effort')]);
+
+      expect(ride.ridePages, hasLength(1));
+      expect(ride.menuPages, isEmpty);
+    });
+
+    test('une page rangée sort du défilement sans disparaître', () {
+      final ride = presetOf([
+        {'kind': 'map'},
+        listPage('Effort'),
+        listPage('Bilan', menu: true),
+      ]);
+
+      expect(ride.pages, hasLength(3), reason: 'la page rangée est perdue');
+      expect(ride.ridePages.map((page) => page.title), ['Carte', 'Effort']);
+      expect(ride.menuPages.map((page) => page.title), ['Bilan']);
+    });
+
+    test('l\'index de la carte porte sur le défilement, pas sur les pages', () {
+      // C'est ce que manipulent le PageView, les pastilles du bandeau et le
+      // retour automatique. Une page rangée avant la carte décale les deux index
+      // l'un par rapport à l'autre, et confondre les deux amènerait sur la page
+      // d'à côté — au moment précis d'un virage.
+      final ride = presetOf([
+        listPage('Bilan', menu: true),
+        {'kind': 'map'},
+        listPage('Effort'),
+      ]);
+
+      expect(ride.pages, hasLength(3));
+      expect(ride.mapPageIndex, 0, reason: 'l\'index porte encore sur pages');
+      expect(ride.ridePages[ride.mapPageIndex!], isA<MapPageSpec>());
+    });
+
+    test('tout ranger derrière le menu rend la première au défilement', () {
+      // Sinon il ne resterait rien à faire défiler, donc aucune page où le menu
+      // s'ouvre, donc plus rien du tout : l'écran noir que tout le reste de ce
+      // fichier s'emploie à éviter.
+      final ride = presetOf([
+        listPage('Bilan', menu: true),
+        listPage('Répartitions', menu: true),
+      ]);
+
+      expect(ride.ridePages.map((page) => page.title), ['Bilan']);
+      expect(ride.menuPages.map((page) => page.title), ['Répartitions'],
+          reason: 'la page repêchée figure des deux côtés');
+    });
+
+    test('une carte seule ne peut pas porter le menu', () {
+      // Le piège de cette règle : le défilement n'est pas vide, mais la carte ne
+      // dessine aucun en-tête — donc aucun menu. Le bilan serait là, décodé,
+      // et atteignable par aucun geste. Il reprend donc sa place.
+      final ride = presetOf([
+        {'kind': 'map'},
+        listPage('Bilan', menu: true),
+      ]);
+
+      expect(ride.ridePages.map((page) => page.title), ['Carte', 'Bilan']);
+      expect(ride.menuPages, isEmpty);
+    });
+
+    test('une page de données de plus suffit à porter le menu', () {
+      final ride = presetOf([
+        {'kind': 'map'},
+        listPage('Effort'),
+        listPage('Bilan', menu: true),
+      ]);
+
+      expect(ride.ridePages.map((page) => page.title), ['Carte', 'Effort']);
+      expect(ride.menuPages.map((page) => page.title), ['Bilan']);
+    });
+
+    test('une carte ne se range jamais derrière le menu', () {
+      // Le WebView est peint au fond de la pile pour toute la sortie : ce n'est
+      // pas une page qu'on ouvre et qu'on referme.
+      final ride = presetOf([
+        {'kind': 'map', 'menu': true},
+        listPage('Effort'),
+      ]);
+
+      expect(ride.menuPages, isEmpty);
+      expect(ride.mapPageIndex, 0);
+    });
+  });
+
   group('les composants', () {
     test('un mode inconnu retombe sur le mode par défaut', () {
       // Le site peut être plus récent que l'appli. Une page qui refuserait de se

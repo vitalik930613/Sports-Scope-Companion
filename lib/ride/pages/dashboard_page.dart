@@ -10,6 +10,7 @@ import '../blocks/metric_view.dart';
 import '../blocks/nav_state_block.dart';
 import '../blocks/radar_block.dart';
 import '../blocks/recording_block.dart';
+import '../blocks/training_budget_block.dart';
 import '../blocks/zones_block.dart';
 import '../nav_state.dart';
 import '../radar_severity.dart';
@@ -31,6 +32,9 @@ class DashboardPage extends StatelessWidget {
     required this.page,
     required this.sources,
     this.radar,
+    this.menuPages = const [],
+    this.onOpenMenuPage,
+    this.onClose,
     this.onChooseRoute,
     this.onClearRoute,
     this.onCalibratePower,
@@ -46,6 +50,28 @@ class DashboardPage extends StatelessWidget {
 
   /// Nul quand le profil a coupé le radar.
   final ValueListenable<RadarView>? radar;
+
+  /// Les pages que le profil range derrière le menu, dans son ordre.
+  ///
+  /// Elles s'ajoutent en tête des actions : ce sont les seules qu'on vienne
+  /// chercher pour *regarder* quelque chose, les autres commandes agissent. Une
+  /// page qu'on a ouverte depuis là n'en reçoit pas la liste — on referme avant
+  /// d'en ouvrir une autre, plutôt que d'empiler des pages qu'on quitte ensuite
+  /// une par une, en roulant.
+  final List<RidePageSpec> menuPages;
+
+  /// Ouvrir la n-ième de [menuPages]. Confiée à la coquille, qui possède la pile
+  /// et sait la refermer sur une alerte.
+  final ValueChanged<int>? onOpenMenuPage;
+
+  /// Refermer cette page pour retrouver le défilement.
+  ///
+  /// Non nulle **seulement** sur une page ouverte depuis le menu, et c'est ce
+  /// qui distingue les deux usages : une page du défilement se quitte au glissé,
+  /// celle-ci n'a aucun voisin. Sans ce bouton, la seule sortie serait le bouton
+  /// retour du téléphone — invisible en immersif, et le dernier geste qu'on
+  /// cherche à tâtons sur un guidon.
+  final VoidCallback? onClose;
 
   /// Changer de tracé, ou retirer celui qu'on suit. Confiés à la coquille, qui
   /// possède le WebView : la page ne sait pas naviguer, elle sait demander.
@@ -201,6 +227,12 @@ class DashboardPage extends StatelessWidget {
           NavStateCard(nav: sources.nav, mode: nav.mode),
         final RadarBlock radarBlock =>
           RadarBlockView(radar: radar, mode: radarBlock.mode),
+        final TrainingBudgetBlock budget => TrainingBudgetCard(
+            budgets: sources.trainingBudget,
+            recorder: sources.recorder,
+            riderProfile: sources.riderProfile,
+            mode: budget.mode,
+          ),
         EmptyBlock() => const SizedBox.shrink(),
       };
 
@@ -233,7 +265,17 @@ class DashboardPage extends StatelessWidget {
             ),
           ),
         ),
-        if (onChooseRoute != null ||
+        // Sur une page ouverte depuis le menu : la seule commande est d'en
+        // sortir. Pas de menu d'actions par-dessus — on referme d'abord, et la
+        // page qu'on retrouve porte tout le reste.
+        if (onClose case final close?)
+          IconButton(
+            onPressed: close,
+            icon: const Icon(Icons.close, color: Colors.white70),
+            tooltip: 'Fermer',
+          )
+        else if (menuPages.isNotEmpty ||
+            onChooseRoute != null ||
             onClearRoute != null ||
             onCalibratePower != null ||
             onLeaveRide != null)
@@ -272,6 +314,26 @@ class DashboardPage extends StatelessWidget {
         tooltip: 'Actions',
         onSelected: (action) => action(),
         itemBuilder: (context) => [
+          // Les pages rangées ici d'abord, et séparées de ce qui suit : ce sont
+          // les seules entrées qui ouvrent quelque chose à regarder, les autres
+          // agissent sur la sortie. Le titre du profil sert de libellé — c'est
+          // celui qu'on a écrit dans l'éditeur, donc celui qu'on cherche.
+          if (onOpenMenuPage case final open?) ...[
+            for (final (index, menuPage) in menuPages.indexed)
+              PopupMenuItem(
+                value: () => open(index),
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    menuPage is GridPageSpec
+                        ? Icons.grid_view
+                        : Icons.view_agenda_outlined,
+                  ),
+                  title: Text(menuPage.title),
+                ),
+              ),
+            if (menuPages.isNotEmpty) const PopupMenuDivider(),
+          ],
           if (onChooseRoute case final choose?)
             PopupMenuItem(
               value: choose,

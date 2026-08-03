@@ -51,6 +51,7 @@ lib/
   phone/                 # capteurs du téléphone : baromètre, lumière, boussole
   recording/             # enregistreur, magasin de sorties, agrégats, .fit
   ride/                  # le tableau de bord de sortie (la coquille, ses pages, ses blocs)
+  training/              # le budget de charge du jour (calculé par le site) + le TSS de la sortie
   ui/                    # tuiles et formats partagés entre écrans
   update/                # « une version plus récente existe » (diffusion hors Play Store)
 assets/sounds/           # tonalités d'alerte radar — GÉNÉRÉES, ne pas éditer
@@ -302,6 +303,40 @@ garanties de `CompanionSettings.parse`, chacune gardée par un test :
 Le menu d'actions, lui, **n'est pas configurable** et reste sur chaque page de
 données : c'est le seul chemin nommé pour sortir d'une sortie, et un profil mal
 composé ne doit pas pouvoir enfermer le cycliste dans son propre tableau de bord.
+
+### Le budget de charge (`lib/training/`)
+
+Le composant `training_budget` est **le seul dont la donnée ne vient pas des
+capteurs**. Il répond à la question à laquelle aucun capteur ne répond — *je
+continue ou je rentre ?* — et pour ça il faut l'historique complet des sorties,
+l'objectif d'entraînement et la cible de la semaine, que le téléphone n'a pas.
+
+Le calcul reste donc **sur le site**, dans `useTrainingPlan.ts`, celui-là même qui
+alimente la page Performances. En refaire une version ici donnerait deux plafonds
+pour un athlète, et le second à se tromper serait celui qu'on lit en roulant —
+c'est-à-dire celui sur lequel on décide. Le chemin :
+
+`useTrainingPlan.budget` → `pushTrainingBudget()` (message `training_budget` du
+pont) → `RideShellPage._onPageMessage` → `TrainingBudgetStore` (disque) →
+`TrainingBudgetCard`.
+
+Trois choses à ne pas défaire :
+
+- **Le budget se périme, contrairement aux seuils.** Un seuil cardiaque de la
+  semaine dernière reste vrai ; un « déjà fait aujourd'hui » de la semaine
+  dernière, non. D'où la date que porte le document : le composant la compare au
+  jour courant et l'écrit dans son titre (« Aujourd'hui · au 1/8 ») plutôt que de
+  faire passer un budget d'avant-hier pour celui du jour.
+- **Le TSS de la sortie en cours est calculé ici**, par `rideTss` — le site ne l'a
+  pas, elle ne sera téléversée qu'une fois rentré. La cascade est la même que la
+  sienne (`TrainingLoad.activity_tss`) : puissance normalisée sur FTP, puis cardio
+  moyen sur seuil, puis l'intensité par défaut du vélo. Ce dernier repli n'est pas
+  un luxe : sans lui, un cycliste sans capteur verrait une jauge qui ne bouge
+  jamais alors que sa sortie sera bel et bien comptée.
+- **Un profil sans carte n'en recevra jamais** : c'est la page de navigation qui
+  le pousse. Le composant le dit en toutes lettres au lieu d'afficher des zéros,
+  qui se liraient « repos complet » — c'est-à-dire un conseil que personne n'a
+  donné.
 
 ### Le transport, et le cache
 
