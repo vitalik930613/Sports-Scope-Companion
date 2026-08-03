@@ -93,7 +93,9 @@ class DashboardPage extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _header(),
-              const SizedBox(height: 16),
+              // Moins d'écart qu'avant : un titre discret n'a pas besoin d'être
+              // détaché de ce qu'il nomme, et cette page ne doit pas défiler.
+              const SizedBox(height: 8),
               Expanded(child: _body()),
             ],
           ),
@@ -209,6 +211,13 @@ class DashboardPage extends StatelessWidget {
   ///
   /// Ici et pas sur la carte : la carte est faite pour être regardée en roulant,
   /// et tout ce qu'on y pose vole des pixels à ce qu'on y cherche.
+  ///
+  /// **Discret, et plus petit que ce qu'il surplombe.** Il était à 26 gras et
+  /// blanc, soit le plus gros texte de la page — plus gros que les chiffres du
+  /// bandeau, qui sont pourtant ce qu'on lit à 30 km/h. Or on ne consulte jamais
+  /// un titre : on sait sur quelle page on vient de glisser, il ne fait que la
+  /// nommer. Il se lit donc comme une étiquette, du même gris que les titres de
+  /// cartes, et rend ses pixels à la grille.
   Widget _header() {
     return Row(
       children: [
@@ -218,8 +227,8 @@ class DashboardPage extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              color: Colors.white,
-              fontSize: 26,
+              color: Colors.white70,
+              fontSize: 18,
               fontWeight: FontWeight.w600,
             ),
           ),
