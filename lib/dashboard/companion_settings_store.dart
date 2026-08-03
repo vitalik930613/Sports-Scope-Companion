@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
@@ -48,8 +49,23 @@ class CompanionSettingsStore extends ChangeNotifier {
   CompanionSettings _settings = CompanionSettings.fallback;
   String? _selectedKey;
   DateTime? _updatedAt;
+  Size? _grid;
 
   CompanionSettings get settings => _settings;
+
+  /// La place qu'une page de grille a **réellement** eue sur cet écran, en
+  /// pixels logiques. `null` tant qu'aucune n'a été posée.
+  ///
+  /// Envoyée au site au prochain rafraîchissement : son éditeur compose en
+  /// lignes et en colonnes, alors que ce qui décide de ce qu'un composant peut y
+  /// dessiner, ce sont des pixels — et il n'en savait rien. Il supposait donc un
+  /// téléphone de référence, ce qui rend un avertissement plausible plutôt que
+  /// vrai.
+  ///
+  /// Rangée ici et non dans un magasin à part : c'est le même sujet que les
+  /// profils, elle part avec la même requête, et deux nombres ne valent pas un
+  /// second fichier à ouvrir au lancement.
+  Size? get grid => _grid;
 
   /// Le profil de la sortie. Jamais nul : à défaut de choix, ou si le site a
   /// supprimé celui qu'on avait retenu, c'est le premier de la liste.
@@ -75,6 +91,7 @@ class CompanionSettingsStore extends ChangeNotifier {
           _settings = CompanionSettings.parse(_document);
           _selectedKey = decoded['selected'] as String?;
           _updatedAt = DateTime.tryParse(decoded['updated_at'] as String? ?? '');
+          _grid = _sizeOf(decoded['grid']);
         }
       }
     } catch (e) {
@@ -106,6 +123,24 @@ class CompanionSettingsStore extends ChangeNotifier {
     await _write();
   }
 
+  /// Ce qu'une page de grille vient de mesurer.
+  ///
+  /// **Ne prévient personne** : rien à l'écran n'en dépend, et c'est la mise en
+  /// page elle-même qui appelle — la prévenir reviendrait à lui demander de se
+  /// reconstruire pendant qu'elle se pose.
+  ///
+  /// Arrondie au pixel et comparée avant d'écrire : la valeur ne bouge qu'au
+  /// changement de téléphone, et une page qui se repose à chaque virage n'a pas
+  /// à réécrire un fichier pour deux nombres identiques.
+  Future<void> recordGrid(Size size) async {
+    final rounded =
+        Size(size.width.roundToDouble(), size.height.roundToDouble());
+    if (rounded == _grid || rounded.isEmpty) return;
+
+    _grid = rounded;
+    await _write();
+  }
+
   /// Le cycliste choisit son profil.
   ///
   /// La clé est gardée telle quelle, même si elle ne désigne rien : le site peut
@@ -118,6 +153,18 @@ class CompanionSettingsStore extends ChangeNotifier {
     await _write();
   }
 
+  /// Une taille relue du cache. Tolérante, comme tout ce qui rentre : un cache
+  /// écrit par une version qui ne connaissait pas encore cette clé ne doit pas
+  /// faire perdre les profils qui l'accompagnent.
+  static Size? _sizeOf(Object? raw) {
+    if (raw is! Map) return null;
+    final width = raw['width'];
+    final height = raw['height'];
+    if (width is! num || height is! num) return null;
+    if (width <= 0 || height <= 0) return null;
+    return Size(width.toDouble(), height.toDouble());
+  }
+
   Future<void> _write() async {
     try {
       await _file.parent.create(recursive: true);
@@ -127,6 +174,8 @@ class CompanionSettingsStore extends ChangeNotifier {
           'document': _document,
           'selected': _selectedKey,
           'updated_at': _updatedAt?.toIso8601String(),
+          if (_grid case final grid?)
+            'grid': {'width': grid.width, 'height': grid.height},
         }),
         flush: true,
       );

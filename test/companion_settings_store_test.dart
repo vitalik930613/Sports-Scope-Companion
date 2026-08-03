@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
@@ -151,6 +152,60 @@ void main() {
     await store.load();
 
     expect(store.preset.key, RidePreset.builtIn.key);
+  });
+
+  group('la taille de grille mesurée', () {
+    // Le site compose en lignes et en colonnes, mais ce qui décide de ce qu'un
+    // composant peut y dessiner, ce sont des pixels. Tant que personne ne les
+    // lui dit, il suppose un téléphone de référence.
+    test('rien tant qu\'aucune page de grille n\'a été posée', () async {
+      expect(CompanionSettingsStore(file).grid, isNull);
+    });
+
+    test('elle survit au redémarrage, avec les profils', () async {
+      final store = CompanionSettingsStore(file);
+      await store.record(document());
+      await store.recordGrid(const Size(328, 598));
+
+      final reopened = CompanionSettingsStore(file);
+      await reopened.load();
+
+      expect(reopened.grid, const Size(328, 598));
+      expect(reopened.settings.presets, hasLength(2));
+    });
+
+    test('arrondie au pixel, et réécrite seulement si elle change', () async {
+      final store = CompanionSettingsStore(file);
+      await store.recordGrid(const Size(327.6, 598.2));
+      expect(store.grid, const Size(328, 598));
+
+      // Une page se repose à chaque virage : réécrire un fichier pour deux
+      // nombres identiques ne sert personne.
+      final written = await file.lastModified();
+      await store.recordGrid(const Size(328.4, 597.9));
+      expect(await file.lastModified(), written);
+    });
+
+    test('une taille vide n\'est pas une mesure', () async {
+      // Ce que rend une mise en page pas encore posée. La retenir ferait
+      // annoncer au site une grille de zéro pixel, qu'il croirait.
+      final store = CompanionSettingsStore(file);
+      await store.recordGrid(Size.zero);
+
+      expect(store.grid, isNull);
+    });
+
+    test('un cache écrit avant cette clé se relit sans elle', () async {
+      // Le cas de la mise à jour : les profils reçus la veille doivent survivre
+      // à une version qui ne connaissait pas encore la mesure.
+      await file.writeAsString(jsonEncode({'document': document()}));
+
+      final store = CompanionSettingsStore(file);
+      await store.load();
+
+      expect(store.grid, isNull);
+      expect(store.settings.presets, hasLength(2));
+    });
   });
 
   test('le document est gardé brut, pas le modèle décodé', () async {

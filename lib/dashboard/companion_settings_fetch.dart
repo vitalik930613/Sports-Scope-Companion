@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -20,7 +21,11 @@ Future<void> refreshCompanionSettings(
   CompanionSettingsStore store, {
   CompanionSettingsFetch fetch = const CompanionSettingsFetch(),
 }) async {
-  final result = await fetch.run();
+  // La taille mesurée part avec la requête qu'on faisait de toute façon. Aucune
+  // n'existe avant qu'une page de grille ait été posée une première fois : le
+  // site le sait, et annonce alors un téléphone ordinaire plutôt que de
+  // prétendre connaître celui-ci.
+  final result = await fetch.run(grid: store.grid);
   if (result.status != SettingsFetchStatus.ok) return;
   await store.record(result.document);
 }
@@ -100,7 +105,7 @@ class CompanionSettingsFetch {
         try { $_channel.postMessage(JSON.stringify(payload)); } catch (e) {}
       };
       try {
-        fetch('/api/companion_settings', {
+        fetch('/api/companion_settings__QUERY__', {
           credentials: 'same-origin',
           cache: 'no-store',
           headers: { 'Accept': 'application/json' }
@@ -121,7 +126,22 @@ class CompanionSettingsFetch {
     })();
   ''';
 
-  Future<SettingsFetchResult> run() async {
+  /// Le script, la taille de grille déjà écrite dedans.
+  ///
+  /// Interpolée plutôt que passée en argument : `runJavaScript` n'exécute qu'une
+  /// chaîne. Elle ne vient d'aucune saisie — deux entiers arrondis par
+  /// [CompanionSettingsStore.recordGrid] — et la requête part sans elle tant
+  /// qu'aucune page n'a été mesurée.
+  static String _scriptFor(Size? grid) {
+    final query = grid == null
+        ? ''
+        : '?grid=${grid.width.round()}x${grid.height.round()}';
+    return _script.replaceAll('__QUERY__', query);
+  }
+
+  /// [grid] : ce que le tableau de bord a mesuré, s'il a déjà été affiché.
+  Future<SettingsFetchResult> run({Size? grid}) async {
+    final script = _scriptFor(grid);
     final answer = Completer<SettingsFetchResult>();
     late final WebViewController controller;
     Timer? retries;
@@ -133,7 +153,7 @@ class CompanionSettingsFetch {
     }
 
     void ask() {
-      controller.runJavaScript(_script).catchError((Object e) {
+      controller.runJavaScript(script).catchError((Object e) {
         debugPrint('[profils] script refusé : $e');
       });
     }

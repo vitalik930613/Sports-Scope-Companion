@@ -69,6 +69,7 @@ class RideShellPage extends StatefulWidget {
     required this.session,
     required this.riderProfile,
     required this.routes,
+    this.onGridMeasured,
     this.baseUrl = sportsScopeBaseUrl,
   });
 
@@ -105,6 +106,12 @@ class RideShellPage extends StatefulWidget {
   /// ici : l'appli n'a aucun identifiant à présenter, elle ne peut pas les
   /// demander elle-même.
   final RiderProfileStore riderProfile;
+
+  /// La place qu'une page de grille a réellement eue sur cet écran. Transmise
+  /// telle quelle au magasin des profils, qui l'annonce au site au prochain
+  /// rafraîchissement : l'éditeur y dimensionne ses aperçus, et supposait
+  /// jusque-là un téléphone de référence.
+  final ValueChanged<Size>? onGridMeasured;
 
   final String baseUrl;
 
@@ -716,6 +723,7 @@ class _RideShellPageState extends State<RideShellPage>
       onCalibratePower:
           powerCalibrationAvailable(widget.hub) ? _calibratePower : null,
       onLeaveRide: _leaveRide,
+      onGridMeasured: widget.onGridMeasured,
     );
   }
 

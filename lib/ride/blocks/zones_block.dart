@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../account/rider_profile_store.dart';
+import '../../dashboard/block_density.dart';
 import '../../dashboard/dashboard_block.dart';
 import '../../recording/ride_recorder.dart';
 import '../../recording/ride_stats.dart';
@@ -162,77 +163,100 @@ class ZoneBreakdown extends StatelessWidget {
   /// La barre garde toute son information même sans légende — c'est ce qui
   /// permet à un profil de la poser dans une cellule de grille, où les cinq à
   /// sept lignes de la légende ne tiendraient pas.
+  ///
+  /// C'est un **plafond** : dans une case trop petite, la légende est retirée
+  /// même si le profil la demandait (cf. [BlockMetrics.legendFits]).
   final ZonesMode mode;
-
-  /// Hauteur de la barre. Généreuse : c'est aussi la surface de lecture des
-  /// couleurs, et un liseré de 6 pt ne se distingue plus sous la pluie.
-  static const _barHeight = 22.0;
 
   @override
   Widget build(BuildContext context) {
-    final drawn = [
-      for (final share in shares)
-        if (share.share > 0) share,
-    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final metrics = BlockMetrics.of(constraints);
+        final drawn = [
+          for (final share in shares)
+            if (share.share > 0) share,
+        ];
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: BlockCard.background,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: Colors.white70, fontSize: 13),
+        // Ce que le profil demande, puis ce que la case permet. La légende part
+        // la première : une proportion se lit dans une longueur partagée, donc
+        // la barre survit à des tailles où le tableau ne se lirait plus.
+        var withBar = mode != ZonesMode.legend;
+        final withLegend = mode != ZonesMode.barOnly &&
+            metrics.legendFits(
+              constraints.maxHeight,
+              width: constraints.maxWidth,
+              zones: shares.length,
+              withBar: withBar,
+            );
+
+        // Le mode `legend` suppose que la barre est ailleurs sur la page. Si sa
+        // légende ne tient pas, mieux vaut la redire en barre — éventuellement
+        // deux fois — que de rendre une carte vide : le doublon se voit et se
+        // corrige, la case vide se lit comme une panne.
+        if (!withLegend) withBar = true;
+
+        return BlockSurface(
+          metrics: metrics,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (metrics.showTitle) ...[
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: metrics.titleSize,
+                  ),
+                ),
+                SizedBox(height: metrics.gap),
+              ],
+              if (withBar)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: SizedBox(
+                    height: metrics.barHeight,
+                    // Les parts sont converties en poids entiers : un `Expanded`
+                    // ne prend qu'un `flex` entier, et arrondir au pour mille
+                    // garde une zone d'une seconde visible sur une sortie de
+                    // trois heures.
+                    child: Row(
+                      children: [
+                        for (final share in drawn)
+                          Expanded(
+                            flex: (share.share * 1000).round().clamp(1, 1000),
+                            child: ColoredBox(
+                              color: zoneColorOf(share.key) ?? Colors.white24,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              if (withLegend) ...[
+                if (withBar) SizedBox(height: metrics.gap),
+                // Toutes les zones sont listées, y compris celles à zéro : une
+                // zone absente de la légende se lirait comme une zone qui
+                // n'existe pas, alors que c'est une zone qu'on n'a pas touchée —
+                // l'information est exactement l'inverse.
+                for (final share in shares)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: _ZoneLine(
+                      share: share,
+                      current: share.key == current,
+                      currentIcon: currentIcon,
+                      metrics: metrics,
+                    ),
+                  ),
+              ],
+            ],
           ),
-          if (mode != ZonesMode.legend) ...[
-            const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: SizedBox(
-                height: _barHeight,
-                // Les parts sont converties en poids entiers : un `Expanded` ne
-                // prend qu'un `flex` entier, et arrondir au pour mille garde une
-                // zone d'une seconde visible sur une sortie de trois heures.
-                child: Row(
-                  children: [
-                    for (final share in drawn)
-                      Expanded(
-                        flex: (share.share * 1000).round().clamp(1, 1000),
-                        child: ColoredBox(
-                          color: zoneColorOf(share.key) ?? Colors.white24,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-          if (mode != ZonesMode.barOnly) ...[
-            const SizedBox(height: 12),
-            // Toutes les zones sont listées, y compris celles à zéro : une zone
-            // absente de la légende se lirait comme une zone qui n'existe pas,
-            // alors que c'est une zone qu'on n'a pas touchée — l'information est
-            // exactement l'inverse.
-            for (final share in shares)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: _ZoneLine(
-                  share: share,
-                  current: share.key == current,
-                  currentIcon: currentIcon,
-                ),
-              ),
-          ],
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -241,6 +265,7 @@ class _ZoneLine extends StatelessWidget {
   const _ZoneLine({
     required this.share,
     required this.currentIcon,
+    required this.metrics,
     this.current = false,
   });
 
@@ -250,6 +275,11 @@ class _ZoneLine extends StatelessWidget {
   final bool current;
 
   final IconData currentIcon;
+
+  /// Les tailles de la case. La légende n'apparaît que là où elle tient en
+  /// entier, mais elle y tient à des tailles différentes : une page qui défile
+  /// n'a pas les mêmes qu'une demi-grille.
+  final BlockMetrics metrics;
 
   @override
   Widget build(BuildContext context) {
@@ -297,7 +327,7 @@ class _ZoneLine extends StatelessWidget {
             share.key.toUpperCase(),
             style: TextStyle(
               color: ink,
-              fontSize: 15,
+              fontSize: metrics.lineSize,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -306,7 +336,7 @@ class _ZoneLine extends StatelessWidget {
             formatDuration(share.time),
             style: TextStyle(
               color: ink,
-              fontSize: 15,
+              fontSize: metrics.lineSize,
               fontFeatures: const [FontFeature.tabularFigures()],
             ),
           ),
@@ -318,7 +348,7 @@ class _ZoneLine extends StatelessWidget {
               textAlign: TextAlign.right,
               style: TextStyle(
                 color: faded,
-                fontSize: 14,
+                fontSize: metrics.lineSize - 1,
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),

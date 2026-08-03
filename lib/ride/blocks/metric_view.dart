@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../dashboard/block_density.dart';
 import '../../dashboard/dashboard_block.dart';
 import '../../dashboard/metric_id.dart';
 import '../../ui/zone_colors.dart';
@@ -16,6 +17,11 @@ import 'block_card.dart';
 ///
 /// **Un tiret quand la mesure manque, jamais un zéro** — la règle du dépôt : un
 /// zéro se lit comme une mesure, alors qu'un capteur muet ne mesure rien.
+///
+/// Le mode demandé est un **plafond** : dans une case trop petite pour ce qu'il
+/// suppose, on retire l'icône, puis l'unité, puis la jauge elle-même (cf.
+/// [BlockMetrics]). Le chiffre, lui, ne part jamais — c'est ce qu'on est venu
+/// lire.
 class MetricView extends StatelessWidget {
   const MetricView({
     super.key,
@@ -34,26 +40,46 @@ class MetricView extends StatelessWidget {
   /// dans un menu deux pages plus loin.
   final VoidCallback? onTap;
 
+  /// La hauteur que prend le chiffre dans une page qui défile, où il n'y a
+  /// aucune case pour la lui donner. Celle d'une cellule de grille confortable :
+  /// une mesure posée dans une liste doit se lire comme une mesure posée dans
+  /// une grille.
+  static const _unboundedValueHeight = 72.0;
+
   @override
   Widget build(BuildContext context) {
-    final content = ListenableBuilder(
-      listenable: Listenable.merge(metric.dependencies(sources)),
-      builder: (context, _) => _paint(metric.read(sources)),
-    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final metrics = BlockMetrics.of(constraints);
+        final content = ListenableBuilder(
+          listenable: Listenable.merge(metric.dependencies(sources)),
+          builder: (context, _) => _paint(
+            metric.read(sources),
+            metrics,
+            bounded: constraints.hasBoundedHeight,
+          ),
+        );
 
-    if (onTap == null) return content;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: content,
+        if (onTap == null) return content;
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: content,
+        );
+      },
     );
   }
 
-  Widget _paint(MetricReading reading) => switch (mode) {
-        MetricMode.big => _big(reading),
-        MetricMode.compact => _compact(reading),
-        MetricMode.zone => _zone(reading),
-        MetricMode.gauge => _gauge(reading),
+  Widget _paint(
+    MetricReading reading,
+    BlockMetrics metrics, {
+    required bool bounded,
+  }) =>
+      switch (mode) {
+        MetricMode.big => _big(reading, metrics, bounded: bounded),
+        MetricMode.compact => _compact(reading, metrics, bounded: bounded),
+        MetricMode.zone => _zone(reading, metrics, bounded: bounded),
+        MetricMode.gauge => _gauge(reading, metrics, bounded: bounded),
       };
 
   /// Le chiffre aussi grand que la case le permet.
@@ -61,40 +87,33 @@ class MetricView extends StatelessWidget {
   /// `FittedBox` et pas une taille fixe : les valeurs sont de longueurs très
   /// inégales (« 8 » et « 1:12:34 ») et une cellule de grille ne s'élargit pas
   /// pour les accueillir.
-  Widget _big(MetricReading reading) {
+  Widget _big(
+    MetricReading reading,
+    BlockMetrics metrics, {
+    required bool bounded,
+  }) {
     final background = zoneColorOf(reading.zoneKey);
     final ink = background == null ? Colors.white : foregroundOf(background);
 
-    return _shell(
+    return BlockSurface(
+      metrics: metrics,
       background: background,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Expanded(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                reading.value ?? '—',
-                maxLines: 1,
-                style: TextStyle(
-                  color: ink,
-                  fontSize: 64,
-                  fontWeight: FontWeight.w500,
-                  height: 1,
-                ),
+          _value(reading, ink, size: 64, bounded: bounded),
+          if (metrics.showUnit)
+            Text(
+              metric.unit,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: background == null
+                    ? Colors.white54
+                    : ink.withValues(alpha: 0.75),
+                fontSize: metrics.unitSize,
               ),
             ),
-          ),
-          Text(
-            metric.unit,
-            maxLines: 1,
-            style: TextStyle(
-              color: background == null
-                  ? Colors.white54
-                  : ink.withValues(alpha: 0.75),
-              fontSize: 13,
-            ),
-          ),
         ],
       ),
     );
@@ -102,35 +121,48 @@ class MetricView extends StatelessWidget {
 
   /// Icône, valeur, unité — la mise en forme de `MetricTile`, pour les cellules
   /// où l'on tient plusieurs mesures.
-  Widget _compact(MetricReading reading) {
+  Widget _compact(
+    MetricReading reading,
+    BlockMetrics metrics, {
+    required bool bounded,
+  }) {
     final background = zoneColorOf(reading.zoneKey);
     final ink = background == null ? Colors.white : foregroundOf(background);
 
-    return _shell(
+    return BlockSurface(
+      metrics: metrics,
       background: background,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(metric.icon, size: 18, color: ink.withValues(alpha: 0.7)),
-          const SizedBox(height: 4),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              reading.value ?? '—',
+          if (metrics.showIcon) ...[
+            Icon(
+              metric.icon,
+              size: metrics.iconSize,
+              color: ink.withValues(alpha: 0.7),
+            ),
+            const SizedBox(height: 4),
+          ],
+          _value(
+            reading,
+            ink,
+            size: 26,
+            weight: FontWeight.w400,
+            leading: 1.1,
+            bounded: bounded,
+          ),
+          if (metrics.showUnit)
+            Text(
+              metric.unit,
               maxLines: 1,
-              style: TextStyle(color: ink, fontSize: 26, height: 1.1),
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: background == null
+                    ? Colors.white54
+                    : ink.withValues(alpha: 0.75),
+                fontSize: metrics.unitSize - 2,
+              ),
             ),
-          ),
-          Text(
-            metric.unit,
-            maxLines: 1,
-            style: TextStyle(
-              color: background == null
-                  ? Colors.white54
-                  : ink.withValues(alpha: 0.75),
-              fontSize: 11,
-            ),
-          ),
         ],
       ),
     );
@@ -142,7 +174,12 @@ class MetricView extends StatelessWidget {
   /// point, la couleur *est* l'information. Sans zone connue, la case reste sur
   /// le fond du tableau de bord — une couleur inventée serait pire qu'une
   /// couleur absente.
-  Widget _zone(MetricReading reading) => _big(reading);
+  Widget _zone(
+    MetricReading reading,
+    BlockMetrics metrics, {
+    required bool bounded,
+  }) =>
+      _big(reading, metrics, bounded: bounded);
 
   /// La position dans la plage, plutôt que le chiffre exact.
   ///
@@ -151,35 +188,32 @@ class MetricView extends StatelessWidget {
   /// 400 W » ne dit rien de commun entre deux cyclistes). **Sans zones, il n'y a
   /// pas de plage** : on retombe alors sur le chiffre plein cadre plutôt que de
   /// dessiner une jauge dont on aurait inventé le maximum.
-  Widget _gauge(MetricReading reading) {
+  ///
+  /// Même repli dans une case minuscule, et pour une raison voisine : sept
+  /// paliers sur 48 pixels de large ne se distinguent plus les uns des autres,
+  /// et une jauge qu'on ne sait pas lire vaut moins que le chiffre qu'elle
+  /// remplaçait.
+  Widget _gauge(
+    MetricReading reading,
+    BlockMetrics metrics, {
+    required bool bounded,
+  }) {
     final zones = metric.zonesOf(sources.riderProfile.profile);
-    if (zones.isEmpty) return _big(reading);
+    if (zones.isEmpty || metrics.density == BlockDensity.minimal) {
+      return _big(reading, metrics, bounded: bounded);
+    }
 
     final index = zones.indexWhere((zone) => zone.key == reading.zoneKey);
     final color = zoneColorOf(reading.zoneKey) ?? Colors.white24;
 
-    return _shell(
-      background: null,
+    return BlockSurface(
+      metrics: metrics,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                reading.value ?? '—',
-                maxLines: 1,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 48,
-                  fontWeight: FontWeight.w500,
-                  height: 1,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
+          _value(reading, Colors.white, size: 48, bounded: bounded),
+          SizedBox(height: metrics.gap),
           // Une case par zone plutôt qu'un remplissage continu : les zones sont
           // des paliers, et un dégradé laisserait croire à une progression
           // linéaire qu'elles n'ont pas.
@@ -201,27 +235,53 @@ class MetricView extends StatelessWidget {
               ],
             ],
           ),
-          const SizedBox(height: 4),
-          Text(
-            metric.unit,
-            maxLines: 1,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white54, fontSize: 11),
-          ),
+          if (metrics.showUnit) ...[
+            const SizedBox(height: 4),
+            Text(
+              metric.unit,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: metrics.unitSize - 2,
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 
-  /// Le cadre commun : l'aplat de zone quand il y en a un, le fond des cartes
-  /// sinon. Le rembourrage est le même dans tous les cas, pour qu'une mesure qui
-  /// change de zone en roulant ne fasse pas sauter la mise en page.
-  Widget _shell({required Color? background, required Widget child}) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: background ?? BlockCard.background,
-          borderRadius: BorderRadius.circular(12),
+  /// Le chiffre, à la taille que la case lui laisse.
+  ///
+  /// `Expanded` dans une case — il prend tout ce que l'unité et l'icône n'ont
+  /// pas pris — mais **jamais dans une page qui défile** : la hauteur y est
+  /// infinie, et un enfant à flex non nul sous une contrainte infinie lève au
+  /// premier rendu.
+  Widget _value(
+    MetricReading reading,
+    Color ink, {
+    required double size,
+    required bool bounded,
+    FontWeight weight = FontWeight.w500,
+    double leading = 1,
+  }) {
+    final text = FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Text(
+        reading.value ?? '—',
+        maxLines: 1,
+        style: TextStyle(
+          color: ink,
+          fontSize: size,
+          fontWeight: weight,
+          height: leading,
         ),
-        child: child,
-      );
+      ),
+    );
+
+    if (!bounded) return SizedBox(height: _unboundedValueHeight, child: text);
+    return Expanded(child: text);
+  }
 }

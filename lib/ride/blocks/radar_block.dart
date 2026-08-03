@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../dashboard/block_density.dart';
 import '../../dashboard/dashboard_block.dart';
 import '../radar_severity.dart';
 import '../widgets/radar_side_gauge.dart';
@@ -43,16 +44,21 @@ class RadarBlockView extends StatelessWidget {
       );
     }
 
-    return ValueListenableBuilder<RadarView>(
-      valueListenable: radar,
-      builder: (context, view, _) => switch (mode) {
-        RadarMode.gauge => _gauge(view),
-        RadarMode.distance => _distance(view),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final metrics = BlockMetrics.of(constraints);
+        return ValueListenableBuilder<RadarView>(
+          valueListenable: radar,
+          builder: (context, view, _) => switch (mode) {
+            RadarMode.gauge => _gauge(view, metrics),
+            RadarMode.distance => _distance(view, metrics),
+          },
+        );
       },
     );
   }
 
-  Widget _distance(RadarView view) {
+  Widget _distance(RadarView view, BlockMetrics metrics) {
     final (label, color) = switch (view.severity) {
       RadarSeverity.close => ('${view.nearestM} m', _close),
       RadarSeverity.approaching => ('${view.nearestM} m', _approaching),
@@ -60,21 +66,28 @@ class RadarBlockView extends StatelessWidget {
       RadarSeverity.absent => ('Pas de radar', Colors.white38),
     };
 
-    return _shell(
+    return BlockSurface(
+      metrics: metrics,
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          if (view.isAlerting)
+          // L'icône part la première dans une petite case : elle redit ce que la
+          // couleur dit déjà, alors que le nombre de mètres ne se déduit de rien.
+          if (view.isAlerting && metrics.showIcon)
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.directions_car, size: 20, color: color),
+                Icon(
+                  Icons.directions_car,
+                  size: metrics.iconSize + 2,
+                  color: color,
+                ),
                 // Le compte n'est écrit que s'il y a de quoi compter : « ×1 »
                 // sous une seule voiture ferait chercher la deuxième.
                 if (view.count > 1)
                   Text(
                     ' ×${view.count}',
-                    style: TextStyle(color: color, fontSize: 18),
+                    style: TextStyle(color: color, fontSize: metrics.iconSize),
                   ),
               ],
             ),
@@ -101,21 +114,20 @@ class RadarBlockView extends StatelessWidget {
   /// La jauge de la gouttière, à l'horizontale d'une cellule. Les mêmes
   /// positions et les mêmes couleurs que sur les bords de la carte : deux
   /// affichages du même capteur ne doivent pas raconter deux histoires.
-  Widget _gauge(RadarView view) => _shell(
-        child: Center(
+  /// Sa largeur est celle de la gouttière, en dur : dans une case plus étroite,
+  /// elle est mise à l'échelle plutôt que rognée — une jauge coupée dans sa
+  /// largeur montrerait une voiture ailleurs qu'où elle est. `contain` et non
+  /// `scaleDown` : elle remplissait la hauteur de sa case avant, et doit
+  /// continuer.
+  Widget _gauge(RadarView view, BlockMetrics metrics) => BlockSurface(
+        metrics: metrics,
+        child: FittedBox(
+          fit: BoxFit.contain,
           child: SizedBox(
             width: RadarSideGauge.width,
+            height: RadarSideGauge.width * 2,
             child: RadarSideGauge(view: view, side: RadarGaugeSide.left),
           ),
         ),
-      );
-
-  Widget _shell({required Widget child}) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: BlockCard.background,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: child,
       );
 }

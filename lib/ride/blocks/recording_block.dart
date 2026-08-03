@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../dashboard/block_density.dart';
 import '../../dashboard/dashboard_block.dart';
 import '../../recording/gps_source.dart';
 import '../../recording/ride_recorder.dart';
@@ -27,24 +28,42 @@ class RecordingControl extends StatelessWidget {
   final RideRecorder recorder;
   final RecordingMode mode;
 
+  /// Sous cette largeur, « Démarrer l'enregistrement » ne tient plus sur la
+  /// ligne du bouton. Le libellé ne se tronque pas : un bouton qui déclenche un
+  /// enregistrement doit dire ce qu'il fait, ou ne rien dire du tout — c'est
+  /// alors l'icône seule, sur toute la case, avec sa bulle d'aide.
+  static const _fullWidth = 200.0;
+
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: recorder,
-      builder: (context, _) => switch (recorder.state) {
-        RecorderState.idle => _StartRecordingButton(
-            recorder: recorder,
-            compact: mode == RecordingMode.compact,
-          ),
-        RecorderState.recording => _PauseButton(
-            recorder: recorder,
-            compact: mode == RecordingMode.compact,
-          ),
-        // La pause **garde sa bande orange même en compact**, et c'est le seul
-        // mode qui ne se réduit pas : c'est la seule façon de perdre la fin
-        // d'une sortie sans s'en apercevoir, donc la seule chose de cette page
-        // qui doive crier.
-        RecorderState.paused => _ResumeBanner(recorder: recorder),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final metrics = BlockMetrics.of(constraints);
+        final compact = mode == RecordingMode.compact ||
+            constraints.maxWidth < _fullWidth ||
+            metrics.density == BlockDensity.tight ||
+            metrics.density == BlockDensity.minimal;
+
+        return ListenableBuilder(
+          listenable: recorder,
+          builder: (context, _) => switch (recorder.state) {
+            RecorderState.idle => _StartRecordingButton(
+                recorder: recorder,
+                compact: compact,
+              ),
+            RecorderState.recording => _PauseButton(
+                recorder: recorder,
+                compact: compact,
+              ),
+            // La pause **garde sa bande orange même en compact**, et c'est le
+            // seul mode qui ne se réduit pas : c'est la seule façon de perdre la
+            // fin d'une sortie sans s'en apercevoir, donc la seule chose de
+            // cette page qui doive crier. Elle perd sa phrase d'explication dans
+            // une petite case, jamais son aplat.
+            RecorderState.paused =>
+              _ResumeBanner(recorder: recorder, metrics: metrics),
+          },
+        );
       },
     );
   }
@@ -170,9 +189,13 @@ class _PauseButton extends StatelessWidget {
 /// l'arrêt à un feu ». D'où l'aplat orange sur toute la largeur, qui ne laisse
 /// aucun doute et qui est en même temps le bouton de reprise.
 class _ResumeBanner extends StatelessWidget {
-  const _ResumeBanner({required this.recorder});
+  const _ResumeBanner({required this.recorder, required this.metrics});
 
   final RideRecorder recorder;
+
+  /// La place de la case. La phrase d'explication part quand elle manque — le
+  /// titre et l'aplat, jamais.
+  final BlockMetrics metrics;
 
   @override
   Widget build(BuildContext context) {
@@ -182,12 +205,15 @@ class _ResumeBanner extends StatelessWidget {
       child: InkWell(
         onTap: recorder.resume,
         borderRadius: BorderRadius.circular(12),
-        child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: metrics.padding,
+            vertical: metrics.padding - 2,
+          ),
           child: Row(
             children: [
-              Icon(Icons.pause_circle, color: Colors.white),
-              SizedBox(width: 12),
+              const Icon(Icons.pause_circle, color: Colors.white),
+              SizedBox(width: metrics.gap),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -195,22 +221,29 @@ class _ResumeBanner extends StatelessWidget {
                   children: [
                     Text(
                       'Enregistrement en pause',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 16,
+                        fontSize: metrics.lineSize,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    Text(
-                      'Rien n\'est écrit — la trace reprend où elle s\'est arrêtée.',
-                      maxLines: 2,
-                      style: TextStyle(color: Colors.white70, fontSize: 12),
-                    ),
+                    if (metrics.showTitle)
+                      Text(
+                        'Rien n\'est écrit — la trace reprend où elle s\'est arrêtée.',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: metrics.titleSize - 1,
+                        ),
+                      ),
                   ],
                 ),
               ),
-              SizedBox(width: 12),
-              Icon(Icons.play_arrow, color: Colors.white),
+              SizedBox(width: metrics.gap),
+              const Icon(Icons.play_arrow, color: Colors.white),
             ],
           ),
         ),

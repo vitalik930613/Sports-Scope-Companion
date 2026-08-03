@@ -35,6 +35,7 @@ class DashboardPage extends StatelessWidget {
     this.onClearRoute,
     this.onCalibratePower,
     this.onLeaveRide,
+    this.onGridMeasured,
   });
 
   /// La description de la page. Jamais une [MapPageSpec] : la carte n'est pas
@@ -65,6 +66,20 @@ class DashboardPage extends StatelessWidget {
   /// Écrit en toutes lettres, parce qu'un geste ne répond jamais à la question
   /// « comment on rentre ? ».
   final VoidCallback? onLeaveRide;
+
+  /// La place qu'une grille a réellement eue, une fois posée.
+  ///
+  /// C'est **ici** qu'on la prend et nulle part ailleurs : le rectangle que rend
+  /// `LayoutBuilder` est celui que les cellules se partagent, marges, en-tête et
+  /// bandeau du bas déjà retirés. Le recalculer depuis `MediaQuery` dupliquerait
+  /// cette mise en page en un second endroit, qui dériverait au premier réglage
+  /// changé — et une mesure fausse vaut moins qu'une mesure absente, parce que
+  /// le site la croirait.
+  ///
+  /// Le site s'en sert pour dimensionner les aperçus de son éditeur : il compose
+  /// en lignes et en colonnes, alors que ce qui décide de ce qu'un composant
+  /// peut dessiner, ce sont des pixels.
+  final ValueChanged<Size>? onGridMeasured;
 
   @override
   Widget build(BuildContext context) {
@@ -116,6 +131,8 @@ class DashboardPage extends StatelessWidget {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final size = Size(constraints.maxWidth, constraints.maxHeight);
+          _report(size);
+
           final rects = gridRectsFor(
             [for (final cell in grid.cells) cell.span],
             rows: grid.rows,
@@ -128,13 +145,32 @@ class DashboardPage extends StatelessWidget {
               for (var i = 0; i < grid.cells.length; i++)
                 Positioned.fromRect(
                   rect: rects[i],
-                  child: _block(grid.cells[i].block),
+                  // Chaque cellule est coupée à son rectangle. Les composants se
+                  // dégradent pour tenir (`BlockMetrics`), mais un `Stack` ne
+                  // borne pas ses enfants : sans ceci, ce qui dépasserait malgré
+                  // tout — une phrase plus longue qu'attendu, une police système
+                  // plus grande — se peindrait sur la case voisine, en roulant,
+                  // sans que rien ne le dise.
+                  child: ClipRect(child: _block(grid.cells[i].block)),
                 ),
             ],
           );
         },
       ),
     );
+  }
+
+  /// Annonce la taille mesurée, **après la trame et pas pendant**.
+  ///
+  /// L'appelant écrit un fichier et pourrait vouloir se reconstruire ; le faire
+  /// depuis un `LayoutBuilder` reviendrait à modifier l'arbre au milieu de sa
+  /// propre mise en page. Le magasin, lui, ignore une taille qu'il connaît
+  /// déjà : l'appel a beau revenir à chaque pose, il n'écrit qu'une fois.
+  void _report(Size size) {
+    final report = onGridMeasured;
+    if (report == null || size.isEmpty) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => report(size));
   }
 
   /// Le composant d'un bloc. `switch` exhaustif sur la hiérarchie scellée :

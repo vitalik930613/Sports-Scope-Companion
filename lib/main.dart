@@ -298,6 +298,9 @@ Future<void> openNavigation(
         session: session,
         riderProfile: riderProfile,
         routes: routes,
+        // Ce que le tableau de bord mesure part au site au prochain
+        // rafraîchissement : son éditeur cesse alors de supposer un téléphone.
+        onGridMeasured: settings.recordGrid,
       ),
     ),
   );
