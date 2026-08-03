@@ -473,20 +473,62 @@ publiées vers la page, bouton retour, et les pages du tableau de bord.
 
 | Geste | Effet |
 |---|---|
-| glissé au milieu de la carte | déplace la carte (il appartient à MapLibre) |
+| glissé horizontal **d'un doigt** sur la carte | page précédente / suivante |
+| glissé **à deux doigts** sur la carte, pincement | déplace et zoome la carte (ils appartiennent à MapLibre) |
+| tap sur la carte | appartient à la page web (réveil, POI) |
 | glissé/tap sur une bande de bord (`MapEdgeHandle`, 22 pt) | page précédente / suivante |
 | glissé sur une page de données | fait défiler les pages |
 | glissé sur le bandeau du bas | change de **jeu de valeurs**, jamais de page |
 | pastilles du bandeau | vont directement à une page |
 | tap sur les watts ou leur zone | ouvre la calibration du capteur de puissance |
 
-  La carte a besoin du glissé horizontal et un `PageView` réclame le même : tant
-  que la carte est vivante, le `PageView` est mis **entièrement hors du test de
-  touche** (`IgnorePointer`), la physique non défilante servant de second
-  rideau. Le prédicat est `page == carte && !scrolling` — **jamais l'index
-  seul**, qui bascule à mi-glissé et couperait le geste en deux. Dans un profil
-  sans carte, il n'y a rien à disputer : tout l'écran fait défiler, et les bandes
-  de bord ne paraissent pas.
+  **Sur la carte, c'est le nombre de doigts qui tranche, jamais l'endroit** —
+  et ça ne tient que parce que le site déplace sa carte à deux doigts
+  (`RouteNavigation.vue`, dépôt Rails). Contre un site plus ancien, qui la
+  déplace à un doigt, l'appli lui volerait le geste : **les deux dépôts sont
+  liés là-dessus comme ils le sont sur le protocole du pont.** Avant ça, le
+  glissé du milieu appartenait à MapLibre et on ne changeait de page que par les
+  bandes des deux bords, qui restent — pour l'appui, plus sûr qu'un glissé en
+  roulant, et pour le repère visible qu'elles sont les seules à porter.
+
+  Le `PageView`, lui, **reste entièrement hors du test de touche** sur la carte
+  (`IgnorePointer`) : son détecteur prend *tous* les pointeurs qui passent, donc
+  aussi le second doigt, et le pincement n'arriverait jamais au WebView. C'est
+  `MapSwipeZone` (`ride/widgets/map_swipe_zone.dart`) qui récupère le glissé
+  d'un doigt, par un recognizer qui **se retire de l'arène dès qu'un second
+  doigt se pose**. Deux choses à ne pas défaire : le retrait doit avoir lieu
+  **avant la victoire** (une vue de plateforme ne reçoit ses événements qu'après
+  avoir gagné son arène, et ce qu'on lui a pris ne se rend pas), et un geste qui
+  a compté deux doigts ne change **jamais** de page même quand il est trop tard
+  pour rendre le premier — un pincement amputé vaut encore mieux qu'une page qui
+  saute sous les doigts. Dans un profil sans carte, il n'y a rien à disputer :
+  tout l'écran fait défiler, et ni la couche ni les bandes de bord ne
+  paraissent.
+
+  Le glissé n'est pas *interprété* : il est **poussé tel quel dans le
+  défilement** (`ScrollPosition.drag`, la primitive dont se sert `Scrollable`
+  lui-même), si bien que la page suit le doigt, se recale et se lance
+  exactement comme sur les pages de données. Une première version décidait au
+  relâchement, sur un seuil en pixels : il fallait parcourir la marge de
+  reconnaissance *puis* le seuil sans rien voir bouger, et sur la route ça se
+  lisait comme un écran qui ne répond pas. D'où aussi deux règles :
+
+  - **la physique du `PageView` ne change jamais** — un `Scrollable` dont la
+    physique change reconstruit sa position et laisse tomber le geste en cours ;
+    c'est `IgnorePointer` seul qui empêche la carte de le toucher ;
+  - **la couche de glissé reste montée en permanence**, active ou non : la
+    démonter à mi-glissé, quand la page d'à côté arrive, emporterait le
+    recognizer et donc le geste.
+
+- **Les enfants de la pile portent tous une clé** (`ValueKey`), et ce n'est pas
+  du style. Plusieurs vont et viennent — la couche de glissé, la page du menu,
+  la page de réveil radar : sans clé, une apparition décale tous les suivants
+  d'un cran et Flutter réapparie les éléments **par leur rang**. Le `PageView`
+  héritait alors de l'élément du voisin et perdait sa position de défilement, le
+  numéro de page perdait son état. Ça s'est vu sur la route exactement comme ça :
+  un glissé sur deux qui revenait à la carte, et la pastille du numéro qui ne
+  paraissait plus. Ajouter un enfant conditionnel à cette pile **sans clé** fait
+  revenir le bug.
 
 - `RideBottomBand` porte les jeux de valeurs (`RidePreset.bands`), qui bouclent
   eux aussi. Les zones viennent de `RiderProfileStore`, donc du site : **jamais une

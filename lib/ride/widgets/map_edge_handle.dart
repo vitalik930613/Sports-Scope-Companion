@@ -2,18 +2,19 @@ import 'package:flutter/material.dart';
 
 import 'swipe_zone.dart';
 
-/// Les bandes des deux bords de la carte : la façon de changer de page sans
-/// prendre à MapLibre le geste dont il a besoin.
+/// Les bandes des deux bords de la carte : **l'appui** qui change de page, et
+/// le seul signe visible qu'il y a des pages de part et d'autre.
 ///
-/// Sur la carte, le glissé horizontal appartient au déplacement de la carte —
-/// on ne peut pas le lui reprendre en plein milieu sans casser la consultation
-/// de l'itinéraire. Ces bandes découpent donc les deux bords, où l'on ne
-/// déplace pas la carte de toute façon : c'est là que tombent les pouces sur un
-/// guidon, et un glissé qui y démarre ne peut vouloir dire qu'une chose.
+/// Elles sont nées d'une contrainte qui n'existe plus — le glissé horizontal
+/// appartenait alors au déplacement de la carte, et les deux bords étaient le
+/// seul endroit où on pouvait le lui reprendre. Depuis que la carte se déplace à
+/// deux doigts, tout le milieu se glisse aussi (`MapSwipeZone`). Ce qui les
+/// garde, c'est l'autre moitié de leur rôle : on vise mal en roulant, un appui
+/// est plus sûr qu'un glissé, et sans la barre claire rien ne dirait qu'il y a
+/// quelque chose là.
 ///
 /// Étroites à dessein : vingt-deux points, assez pour être touchées sans viser
-/// et assez peu pour laisser la carte tranquille. La barre claire au milieu
-/// n'est pas décorative — sans elle, rien ne dirait qu'il y a quelque chose là.
+/// et assez peu pour laisser la carte tranquille.
 class MapEdgeHandle extends StatelessWidget {
   const MapEdgeHandle({
     super.key,

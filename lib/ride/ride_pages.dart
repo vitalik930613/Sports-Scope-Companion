@@ -64,21 +64,6 @@ int swipeDirection({required double dx, required double velocity}) {
   return 0;
 }
 
-/// La physique du [PageView] selon que la carte est vivante ou non.
-///
-/// La carte a besoin du glissé horizontal pour se déplacer, et un `PageView` le
-/// réclame pour lui. Tant que la carte est à l'écran et posée, le défilement est
-/// donc coupé net : on la quitte par les bandes des deux bords — jamais par un
-/// glissé en plein milieu de la carte, qui appartient à MapLibre. Sur les pages
-/// de données, rien ne dispute le geste et toute la surface fait défiler.
-///
-/// Volontairement piloté par « la carte est-elle vivante » et non par l'index :
-/// bascule à mi-glissé, la physique changerait au milieu du geste et
-/// l'annulerait.
-ScrollPhysics physicsForMap({required bool mapLive}) => mapLive
-    ? const NeverScrollableScrollPhysics()
-    : const PageScrollPhysics();
-
 /// Ce que la page web doit savoir de son cadre une fois le bandeau posé.
 ///
 /// Le bas disparaît : la zone système est sous le bandeau natif, hors du

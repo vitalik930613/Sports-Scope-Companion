@@ -30,6 +30,7 @@ import 'ride_pages.dart';
 import 'screen_policy.dart';
 import 'turn_proximity.dart';
 import 'widgets/map_edge_handle.dart';
+import 'widgets/map_swipe_zone.dart';
 import 'widgets/radar_distance_badges.dart';
 import 'widgets/radar_frame.dart';
 import 'widgets/radar_side_gauge.dart';
@@ -184,11 +185,6 @@ class _RideShellPageState extends State<RideShellPage>
   /// test évite de monter trois écouteurs pour rien.
   bool get _overlay => _preset.radar.overlay && _preset.sensors.radar;
 
-  /// Un défilement est-il en cours ? Sert à ne basculer la carte en « vivante »
-  /// qu'une fois le geste terminé : le faire à mi-glissé couperait le geste au
-  /// milieu, et le défilement s'arrêterait en travers.
-  bool _scrolling = false;
-
   /// Le retour automatique sur la carte, et la restitution de la page ensuite.
   final _alerts = RideAlertSource();
   late final AutoReturnPolicy _autoReturn;
@@ -225,15 +221,6 @@ class _RideShellPageState extends State<RideShellPage>
   late final RadarWakePolicy _radarWake;
 
   late final MetricSources _sources;
-
-  /// La carte a-t-elle la main sur les gestes ? Vrai seulement quand elle est
-  /// affichée et posée. Le [PageView] est alors entièrement hors du test de
-  /// touche — sans quoi son détecteur, qui couvre toute la surface, volerait à
-  /// MapLibre le glissé dont la carte a besoin pour se déplacer.
-  ///
-  /// **Toujours par le prédicat, jamais par l'index seul**, qui bascule à
-  /// mi-glissé et couperait le geste en deux.
-  bool get _mapLive => _onMap && !_scrolling;
 
   /// Construit une fois : un changement de page ne doit pas reconstruire l'arbre
   /// du WebView.
@@ -689,17 +676,40 @@ class _RideShellPageState extends State<RideShellPage>
         // Pas de SafeArea autour de la carte : en immersif il n'y a plus de
         // barres à contourner, et l'encoche éventuelle est mieux occupée par la
         // carte que par une bande noire.
+        // **Chaque enfant porte une clé**, et ce n'est pas une précaution de
+        // style. Plusieurs d'entre eux vont et viennent (la zone de glissé, la
+        // page du menu, la page radar) : sans clé, une apparition décale tous
+        // les suivants d'un cran et Flutter réapparie les éléments par leur
+        // rang — le `PageView` héritait alors de l'élément du voisin, perdait sa
+        // position de défilement et repartait n'importe où. C'est exactement ce
+        // qu'on voyait : un glissé sur deux qui revenait à la carte, et le
+        // numéro de page qui ne paraissait plus.
         body: Stack(
           children: [
             // La carte, tout au fond et pour toute la sortie — quand il y en a
             // une.
             if (webView != null)
               Positioned(
+                key: const ValueKey('web'),
                 left: 0,
                 right: 0,
                 top: 0,
                 bottom: bandHeight,
                 child: webView,
+              ),
+            // Le glissé d'un doigt sur la carte, qui mène le défilement. Entre
+            // la page web et les pages de données : il ne prend que le glissé
+            // horizontal d'un seul doigt et laisse passer l'appui, le vertical
+            // et le second doigt — c'est-à-dire ce dont la carte a besoin depuis
+            // qu'elle se déplace à deux doigts.
+            if (webView != null)
+              Positioned(
+                key: const ValueKey('glisse-carte'),
+                left: 0,
+                right: 0,
+                top: 0,
+                bottom: bandHeight,
+                child: MapSwipeZone(pages: _pages, enabled: _onMap),
               ),
             // Les pages de données, dans le même cadre, opaques quand elles sont
             // là. La page carte est vide : c'est le WebView qu'on voit à travers.
@@ -707,22 +717,25 @@ class _RideShellPageState extends State<RideShellPage>
             // Construite à la demande et sans fin, parce que le catalogue tourne
             // en boucle : l'index brut du défilement ne revient jamais en
             // arrière, c'est [pageOf] qui le replie sur les pages réelles.
+            //
+            // Hors du test de touche sur la carte, et pas d'une autre physique :
+            // c'est [MapSwipeZone] qui lui pousse le glissé, ce qu'une physique
+            // non défilante avalerait. Changer de physique en cours de route
+            // était d'ailleurs le second piège — un `Scrollable` reconstruit
+            // alors sa position et laisse tomber le geste en train de se faire.
             Positioned(
+              key: const ValueKey('pages'),
               left: 0,
               right: 0,
               top: 0,
               bottom: bandHeight,
-              child: NotificationListener<ScrollNotification>(
-                onNotification: _onScrollNotification,
-                child: IgnorePointer(
-                  ignoring: _mapLive,
-                  child: PageView.builder(
-                    controller: _pages,
-                    physics: physicsForMap(mapLive: _mapLive),
-                    onPageChanged: _onPageChanged,
-                    itemBuilder: (context, rawPage) =>
-                        _pageAt(pageOf(rawPage, count: _pageCount)),
-                  ),
+              child: IgnorePointer(
+                ignoring: _onMap,
+                child: PageView.builder(
+                  controller: _pages,
+                  onPageChanged: _onPageChanged,
+                  itemBuilder: (context, rawPage) =>
+                      _pageAt(pageOf(rawPage, count: _pageCount)),
                 ),
               ),
             ),
@@ -736,6 +749,7 @@ class _RideShellPageState extends State<RideShellPage>
             // une voiture qui remonte doit se voir de là comme d'ailleurs.
             if (_menuPage case final index?)
               Positioned(
+                key: const ValueKey('menu'),
                 left: 0,
                 right: 0,
                 top: 0,
@@ -754,6 +768,7 @@ class _RideShellPageState extends State<RideShellPage>
             // rien à dire d'une voiture qu'elle ne voit pas.
             if (_screenPolicy.radarWake)
               Positioned(
+                key: const ValueKey('reveil-radar'),
                 left: 0,
                 right: 0,
                 top: 0,
@@ -766,6 +781,7 @@ class _RideShellPageState extends State<RideShellPage>
             _gutter(RadarGaugeSide.left, bandHeight),
             _gutter(RadarGaugeSide.right, bandHeight),
             Positioned(
+              key: const ValueKey('bandeau'),
               left: 0,
               right: 0,
               bottom: 0,
@@ -791,6 +807,7 @@ class _RideShellPageState extends State<RideShellPage>
             // page du menu. Sous le cadre d'alerte en revanche : une voiture qui
             // remonte passe avant de savoir sur quelle page on est.
             Positioned(
+              key: const ValueKey('numero-de-page'),
               left: 0,
               right: 0,
               bottom: bandHeight + 12,
@@ -807,6 +824,7 @@ class _RideShellPageState extends State<RideShellPage>
             // d'ici.
             if (_overlay)
               Positioned.fill(
+                key: const ValueKey('cadre-radar'),
                 child: ValueListenableBuilder<RadarView>(
                   valueListenable: _radar,
                   builder: (context, radar, _) =>
@@ -817,6 +835,7 @@ class _RideShellPageState extends State<RideShellPage>
             // le chiffre qu'on va chercher, il ne doit être recouvert par rien.
             if (_overlay)
               Positioned(
+                key: const ValueKey('metres-radar'),
                 left: 0,
                 right: 0,
                 top: 0,
@@ -876,6 +895,7 @@ class _RideShellPageState extends State<RideShellPage>
     final left = side == RadarGaugeSide.left;
 
     return Positioned(
+      key: ValueKey('gouttiere-${side.name}'),
       left: left ? 0 : null,
       right: left ? null : 0,
       top: 0,
@@ -910,16 +930,5 @@ class _RideShellPageState extends State<RideShellPage>
         ),
       ),
     );
-  }
-
-  bool _onScrollNotification(ScrollNotification notification) {
-    final scrolling = switch (notification) {
-      ScrollStartNotification() => true,
-      ScrollEndNotification() => false,
-      _ => _scrolling,
-    };
-    if (scrolling != _scrolling) setState(() => _scrolling = scrolling);
-    // Faux : la notification continue son chemin, rien ici ne la consomme.
-    return false;
   }
 }

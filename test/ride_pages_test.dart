@@ -90,20 +90,6 @@ void main() {
     });
   });
 
-  group('physicsForMap', () {
-    test('la carte vivante coupe le défilement', () {
-      // C'est ce qui rend son glissé horizontal à MapLibre.
-      expect(
-        physicsForMap(mapLive: true),
-        isA<NeverScrollableScrollPhysics>(),
-      );
-    });
-
-    test('sur une page de données, tout l\'écran ramène à la carte', () {
-      expect(physicsForMap(mapLive: false), isA<PageScrollPhysics>());
-    });
-  });
-
   group('webInsetsFor', () {
     test('le bas disparaît, le haut reste', () {
       // Le bandeau natif couvre la zone système du bas : la page qui la
