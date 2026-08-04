@@ -23,6 +23,7 @@ class RidePreset {
   const RidePreset({
     required this.key,
     required this.name,
+    this.description,
     required this.pages,
     required this.bands,
     this.sensors = const SensorSettings(),
@@ -72,6 +73,12 @@ class RidePreset {
 
   final String key;
   final String name;
+
+  /// Libre, facultative : ce que l'utilisateur a écrit sur le site pour se
+  /// souvenir, au départ, pourquoi ce profil-là plutôt qu'un autre. Affichée
+  /// telle quelle dans le sélecteur ([NavigationPickerSheet]) — c'est son seul
+  /// usage, elle ne pilote rien dans le tableau de bord.
+  final String? description;
 
   /// Les pages, **dans l'ordre où on les fait défiler**. Au moins une, au plus
   /// une carte.
@@ -168,6 +175,10 @@ class RidePreset {
       name: raw['name'] is String && (raw['name'] as String).trim().isNotEmpty
           ? (raw['name'] as String).trim()
           : key,
+      description:
+          raw['description'] is String && (raw['description'] as String).trim().isNotEmpty
+              ? (raw['description'] as String).trim()
+              : null,
       // Un profil vidé de toutes ses pages retombe sur la page Effort intégrée :
       // on ne monte jamais une coquille sans contenu, et un écran noir en pleine
       // sortie ne se diagnostique pas au guidon.

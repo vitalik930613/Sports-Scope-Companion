@@ -115,7 +115,8 @@ class _NavigationPickerSheetState extends State<NavigationPickerSheet> {
                   preset.hasMap ? Icons.map_outlined : Icons.home_outlined,
                 ),
                 title: Text(preset.name),
-                subtitle: Text(_describe(preset)),
+                subtitle: _subtitle(context, preset),
+                isThreeLine: preset.description != null,
                 selected: preset.key == settings.preset.key,
                 onTap: () => Navigator.of(context).pop(preset.key),
               ),
@@ -127,6 +128,30 @@ class _NavigationPickerSheetState extends State<NavigationPickerSheet> {
     if (key == null) return;
     await settings.select(key);
     if (mounted) setState(() {});
+  }
+
+  /// Le sous-titre d'un profil dans le sélecteur.
+  ///
+  /// La description **vient d'abord**, quand il y en a une : c'est un texte
+  /// libre écrit sur le site pour justement aider à choisir entre deux profils
+  /// qui, sinon, ne se distinguent que par leurs pages. Les faits techniques
+  /// restent en dessous, plus discrets — ils continuent de servir quand il n'y
+  /// a pas de description, ou en appoint quand il y en a une.
+  Widget _subtitle(BuildContext context, RidePreset preset) {
+    final description = preset.description;
+    if (description == null) return Text(_describe(preset));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(description),
+        Text(
+          _describe(preset),
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
+    );
   }
 
   /// Ce qu'un profil change, en une ligne.
