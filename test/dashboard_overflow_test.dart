@@ -24,18 +24,19 @@ import 'package:sports_scope_companion/training/training_budget_store.dart';
 /// **Rien ne doit déborder de sa case.**
 ///
 /// Un profil décrit sa grille en lignes et en colonnes ; c'est le téléphone qui
-/// sait combien de pixels cela fait. Les composants étaient écrits à taille fixe
-/// et réclamaient leur hauteur quelle que soit la case : posés dans le rectangle
-/// que leur donne `gridRectFor`, ils se peignaient sur la voisine — et le
-/// cycliste le découvrait en roulant, sur le seul écran qu'il ne peut plus
-/// modifier.
+/// sait combien de pixels cela fait. Chaque composant construit tout ce que son
+/// mode demande à une taille naturelle, fixe, puis `ScaleToFit`
+/// (`block_card.dart`) le réduit pour qu'il tienne dans le rectangle que lui
+/// donne `gridRectFor` — plus aucun élément n'est retiré selon la taille de la
+/// case, seulement mis à l'échelle.
 ///
 /// Ces tests montent donc les pires grilles composables (jusqu'à 6 × 6, le
 /// plafond de [GridPageSpec.maxSide]) sur un téléphone ordinaire, avec dans les
 /// cases les composants les plus encombrants : la répartition en sept zones, les
 /// moyennes en trois cartes, le bouton d'enregistrement, l'état de navigation.
 /// **Un débordement fait échouer le test** : `flutter_test` remonte le
-/// « RenderFlex overflowed » comme une erreur.
+/// « RenderFlex overflowed » comme une erreur — ce que `ScaleToFit` doit
+/// justement empêcher, quelle que soit la case.
 void main() {
   late Directory root;
   late SensorHub hub;
@@ -66,8 +67,7 @@ void main() {
     TrainingZone(key: 'z7', lo: 375),
   ];
 
-  /// Un téléphone ordinaire, en pixels logiques. C'est de cette taille que
-  /// sortent les cases citées dans `block_density_test.dart`.
+  /// Un téléphone ordinaire, en pixels logiques.
   const phone = Size(360, 800);
 
   setUp(() async {
@@ -221,7 +221,8 @@ void main() {
     expect(find.byType(DashboardPage), findsOneWidget);
   });
 
-  testWidgets('la légende des zones cède la place à sa barre, pas l\'inverse',
+  testWidgets(
+      'la légende reste, réduite, même dans une case trop étroite pour elle',
       (tester) async {
     await riding(tester);
     await pumpGrid(
@@ -231,14 +232,14 @@ void main() {
       blocks: const [ZonesBlock(source: ZonesSource.power)],
     );
 
-    // Une proportion se lit dans une longueur partagée : la barre survit à des
-    // tailles où le tableau ne se lirait plus. Ici la case fait 194 de haut,
-    // sept lignes de légende en demandent plus du double.
-    expect(find.text('Z7'), findsNothing);
+    // Le mode `bar` demande la barre et la légende ensemble : ce n'est plus la
+    // taille de la case qui décide d'en retirer une, c'est `ScaleToFit` qui
+    // réduit l'ensemble pour que les sept zones tiennent quand même.
+    expect(find.text('Z7'), findsOneWidget);
     expect(find.text('Temps par zone de puissance'), findsOneWidget);
   });
 
-  testWidgets('dans une pleine page, la légende est là', (tester) async {
+  testWidgets('dans une pleine page, la légende est là aussi', (tester) async {
     await riding(tester);
     await pumpGrid(
       tester,
@@ -247,8 +248,6 @@ void main() {
       blocks: const [ZonesBlock(source: ZonesSource.hr)],
     );
 
-    // Le pendant du test précédent : la dégradation n'est pas un appauvrissement
-    // permanent, elle suit la place. Cinq zones dans une pleine page tiennent.
     expect(find.text('Z5'), findsOneWidget);
   });
 
@@ -297,8 +296,8 @@ void main() {
       ),
     );
 
-    // La hauteur y est infinie : aucune raison de retirer quoi que ce soit, et
-    // c'est ce que dit `densityFor` d'une contrainte non bornée.
+    // La hauteur y est infinie : `ScaleToFit` n'y touche pas, la page prend la
+    // place qu'il lui faut plutôt que de réduire son contenu pour rien.
     expect(find.text('Z7'), findsOneWidget);
 
     // Les moyennes gardent leurs quatre cartes, et chacune ses trois lignes. Il

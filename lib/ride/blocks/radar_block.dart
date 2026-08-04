@@ -44,22 +44,17 @@ class RadarBlockView extends StatelessWidget {
       );
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final metrics = BlockMetrics.of(constraints);
-        return ValueListenableBuilder<RadarView>(
-          valueListenable: radar,
-          builder: (context, view, _) => switch (mode) {
-            RadarMode.gauge => _gauge(view, metrics, vertical: false),
-            RadarMode.gaugeVertical => _gauge(view, metrics, vertical: true),
-            RadarMode.distance => _distance(view, metrics),
-          },
-        );
+    return ValueListenableBuilder<RadarView>(
+      valueListenable: radar,
+      builder: (context, view, _) => switch (mode) {
+        RadarMode.gauge => _gauge(view, vertical: false),
+        RadarMode.gaugeVertical => _gauge(view, vertical: true),
+        RadarMode.distance => _distance(view),
       },
     );
   }
 
-  Widget _distance(RadarView view, BlockMetrics metrics) {
+  Widget _distance(RadarView view) {
     final (label, color) = switch (view.severity) {
       RadarSeverity.close => ('${view.nearestM} m', _close),
       RadarSeverity.approaching => ('${view.nearestM} m', _approaching),
@@ -68,19 +63,18 @@ class RadarBlockView extends StatelessWidget {
     };
 
     return BlockSurface(
-      metrics: metrics,
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // L'icône part la première dans une petite case : elle redit ce que la
-          // couleur dit déjà, alors que le nombre de mètres ne se déduit de rien.
-          if (view.isAlerting && metrics.showIcon)
+          // L'icône dit ce que la couleur dit déjà, quand il y a de quoi
+          // alerter : sans voiture proche, il n'y a rien à redire au chiffre.
+          if (view.isAlerting)
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
                   Icons.directions_car,
-                  size: metrics.iconSize + 2,
+                  size: BlockMetrics.natural.iconSize + 2,
                   color: color,
                 ),
                 // Le compte n'est écrit que s'il y a de quoi compter : « ×1 »
@@ -88,23 +82,21 @@ class RadarBlockView extends StatelessWidget {
                 if (view.count > 1)
                   Text(
                     ' ×${view.count}',
-                    style: TextStyle(color: color, fontSize: metrics.iconSize),
+                    style: TextStyle(
+                      color: color,
+                      fontSize: BlockMetrics.natural.iconSize,
+                    ),
                   ),
               ],
             ),
-          Flexible(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                label,
-                maxLines: 1,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 44,
-                  fontWeight: FontWeight.w700,
-                  height: 1.1,
-                ),
-              ),
+          Text(
+            label,
+            maxLines: 1,
+            style: TextStyle(
+              color: color,
+              fontSize: 44,
+              fontWeight: FontWeight.w700,
+              height: 1.1,
             ),
           ),
         ],
@@ -128,14 +120,10 @@ class RadarBlockView extends StatelessWidget {
   /// désignent alors le haut.
   ///
   /// Sa taille est celle de la gouttière, en dur : dans une case plus étroite,
-  /// elle est mise à l'échelle plutôt que rognée — une jauge coupée dans sa
-  /// longueur montrerait une voiture ailleurs qu'où elle est. `contain` et non
-  /// `scaleDown` : elle remplit la case, et doit continuer.
-  Widget _gauge(
-    RadarView view,
-    BlockMetrics metrics, {
-    required bool vertical,
-  }) {
+  /// elle est mise à l'échelle par [ScaleToFit] (posé par [BlockSurface])
+  /// plutôt que rognée — une jauge coupée dans sa longueur montrerait une
+  /// voiture ailleurs qu'où elle est.
+  Widget _gauge(RadarView view, {required bool vertical}) {
     final gauge = SizedBox(
       width: RadarSideGauge.width,
       height: RadarSideGauge.width * 2,
@@ -143,15 +131,11 @@ class RadarBlockView extends StatelessWidget {
     );
 
     return BlockSurface(
-      metrics: metrics,
-      child: FittedBox(
-        fit: BoxFit.contain,
-        // `RotatedBox` et non `Transform.rotate` : la rotation est prise en
-        // compte à la mise en page, si bien que le `FittedBox` mesure le
-        // rectangle couché et non le rectangle debout — sinon la jauge
-        // déborderait de sa case d'un côté et flotterait de l'autre.
-        child: vertical ? gauge : RotatedBox(quarterTurns: 1, child: gauge),
-      ),
+      // `RotatedBox` et non `Transform.rotate` : la rotation est prise en
+      // compte à la mise en page, si bien que la mise à l'échelle mesure le
+      // rectangle couché et non le rectangle debout — sinon la jauge
+      // déborderait de sa case d'un côté et flotterait de l'autre.
+      child: vertical ? gauge : RotatedBox(quarterTurns: 1, child: gauge),
     );
   }
 }

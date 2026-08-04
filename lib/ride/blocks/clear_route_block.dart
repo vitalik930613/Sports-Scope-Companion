@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../../dashboard/block_density.dart';
 import '../../dashboard/dashboard_block.dart';
 import '../nav_state.dart';
 import 'action_button.dart';
@@ -31,38 +30,28 @@ class ClearRouteControl extends StatelessWidget {
 
   final ClearRouteMode mode;
 
-  static const _fullWidth = 200.0;
-
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final metrics = BlockMetrics.of(constraints);
-        final compact = mode == ClearRouteMode.compact ||
-            constraints.maxWidth < _fullWidth ||
-            metrics.density == BlockDensity.tight ||
-            metrics.density == BlockDensity.minimal;
+    final compact = mode == ClearRouteMode.compact;
 
-        final navListenable = nav;
-        if (navListenable == null) {
-          return DashboardActionButton(
-            icon: Icons.layers_clear,
-            label: 'Retirer l\'itinéraire',
-            compact: compact,
-            onPressed: null,
-          );
-        }
+    final navListenable = nav;
+    if (navListenable == null) {
+      return DashboardActionButton(
+        icon: Icons.layers_clear,
+        label: 'Retirer l\'itinéraire',
+        compact: compact,
+        onPressed: null,
+      );
+    }
 
-        return ValueListenableBuilder<NavState?>(
-          valueListenable: navListenable,
-          builder: (context, state, _) => DashboardActionButton(
-            icon: Icons.layers_clear,
-            label: 'Retirer l\'itinéraire',
-            compact: compact,
-            onPressed: state?.onRoute == true ? onClearRoute : null,
-          ),
-        );
-      },
+    return ValueListenableBuilder<NavState?>(
+      valueListenable: navListenable,
+      builder: (context, state, _) => DashboardActionButton(
+        icon: Icons.layers_clear,
+        label: 'Retirer l\'itinéraire',
+        compact: compact,
+        onPressed: state?.onRoute == true ? onClearRoute : null,
+      ),
     );
   }
 }

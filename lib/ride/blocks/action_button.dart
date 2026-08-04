@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'block_card.dart';
+
 /// Un bouton d'action générique du tableau de bord : un geste qui agit sur la
 /// sortie plutôt qu'une mesure qu'on lit.
 ///
@@ -19,6 +21,11 @@ class DashboardActionButton extends StatelessWidget {
   final String label;
   final bool compact;
   final VoidCallback? onPressed;
+
+  /// La largeur à laquelle le bouton large se construit avant mise à
+  /// l'échelle. Fixe et non celle de la case : [ScaleToFit] la ramène à la
+  /// case réelle.
+  static const _fullWidth = 200.0;
 
   @override
   Widget build(BuildContext context) {
@@ -42,16 +49,18 @@ class DashboardActionButton extends StatelessWidget {
       );
     }
 
-    return SizedBox(
-      width: double.infinity,
-      child: FilledButton.icon(
-        // Haut : le doigt vise mal sur une route bosselée.
-        style: FilledButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 16),
+    return ScaleToFit(
+      child: SizedBox(
+        width: _fullWidth,
+        child: FilledButton.icon(
+          // Haut : le doigt vise mal sur une route bosselée.
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+          ),
+          onPressed: onPressed,
+          icon: Icon(icon),
+          label: Text(label, style: const TextStyle(fontSize: 16)),
         ),
-        onPressed: onPressed,
-        icon: Icon(icon),
-        label: Text(label, style: const TextStyle(fontSize: 16)),
       ),
     );
   }

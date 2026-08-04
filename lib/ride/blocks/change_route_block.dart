@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../dashboard/block_density.dart';
 import '../../dashboard/dashboard_block.dart';
 import 'action_button.dart';
 
@@ -22,27 +21,11 @@ class ChangeRouteControl extends StatelessWidget {
   final VoidCallback? onChooseRoute;
   final ChangeRouteMode mode;
 
-  /// Même seuil que [RecordingControl] : en dessous, le libellé ne tient
-  /// plus sur la ligne du bouton.
-  static const _fullWidth = 200.0;
-
   @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final metrics = BlockMetrics.of(constraints);
-        final compact = mode == ChangeRouteMode.compact ||
-            constraints.maxWidth < _fullWidth ||
-            metrics.density == BlockDensity.tight ||
-            metrics.density == BlockDensity.minimal;
-
-        return DashboardActionButton(
-          icon: Icons.route,
-          label: 'Changer d\'itinéraire',
-          compact: compact,
-          onPressed: onChooseRoute,
-        );
-      },
-    );
-  }
+  Widget build(BuildContext context) => DashboardActionButton(
+        icon: Icons.route,
+        label: 'Changer d\'itinéraire',
+        compact: mode == ChangeRouteMode.compact,
+        onPressed: onChooseRoute,
+      );
 }

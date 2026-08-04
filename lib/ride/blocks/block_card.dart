@@ -2,6 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../../dashboard/block_density.dart';
 
+/// La largeur à laquelle une carte de texte (phrases ou lignes à deux
+/// colonnes) se construit avant mise à l'échelle — ce qu'il faut pour que les
+/// phrases se replient sur plusieurs lignes plutôt que de filer sur une
+/// seule, très longue, qu'on aurait ensuite à réduire jusqu'à l'illisible.
+/// Fixe et non celle de la case : c'est [ScaleToFit] qui la ramène à la case
+/// réelle.
+const _naturalCardWidth = 220.0;
+
 /// La carte des pages de données : un titre discret, des lignes lisibles.
 ///
 /// Extraite de `ride_summary_page.dart` telle quelle. Elle sert maintenant à
@@ -10,80 +18,41 @@ import '../../dashboard/block_density.dart';
 /// n'auraient ni le même fond, ni le même arrondi, ni la même marge — et une
 /// page composée à la main aurait l'air cassée.
 ///
-/// Elle se mesure à la case qu'on lui donne ([BlockMetrics]) : dans une page qui
-/// défile elle prend la place qu'il lui faut, dans une cellule de grille elle s'y
-/// range. Ce qu'elle porte le plus souvent, ce sont des **états vides** — des
-/// phrases qui disent *pourquoi* il n'y a rien — d'où le repli en taille plutôt
-/// qu'en troncature : « Le temps par zone cardio se rem… » ne vaut pas mieux que
-/// rien. Les lignes qui ne tiennent décidément plus sont retirées par le bas, la
-/// première étant toujours la plus utile.
+/// Toutes les lignes sont toujours écrites : c'est le mode du profil qui
+/// décide de ce qu'il y a à dire, pas la case qui décide de ce qu'elle
+/// garde. [BlockSurface] réduit l'ensemble s'il ne tient pas.
 class BlockCard extends StatelessWidget {
-  const BlockCard({
-    super.key,
-    required this.title,
-    required this.lines,
-    this.metrics,
-  });
+  const BlockCard({super.key, required this.title, required this.lines});
 
   final String title;
   final List<String> lines;
-
-  /// Les tailles, quand l'appelant les a déjà calculées.
-  ///
-  /// Sert à qui pose plusieurs cartes dans une même case ([AveragesCard]) :
-  /// elles se partagent alors une densité, celle de la case, plutôt que d'en
-  /// déduire chacune une différente de son propre bout de place. Et surtout,
-  /// cela évite un `LayoutBuilder` sous un `IntrinsicHeight`, qui ne sait pas
-  /// mesurer ce qui n'existe qu'une fois les contraintes connues.
-  final BlockMetrics? metrics;
 
   /// Le fond des cartes, partagé avec [ZoneBreakdown] : c'est ce qui les fait
   /// lire comme des éléments d'une même page.
   static const background = Color(0xFF1F2226);
 
   @override
-  Widget build(BuildContext context) {
-    final given = metrics;
-    if (given != null) {
-      return BlockSurface(metrics: given, child: _content(given, lines));
-    }
+  Widget build(BuildContext context) => BlockSurface(child: _content());
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final metrics = BlockMetrics.of(constraints);
-        final shown = lines
-            .take(metrics.linesIn(constraints.maxHeight, wanted: lines.length))
-            .toList();
-
-        return BlockSurface(
-          metrics: metrics,
-          child: FittedProse(
-            metrics: metrics,
-            constraints: constraints,
-            child: _content(metrics, shown),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _content(BlockMetrics metrics, List<String> shown) => Column(
+  Widget _content() {
+    const metrics = BlockMetrics.natural;
+    return SizedBox(
+      width: _naturalCardWidth,
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (metrics.showTitle) ...[
-            Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Colors.white70,
-                fontSize: metrics.titleSize,
-              ),
+          Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: metrics.titleSize,
             ),
-            SizedBox(height: metrics.gap),
-          ],
-          for (final line in shown)
+          ),
+          SizedBox(height: metrics.gap),
+          for (final line in lines)
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: Text(
@@ -95,7 +64,9 @@ class BlockCard extends StatelessWidget {
               ),
             ),
         ],
-      );
+      ),
+    );
+  }
 }
 
 /// Une ligne de [StatCard] : ce qu'on mesure à gauche, ce que ça vaut à droite.
@@ -114,91 +85,42 @@ class StatRow {
 /// sont l'un sous l'autre, alignés à droite : on les compare d'un coup d'œil,
 /// et c'est tout ce qu'on demande à un bilan de moyennes.
 ///
-/// L'unité est dans le titre et pas sur chaque ligne : elle vaut pour les trois,
-/// et la colonne des valeurs tient alors dans une demi-case.
-///
-/// Elle se dégrade comme sa cousine — les lignes qui ne tiennent plus partent
-/// par le bas — à ceci près que **la première à partir est « Min »** : entre les
-/// trois, c'est celle qui apprend le moins, et un maximum tronqué se lirait
-/// comme un maximum.
+/// L'unité est dans le titre et pas sur chaque ligne : elle vaut pour les
+/// trois, et la colonne des valeurs tient alors dans une demi-case.
 class StatCard extends StatelessWidget {
-  const StatCard({
-    super.key,
-    required this.title,
-    required this.rows,
-    this.metrics,
-  });
+  const StatCard({super.key, required this.title, required this.rows});
 
   final String title;
   final List<StatRow> rows;
 
-  /// Les tailles, quand l'appelant les a déjà calculées — même rôle que sur
-  /// [BlockCard], et même raison : plusieurs cartes dans une même case doivent
-  /// partager la densité de la case, et un `LayoutBuilder` ne sait pas mesurer
-  /// sous un `IntrinsicHeight`.
-  final BlockMetrics? metrics;
-
   @override
-  Widget build(BuildContext context) {
-    final given = metrics;
-    if (given != null) {
-      return BlockSurface(metrics: given, child: _content(given, rows));
-    }
+  Widget build(BuildContext context) => BlockSurface(child: _content());
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final metrics = BlockMetrics.of(constraints);
-        final room =
-            metrics.linesIn(constraints.maxHeight, wanted: rows.length);
-
-        return BlockSurface(
-          metrics: metrics,
-          child: FittedProse(
-            metrics: metrics,
-            constraints: constraints,
-            child: _content(metrics, _keep(room)),
-          ),
-        );
-      },
-    );
-  }
-
-  /// Les [room] lignes qu'on garde. Au-delà de la simple troncature : à deux
-  /// lignes sur trois, c'est « Min » qu'on laisse tomber, pas « Max ».
-  List<StatRow> _keep(int room) {
-    if (room >= rows.length) return rows;
-    if (room <= 0) return const [];
-    if (room == rows.length - 1 && rows.length == 3) {
-      return [rows.first, rows.last];
-    }
-    return rows.take(room).toList();
-  }
-
-  Widget _content(BlockMetrics metrics, List<StatRow> shown) => Column(
+  Widget _content() {
+    const metrics = BlockMetrics.natural;
+    return SizedBox(
+      width: _naturalCardWidth,
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (metrics.showTitle) ...[
-            Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Colors.white70,
-                fontSize: metrics.titleSize,
-              ),
+          Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: metrics.titleSize,
             ),
-            SizedBox(height: metrics.gap),
-          ],
-          for (final row in shown)
+          ),
+          SizedBox(height: metrics.gap),
+          for (final row in rows)
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic,
                 children: [
-                  // Le libellé cède la place le premier : c'est « Moyen » qu'on
-                  // devine d'un mot tronqué, jamais un chiffre.
                   Expanded(
                     child: Text(
                       row.label,
@@ -223,24 +145,24 @@ class StatCard extends StatelessWidget {
               ),
             ),
         ],
-      );
+      ),
+    );
+  }
 }
 
 /// Le cadre commun de tous les composants : le fond des cartes, l'arrondi, le
-/// rembourrage de la densité.
+/// rembourrage, et la mise à l'échelle qui les fait tenir dans leur case.
 ///
-/// Un seul endroit, parce que le rembourrage entre dans le calcul de ce qui
-/// tient : une carte qui se rembourrerait de son côté ferait mentir
-/// [BlockMetrics.linesIn] du double de l'écart.
+/// Un seul endroit pour le rembourrage, parce qu'il entre dans la taille
+/// naturelle que [ScaleToFit] compare à la case réelle : une carte qui se
+/// rembourrerait de son côté fausserait ce que voit la mise à l'échelle.
 class BlockSurface extends StatelessWidget {
   const BlockSurface({
     super.key,
-    required this.metrics,
     required this.child,
     this.background,
   });
 
-  final BlockMetrics metrics;
   final Widget child;
 
   /// L'aplat de zone, quand la mesure en porte un. Le fond des cartes sinon.
@@ -249,59 +171,51 @@ class BlockSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
         width: double.infinity,
-        padding: EdgeInsets.all(metrics.padding),
+        padding: EdgeInsets.all(BlockMetrics.natural.padding),
         decoration: BoxDecoration(
           color: background ?? BlockCard.background,
           borderRadius: BorderRadius.circular(12),
         ),
-        // Une assurance, pas une politique : les composants se dégradent pour
-        // tenir, et ce qui passerait quand même à travers est coupé au bord de
-        // sa propre carte plutôt que peint sur la voisine.
+        // Une assurance, pas une politique : une case pathologiquement petite
+        // peut rester plus petite que ce que `ScaleToFit` sait encore réduire
+        // (l'échelle a un plancher pratique), et ce qui déborderait malgré
+        // tout est coupé au bord de sa propre carte plutôt que peint sur la
+        // voisine.
         clipBehavior: Clip.hardEdge,
-        child: child,
+        child: ScaleToFit(child: child),
       );
 }
 
-/// Du texte qui rapetisse au lieu de déborder.
+/// Réduit son enfant pour qu'il tienne dans la case donnée, sans jamais
+/// l'agrandir au-delà de sa taille naturelle ni en retirer un morceau.
 ///
-/// `FittedBox` mesure la colonne à sa taille naturelle, puis la met à l'échelle
-/// si — et seulement si — elle ne tient pas : les phrases arrivent donc entières,
-/// ce qui est tout l'intérêt d'un état vide. La largeur est imposée avant la mise
-/// à l'échelle, sans quoi la colonne s'étirerait sur une seule ligne au lieu de
-/// se replier.
+/// `FittedBox(fit: BoxFit.scaleDown)` mesure l'enfant à sa taille naturelle
+/// puis le met à l'échelle si — et seulement si — il ne tient pas : tout ce
+/// qu'on a posé dedans arrive donc en entier, en plus ou moins grand. C'est
+/// le mode choisi sur le site qui décide du contenu ; la taille de la case ne
+/// fait plus ce choix à sa place.
 ///
-/// **Sans hauteur bornée, on ne touche à rien** : dans une page qui défile, la
-/// carte prend la hauteur qu'il lui faut, et un `Expanded` y étirerait la mise en
-/// page vers l'infini.
-class FittedProse extends StatelessWidget {
-  const FittedProse({
-    super.key,
-    required this.metrics,
-    required this.constraints,
-    required this.child,
-  });
+/// Volontairement **shrink-only** : une case généreuse ne grossit pas au-delà
+/// de la taille naturelle du contenu, pour ne pas afficher un chiffre
+/// disproportionné à côté de cases voisines restées à leur taille normale.
+///
+/// **Sans hauteur ou largeur bornée, on ne touche à rien** : dans une page
+/// qui défile, la carte prend la place qu'il lui faut, et un enfant mis à
+/// l'échelle dans un `SizedBox.expand` sous une contrainte infinie lèverait.
+class ScaleToFit extends StatelessWidget {
+  const ScaleToFit({super.key, required this.child});
 
-  final BlockMetrics metrics;
-  final BoxConstraints constraints;
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
-    if (!constraints.hasBoundedHeight) return child;
-
-    // Une largeur infinie n'arrive pas dans une grille — chaque cellule reçoit
-    // son rectangle — mais un `Row` sans `Expanded` en donnerait une, et un
-    // `SizedBox` de largeur infinie lève. On rend alors la colonne telle quelle,
-    // c'est-à-dire ce qu'on faisait avant la mise à l'échelle.
-    final inner = constraints.maxWidth - metrics.padding * 2;
-    if (!inner.isFinite || inner <= 0) return child;
-
-    return SizedBox.expand(
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        alignment: Alignment.topLeft,
-        child: SizedBox(width: inner, child: child),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, constraints) {
+          if (!constraints.hasBoundedHeight || !constraints.hasBoundedWidth) {
+            return child;
+          }
+          return SizedBox.expand(
+            child: FittedBox(fit: BoxFit.scaleDown, child: child),
+          );
+        },
+      );
 }

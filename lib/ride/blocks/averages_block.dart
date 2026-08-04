@@ -20,11 +20,9 @@ import 'block_card.dart';
 /// en cellule (`MetricId.ascent`, `MetricId.calories`) — comme la puissance
 /// normalisée (`MetricId.powerNp`).
 ///
-/// Les quatre cartes demandent une pleine page ; dans une case qui n'en a pas,
-/// le bloc passe **de lui-même en liste** — les mêmes chiffres, dans une seule
-/// carte, dont [BlockCard] retire ensuite les lignes qui ne tiennent pas. Le
-/// mode du profil reste un plafond : on ne montre jamais plus que ce qu'il
-/// demande.
+/// Le mode choisi (`cards`/`list`) est un **ordre**, plus un plafond : le
+/// profil qui a demandé les quatre cartes les obtient toujours, quitte à ce
+/// que [ScaleToFit] les réduise pour tenir dans une case étroite.
 class AveragesCard extends StatelessWidget {
   const AveragesCard({
     super.key,
@@ -35,29 +33,18 @@ class AveragesCard extends StatelessWidget {
   final RideRecorder recorder;
   final AveragesMode mode;
 
-  /// Les quatre cartes tiennent-elles ? Deux rangées de trois lignes — les
-  /// quatre cartes ont exactement la même forme, c'est tout l'intérêt.
-  ///
-  /// La largeur compte autant que la hauteur, et c'est le piège de ce bloc :
-  /// chaque rangée coupe la case en deux, et une demi-case étroite ne laisse ni
-  /// à « Cadence (tr/min) » ni à « Moyen 84 » de quoi s'écrire — tout y part en
-  /// points de suspension, et une carte de points de suspension ne se lit pas
-  /// mieux qu'une ligne de liste. Sous la largeur d'une pleine page, on ne
-  /// tente donc pas.
-  static const _cardsWidth = 280.0;
+  /// La largeur à laquelle les quatre cartes se construisent avant mise à
+  /// l'échelle. Fixe et non celle de la case — [ScaleToFit] la ramène à la
+  /// case réelle.
+  static const _naturalWidth = 280.0;
 
   @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) => ListenableBuilder(
+  Widget build(BuildContext context) => ListenableBuilder(
         listenable: recorder,
-        builder: (context, _) =>
-            _paint(BlockMetrics.of(constraints), constraints),
-      ),
-    );
-  }
+        builder: (context, _) => _paint(),
+      );
 
-  Widget _paint(BlockMetrics metrics, BoxConstraints constraints) {
+  Widget _paint() {
     if (!recorder.isActive) {
       return const BlockCard(
         title: 'Sortie non lancée',
@@ -78,60 +65,44 @@ class AveragesCard extends StatelessWidget {
           _kmh(stats.maxSpeedMps)),
     ];
 
-    if (mode == AveragesMode.list || !_cardsFit(metrics, constraints)) {
+    if (mode == AveragesMode.list) {
       // En liste, les trois chiffres tiennent sur la ligne de leur mesure :
-      // quatre lignes plutôt que douze, et [BlockCard] n'en retire une que
-      // lorsqu'il ne reste vraiment plus la place — c'est une mesure entière
-      // qui part, pas la moitié d'une.
+      // quatre lignes plutôt que douze.
       return BlockCard(
         title: 'Moyennes',
         lines: [for (final card in cards) card.line],
       );
     }
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _row(metrics, cards[0], cards[1]),
-        SizedBox(height: metrics.gap),
-        _row(metrics, cards[2], cards[3]),
-      ],
+    // `ScaleToFit` et non `BlockSurface` : les quatre cartes ont déjà chacune
+    // leur propre fond, la grille elle-même n'en a pas besoin d'un
+    // supplémentaire — seulement de la mise à l'échelle qui la fait tenir.
+    return ScaleToFit(
+      child: SizedBox(
+        width: _naturalWidth,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _row(cards[0], cards[1]),
+            SizedBox(height: BlockMetrics.natural.gap),
+            _row(cards[2], cards[3]),
+          ],
+        ),
+      ),
     );
   }
 
-  /// Deux cartes côte à côte, de même hauteur.
-  ///
-  /// `IntrinsicHeight` et pas un simple `stretch` : dans une liste, la hauteur
-  /// disponible est infinie, et une colonne étirée vers l'infini fait exploser
-  /// la mise en page. Il faut donc mesurer la plus haute des deux cartes avant
-  /// de les aligner.
-  ///
-  /// Les cartes reçoivent la densité de la case : sans quoi elles remonteraient
-  /// chacune un `LayoutBuilder` sous cet `IntrinsicHeight`, qui ne sait pas
-  /// mesurer ce qui n'existe qu'une fois les contraintes connues.
-  static Widget _row(BlockMetrics metrics, _Stat left, _Stat right) =>
-      IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(child: left.card(metrics)),
-            SizedBox(width: metrics.gap),
-            Expanded(child: right.card(metrics)),
-          ],
-        ),
+  /// Deux cartes côte à côte. Les deux ont désormais toujours la même forme —
+  /// un titre, trois lignes — donc pas besoin de mesurer laquelle est la plus
+  /// haute pour aligner l'autre dessus.
+  static Widget _row(_Stat left, _Stat right) => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: left.card()),
+          SizedBox(width: BlockMetrics.natural.gap),
+          Expanded(child: right.card()),
+        ],
       );
-
-  static bool _cardsFit(BlockMetrics metrics, BoxConstraints constraints) {
-    if (constraints.maxWidth < _cardsWidth) return false;
-    if (!constraints.hasBoundedHeight) return true;
-
-    final card = metrics.padding * 2 +
-        metrics.titleHeight +
-        metrics.gap +
-        3 * metrics.lineHeight;
-
-    return constraints.maxHeight >= card * 2 + metrics.gap;
-  }
 
   static String _or(num? value) => value?.toString() ?? '—';
 
@@ -157,14 +128,13 @@ class _Stat {
   final String min;
   final String max;
 
-  Widget card(BlockMetrics metrics) => StatCard(
+  Widget card() => StatCard(
         title: '$name ($unit)',
         rows: [
           StatRow('Moyen', avg),
           StatRow('Min', min),
           StatRow('Max', max),
         ],
-        metrics: metrics,
       );
 
   String get line => '$name $avg $unit ($min – $max)';

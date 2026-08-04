@@ -18,10 +18,10 @@ import 'block_card.dart';
 /// **Un tiret quand la mesure manque, jamais un zéro** — la règle du dépôt : un
 /// zéro se lit comme une mesure, alors qu'un capteur muet ne mesure rien.
 ///
-/// Le mode demandé est un **plafond** : dans une case trop petite pour ce qu'il
-/// suppose, on retire l'icône, puis l'unité, puis la jauge elle-même (cf.
-/// [BlockMetrics]). Le chiffre, lui, ne part jamais — c'est ce qu'on est venu
-/// lire.
+/// Le mode demandé est un **ordre** : icône, unité et jauge sont toujours
+/// dessinées, quelle que soit la case — c'est [ScaleToFit], posé par
+/// [BlockSurface], qui réduit l'ensemble s'il ne tient pas, plutôt que de
+/// retirer des éléments un à un.
 class MetricView extends StatelessWidget {
   const MetricView({
     super.key,
@@ -40,80 +40,55 @@ class MetricView extends StatelessWidget {
   /// dans un menu deux pages plus loin.
   final VoidCallback? onTap;
 
-  /// La hauteur que prend le chiffre dans une page qui défile, où il n'y a
-  /// aucune case pour la lui donner. Celle d'une cellule de grille confortable :
-  /// une mesure posée dans une liste doit se lire comme une mesure posée dans
-  /// une grille.
-  static const _unboundedValueHeight = 72.0;
+  /// La hauteur naturelle du chiffre : celle à laquelle il est construit avant
+  /// mise à l'échelle, dans une grille comme dans une page qui défile — une
+  /// mesure posée dans une liste doit se lire comme une mesure posée dans une
+  /// grille.
+  static const _valueHeight = 72.0;
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final metrics = BlockMetrics.of(constraints);
-        final content = ListenableBuilder(
-          listenable: Listenable.merge(metric.dependencies(sources)),
-          builder: (context, _) => _paint(
-            metric.read(sources),
-            metrics,
-            bounded: constraints.hasBoundedHeight,
-          ),
-        );
+    final content = ListenableBuilder(
+      listenable: Listenable.merge(metric.dependencies(sources)),
+      builder: (context, _) => _paint(metric.read(sources)),
+    );
 
-        if (onTap == null) return content;
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onTap,
-          child: content,
-        );
-      },
+    if (onTap == null) return content;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: content,
     );
   }
 
-  Widget _paint(
-    MetricReading reading,
-    BlockMetrics metrics, {
-    required bool bounded,
-  }) =>
-      switch (mode) {
-        MetricMode.big => _big(reading, metrics, bounded: bounded),
-        MetricMode.compact => _compact(reading, metrics, bounded: bounded),
-        MetricMode.zone => _zone(reading, metrics, bounded: bounded),
-        MetricMode.gauge => _gauge(reading, metrics, bounded: bounded),
+  Widget _paint(MetricReading reading) => switch (mode) {
+        MetricMode.big => _big(reading),
+        MetricMode.compact => _compact(reading),
+        MetricMode.zone => _zone(reading),
+        MetricMode.gauge => _gauge(reading),
       };
 
-  /// Le chiffre aussi grand que la case le permet.
-  ///
-  /// `FittedBox` et pas une taille fixe : les valeurs sont de longueurs très
-  /// inégales (« 8 » et « 1:12:34 ») et une cellule de grille ne s'élargit pas
-  /// pour les accueillir.
-  Widget _big(
-    MetricReading reading,
-    BlockMetrics metrics, {
-    required bool bounded,
-  }) {
+  /// Le chiffre, sa couleur de zone en fond.
+  Widget _big(MetricReading reading) {
     final background = zoneColorOf(reading.zoneKey);
     final ink = background == null ? Colors.white : foregroundOf(background);
 
     return BlockSurface(
-      metrics: metrics,
       background: background,
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          _value(reading, ink, size: 64, bounded: bounded),
-          if (metrics.showUnit)
-            Text(
-              metric.unit,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: background == null
-                    ? Colors.white54
-                    : ink.withValues(alpha: 0.75),
-                fontSize: metrics.unitSize,
-              ),
+          _value(reading, ink, size: 64),
+          Text(
+            metric.unit,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color:
+                  background == null ? Colors.white54 : ink.withValues(alpha: 0.75),
+              fontSize: BlockMetrics.natural.unitSize,
             ),
+          ),
         ],
       ),
     );
@@ -121,48 +96,32 @@ class MetricView extends StatelessWidget {
 
   /// Icône, valeur, unité — la mise en forme de `MetricTile`, pour les cellules
   /// où l'on tient plusieurs mesures.
-  Widget _compact(
-    MetricReading reading,
-    BlockMetrics metrics, {
-    required bool bounded,
-  }) {
+  Widget _compact(MetricReading reading) {
     final background = zoneColorOf(reading.zoneKey);
     final ink = background == null ? Colors.white : foregroundOf(background);
 
     return BlockSurface(
-      metrics: metrics,
       background: background,
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          if (metrics.showIcon) ...[
-            Icon(
-              metric.icon,
-              size: metrics.iconSize,
-              color: ink.withValues(alpha: 0.7),
-            ),
-            const SizedBox(height: 4),
-          ],
-          _value(
-            reading,
-            ink,
-            size: 26,
-            weight: FontWeight.w400,
-            leading: 1.1,
-            bounded: bounded,
+          Icon(
+            metric.icon,
+            size: BlockMetrics.natural.iconSize,
+            color: ink.withValues(alpha: 0.7),
           ),
-          if (metrics.showUnit)
-            Text(
-              metric.unit,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: background == null
-                    ? Colors.white54
-                    : ink.withValues(alpha: 0.75),
-                fontSize: metrics.unitSize - 2,
-              ),
+          const SizedBox(height: 4),
+          _value(reading, ink, size: 26, weight: FontWeight.w400, leading: 1.1),
+          Text(
+            metric.unit,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color:
+                  background == null ? Colors.white54 : ink.withValues(alpha: 0.75),
+              fontSize: BlockMetrics.natural.unitSize - 2,
             ),
+          ),
         ],
       ),
     );
@@ -176,63 +135,47 @@ class MetricView extends StatelessWidget {
   /// puissance se peignent des mêmes couleurs de zone et affichent la même
   /// forme (« Z3 »), seule l'icône (cœur / éclair) dit laquelle on regarde, et
   /// elle doit se lire du même geste que le chiffre, pas dans un second temps.
-  Widget _zone(
-    MetricReading reading,
-    BlockMetrics metrics, {
-    required bool bounded,
-  }) {
+  Widget _zone(MetricReading reading) {
     final background = zoneColorOf(reading.zoneKey);
     final ink = background == null ? Colors.white : foregroundOf(background);
 
     final row = Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        if (metrics.showIcon) ...[
-          Icon(
-            metric.icon,
-            size: metrics.iconSize,
-            color: ink.withValues(alpha: 0.7),
-          ),
-          SizedBox(width: metrics.gap / 2),
-        ],
-        Flexible(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              reading.value ?? '—',
-              maxLines: 1,
-              style: TextStyle(
-                color: ink,
-                fontSize: 64,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+        Icon(
+          metric.icon,
+          size: BlockMetrics.natural.iconSize,
+          color: ink.withValues(alpha: 0.7),
+        ),
+        SizedBox(width: BlockMetrics.natural.gap / 2),
+        Text(
+          reading.value ?? '—',
+          maxLines: 1,
+          style: TextStyle(
+            color: ink,
+            fontSize: 64,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ],
     );
 
     return BlockSurface(
-      metrics: metrics,
       background: background,
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          bounded
-              ? Expanded(child: row)
-              : SizedBox(height: _unboundedValueHeight, child: row),
-          if (metrics.showUnit)
-            Text(
-              metric.unit,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: background == null
-                    ? Colors.white54
-                    : ink.withValues(alpha: 0.75),
-                fontSize: metrics.unitSize,
-              ),
+          SizedBox(height: _valueHeight, child: Center(child: row)),
+          Text(
+            metric.unit,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color:
+                  background == null ? Colors.white54 : ink.withValues(alpha: 0.75),
+              fontSize: BlockMetrics.natural.unitSize,
             ),
+          ),
         ],
       ),
     );
@@ -244,55 +187,50 @@ class MetricView extends StatelessWidget {
   /// n'en existe pas d'autre qui veuille dire quelque chose (une puissance « sur
   /// 400 W » ne dit rien de commun entre deux cyclistes). **Sans zones, il n'y a
   /// pas de plage** : on retombe alors sur le chiffre plein cadre plutôt que de
-  /// dessiner une jauge dont on aurait inventé le maximum.
-  ///
-  /// Même repli dans une case minuscule, et pour une raison voisine : sept
-  /// paliers sur 48 pixels de large ne se distinguent plus les uns des autres,
-  /// et une jauge qu'on ne sait pas lire vaut moins que le chiffre qu'elle
-  /// remplaçait.
-  Widget _gauge(
-    MetricReading reading,
-    BlockMetrics metrics, {
-    required bool bounded,
-  }) {
+  /// dessiner une jauge dont on aurait inventé le maximum. C'est le seul repli
+  /// de ce composant, et il tient à l'absence de donnée — pas à la taille de la
+  /// case, que [ScaleToFit] absorbe désormais seul.
+  Widget _gauge(MetricReading reading) {
     final zones = metric.zonesOf(sources.riderProfile.profile);
-    if (zones.isEmpty || metrics.density == BlockDensity.minimal) {
-      return _big(reading, metrics, bounded: bounded);
-    }
+    if (zones.isEmpty) return _big(reading);
 
     final index = zones.indexWhere((zone) => zone.key == reading.zoneKey);
     final color = zoneColorOf(reading.zoneKey) ?? Colors.white24;
 
+    // Largeur fixe et non `stretch` : la carte se construit désormais à sa
+    // taille naturelle, indépendante de la case, et `stretch` sous une
+    // largeur non bornée lèverait — c'est `ScaleToFit` qui ramène ensuite
+    // cette largeur à celle de la case réelle.
     return BlockSurface(
-      metrics: metrics,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _value(reading, Colors.white, size: 48, bounded: bounded),
-          SizedBox(height: metrics.gap),
-          // Une case par zone plutôt qu'un remplissage continu : les zones sont
-          // des paliers, et un dégradé laisserait croire à une progression
-          // linéaire qu'elles n'ont pas.
-          Row(
-            children: [
-              for (var i = 0; i < zones.length; i++) ...[
-                if (i > 0) const SizedBox(width: 2),
-                Expanded(
-                  child: Container(
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: i <= index && index >= 0
-                          ? (zoneColorOf(zones[i].key) ?? color)
-                          : Colors.white12,
-                      borderRadius: BorderRadius.circular(2),
+      child: SizedBox(
+        width: 220,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _value(reading, Colors.white, size: 48),
+            SizedBox(height: BlockMetrics.natural.gap),
+            // Une case par zone plutôt qu'un remplissage continu : les zones
+            // sont des paliers, et un dégradé laisserait croire à une
+            // progression linéaire qu'elles n'ont pas.
+            Row(
+              children: [
+                for (var i = 0; i < zones.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 2),
+                  Expanded(
+                    child: Container(
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: i <= index && index >= 0
+                            ? (zoneColorOf(zones[i].key) ?? color)
+                            : Colors.white12,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
                   ),
-                ),
+                ],
               ],
-            ],
-          ),
-          if (metrics.showUnit) ...[
+            ),
             const SizedBox(height: 4),
             Text(
               metric.unit,
@@ -301,44 +239,42 @@ class MetricView extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.white54,
-                fontSize: metrics.unitSize - 2,
+                fontSize: BlockMetrics.natural.unitSize - 2,
               ),
             ),
           ],
-        ],
+        ),
       ),
     );
   }
 
-  /// Le chiffre, à la taille que la case lui laisse.
+  /// Le chiffre, à sa taille naturelle.
   ///
-  /// `Expanded` dans une case — il prend tout ce que l'unité et l'icône n'ont
-  /// pas pris — mais **jamais dans une page qui défile** : la hauteur y est
-  /// infinie, et un enfant à flex non nul sous une contrainte infinie lève au
-  /// premier rendu.
+  /// `FittedBox` et pas une taille fixe : les valeurs sont de longueurs très
+  /// inégales (« 8 » et « 1:12:34 ») et une largeur de case ne s'élargit pas
+  /// pour les accueillir. La hauteur, elle, est fixe — c'est la carte entière
+  /// que [ScaleToFit] met à l'échelle ensuite, pas ce chiffre pris seul.
   Widget _value(
     MetricReading reading,
     Color ink, {
     required double size,
-    required bool bounded,
     FontWeight weight = FontWeight.w500,
     double leading = 1,
-  }) {
-    final text = FittedBox(
-      fit: BoxFit.scaleDown,
-      child: Text(
-        reading.value ?? '—',
-        maxLines: 1,
-        style: TextStyle(
-          color: ink,
-          fontSize: size,
-          fontWeight: weight,
-          height: leading,
+  }) =>
+      SizedBox(
+        height: _valueHeight,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            reading.value ?? '—',
+            maxLines: 1,
+            style: TextStyle(
+              color: ink,
+              fontSize: size,
+              fontWeight: weight,
+              height: leading,
+            ),
+          ),
         ),
-      ),
-    );
-
-    if (!bounded) return SizedBox(height: _unboundedValueHeight, child: text);
-    return Expanded(child: text);
-  }
+      );
 }

@@ -330,17 +330,17 @@ void main() {
       expect(find.text('62 prévus'), findsOneWidget);
     });
 
-    testWidgets('dans une case étroite, il garde le chiffre et perd le reste',
+    testWidgets('dans une case étroite, tout reste, réduit plutôt que retiré',
         (tester) async {
-      // Une case de grille de 3 × 3 : 104 de large. Les deux pastilles s'y
-      // marcheraient dessus — et ce qui reste répond encore à la question qu'on
-      // se pose au guidon.
+      // Une case de grille de 3 × 3 : 104 de large. Les deux pastilles n'en
+      // sont plus retirées — c'est `ScaleToFit` qui réduit la carte entière
+      // pour qu'elles y tiennent quand même.
       await tester.runAsync(() => budgets.record(budgetOn(DateTime(2026, 8, 3))));
       await pump(tester, size: const Size(104, 194));
 
       expect(find.text('24 / 85'), findsOneWidget);
-      expect(find.text('max 120'), findsNothing);
-      expect(find.text('1,18'), findsNothing);
+      expect(find.text('max 120'), findsOneWidget);
+      expect(find.text('1,18'), findsOneWidget);
     });
   });
 }

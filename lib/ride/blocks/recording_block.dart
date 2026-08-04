@@ -4,6 +4,7 @@ import '../../dashboard/block_density.dart';
 import '../../dashboard/dashboard_block.dart';
 import '../../recording/gps_source.dart';
 import '../../recording/ride_recorder.dart';
+import 'block_card.dart';
 
 /// Piloter l'enregistrement sans quitter la sortie : démarrer, suspendre,
 /// reprendre.
@@ -28,42 +29,27 @@ class RecordingControl extends StatelessWidget {
   final RideRecorder recorder;
   final RecordingMode mode;
 
-  /// Sous cette largeur, « Démarrer l'enregistrement » ne tient plus sur la
-  /// ligne du bouton. Le libellé ne se tronque pas : un bouton qui déclenche un
-  /// enregistrement doit dire ce qu'il fait, ou ne rien dire du tout — c'est
-  /// alors l'icône seule, sur toute la case, avec sa bulle d'aide.
-  static const _fullWidth = 200.0;
-
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final metrics = BlockMetrics.of(constraints);
-        final compact = mode == RecordingMode.compact ||
-            constraints.maxWidth < _fullWidth ||
-            metrics.density == BlockDensity.tight ||
-            metrics.density == BlockDensity.minimal;
+    final compact = mode == RecordingMode.compact;
 
-        return ListenableBuilder(
-          listenable: recorder,
-          builder: (context, _) => switch (recorder.state) {
-            RecorderState.idle => _StartRecordingButton(
-                recorder: recorder,
-                compact: compact,
-              ),
-            RecorderState.recording => _PauseButton(
-                recorder: recorder,
-                compact: compact,
-              ),
-            // La pause **garde sa bande orange même en compact**, et c'est le
-            // seul mode qui ne se réduit pas : c'est la seule façon de perdre la
-            // fin d'une sortie sans s'en apercevoir, donc la seule chose de
-            // cette page qui doive crier. Elle perd sa phrase d'explication dans
-            // une petite case, jamais son aplat.
-            RecorderState.paused =>
-              _ResumeBanner(recorder: recorder, metrics: metrics),
-          },
-        );
+    return ListenableBuilder(
+      listenable: recorder,
+      builder: (context, _) => switch (recorder.state) {
+        RecorderState.idle => _StartRecordingButton(
+            recorder: recorder,
+            compact: compact,
+          ),
+        RecorderState.recording => _PauseButton(
+            recorder: recorder,
+            compact: compact,
+          ),
+        // La pause **garde sa bande orange même en compact**, et c'est le
+        // seul mode qui ne se réduit pas : c'est la seule façon de perdre la
+        // fin d'une sortie sans s'en apercevoir, donc la seule chose de
+        // cette page qui doive crier. Elle perd sa phrase d'explication dans
+        // une petite case, jamais son aplat.
+        RecorderState.paused => _ResumeBanner(recorder: recorder),
       },
     );
   }
@@ -128,21 +114,30 @@ class _StartRecordingButtonState extends State<_StartRecordingButton> {
       );
     }
 
-    return SizedBox(
-      width: double.infinity,
-      child: FilledButton.icon(
-        // Haut : le doigt vise mal sur une route bosselée, et cette page se
-        // consulte à l'arrêt ou au feu rouge.
-        style: FilledButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 16),
+    return ScaleToFit(
+      child: SizedBox(
+        width: _fullWidth,
+        child: FilledButton.icon(
+          // Haut : le doigt vise mal sur une route bosselée, et cette page se
+          // consulte à l'arrêt ou au feu rouge.
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+          ),
+          onPressed: _starting ? null : _start,
+          icon: icon,
+          label: Text(label, style: const TextStyle(fontSize: 16)),
         ),
-        onPressed: _starting ? null : _start,
-        icon: icon,
-        label: Text(label, style: const TextStyle(fontSize: 16)),
       ),
     );
   }
 }
+
+/// La largeur à laquelle le bouton large se construit avant mise à l'échelle —
+/// ce qu'il faut à « Démarrer l'enregistrement » pour tenir sur une ligne.
+/// Fixe et non celle de la case : [ScaleToFit] la ramène à la case réelle, et
+/// une case trop étroite pour ça reçoit le bouton réduit plutôt qu'un libellé
+/// tronqué.
+const _fullWidth = 200.0;
 
 /// Suspendre l'enregistrement : discret, et sans confirmation.
 ///
@@ -166,17 +161,19 @@ class _PauseButton extends StatelessWidget {
       );
     }
 
-    return SizedBox(
-      width: double.infinity,
-      child: OutlinedButton.icon(
-        style: OutlinedButton.styleFrom(
-          foregroundColor: Colors.white70,
-          side: const BorderSide(color: Colors.white24),
-          padding: const EdgeInsets.symmetric(vertical: 14),
+    return ScaleToFit(
+      child: SizedBox(
+        width: _fullWidth,
+        child: OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.white70,
+            side: const BorderSide(color: Colors.white24),
+            padding: const EdgeInsets.symmetric(vertical: 14),
+          ),
+          onPressed: recorder.pause,
+          icon: const Icon(Icons.pause),
+          label: const Text('Mettre en pause', style: TextStyle(fontSize: 15)),
         ),
-        onPressed: recorder.pause,
-        icon: const Icon(Icons.pause),
-        label: const Text('Mettre en pause', style: TextStyle(fontSize: 15)),
       ),
     );
   }
@@ -189,62 +186,70 @@ class _PauseButton extends StatelessWidget {
 /// l'arrêt à un feu ». D'où l'aplat orange sur toute la largeur, qui ne laisse
 /// aucun doute et qui est en même temps le bouton de reprise.
 class _ResumeBanner extends StatelessWidget {
-  const _ResumeBanner({required this.recorder, required this.metrics});
+  const _ResumeBanner({required this.recorder});
 
   final RideRecorder recorder;
 
-  /// La place de la case. La phrase d'explication part quand elle manque — le
-  /// titre et l'aplat, jamais.
-  final BlockMetrics metrics;
+  /// La largeur à laquelle la bande se construit avant mise à l'échelle.
+  /// Fixe et non celle de la case : [ScaleToFit] la ramène à la case réelle,
+  /// et la phrase d'explication reste toujours écrite, réduite plutôt que
+  /// retirée.
+  static const _naturalWidth = 260.0;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFFB35300),
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: recorder.resume,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: metrics.padding,
-            vertical: metrics.padding - 2,
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.pause_circle, color: Colors.white),
-              SizedBox(width: metrics.gap),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Enregistrement en pause',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: metrics.lineSize,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (metrics.showTitle)
-                      Text(
-                        'Rien n\'est écrit — la trace reprend où elle s\'est arrêtée.',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: metrics.titleSize - 1,
-                        ),
-                      ),
-                  ],
-                ),
+    const metrics = BlockMetrics.natural;
+
+    return ScaleToFit(
+      child: SizedBox(
+        width: _naturalWidth,
+        child: Material(
+          color: const Color(0xFFB35300),
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            onTap: recorder.resume,
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: metrics.padding,
+                vertical: metrics.padding - 2,
               ),
-              SizedBox(width: metrics.gap),
-              const Icon(Icons.play_arrow, color: Colors.white),
-            ],
+              child: Row(
+                children: [
+                  const Icon(Icons.pause_circle, color: Colors.white),
+                  SizedBox(width: metrics.gap),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Enregistrement en pause',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: metrics.lineSize,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          'Rien n\'est écrit — la trace reprend où elle s\'est arrêtée.',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: metrics.titleSize - 1,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(width: metrics.gap),
+                  const Icon(Icons.play_arrow, color: Colors.white),
+                ],
+              ),
+            ),
           ),
         ),
       ),

@@ -24,8 +24,8 @@ import 'block_card.dart';
 ///     plafond de fatigue au bout. C'est elle qu'on lit du coin de l'œil, parce
 ///     qu'une proportion se voit sans se déchiffrer ;
 ///  3. **le contexte** — la fraîcheur et le risque de blessure, deux pastilles de
-///     couleur. Elles se lisent en diagonale, donc elles partent les premières
-///     quand la case se resserre ([BlockMetrics.budgetContextFits]).
+///     couleur. Elles restent toujours dessinées, comme le reste de la carte —
+///     [ScaleToFit] réduit l'ensemble plutôt que de les retirer.
 ///
 /// Le TSS de la sortie en cours **n'est pas dans le budget** : le site ne l'a pas,
 /// elle ne sera téléversée qu'une fois rentré. Il est calculé ici, avec la même
@@ -77,74 +77,62 @@ class TrainingBudgetCard extends StatelessWidget {
           );
         }
 
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            final metrics = BlockMetrics.of(constraints);
-            final today = now ?? DateTime.now();
-
-            return BlockSurface(
-              metrics: metrics,
-              child: _content(budget, metrics, constraints, today),
-            );
-          },
-        );
+        final today = now ?? DateTime.now();
+        return BlockSurface(child: _content(budget, today));
       },
     );
   }
 
-  Widget _content(
-    TrainingBudget budget,
-    BlockMetrics metrics,
-    BoxConstraints constraints,
-    DateTime today,
-  ) {
+  /// La largeur à laquelle la carte se construit avant mise à l'échelle.
+  /// Fixe et non celle de la case — [ScaleToFit] la ramène à la case réelle.
+  static const _naturalWidth = 240.0;
+
+  Widget _content(TrainingBudget budget, DateTime today) {
     final view = mode == TrainingBudgetMode.week
         ? _weekView(budget)
         : _dayView(budget);
 
-    final showContext = metrics.budgetContextFits(
-      constraints.maxHeight,
-      width: constraints.maxWidth,
-    );
+    const metrics = BlockMetrics.natural;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (metrics.showTitle) ...[
+    return SizedBox(
+      width: _naturalWidth,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
           Text(
             _titleFor(budget, today),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: Colors.white70, fontSize: metrics.titleSize),
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: metrics.titleSize,
+            ),
           ),
           SizedBox(height: metrics.gap),
-        ],
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            // Le chiffre rapetisse plutôt que d'être tronqué : « 124 / 1… » ne
-            // vaut pas mieux que rien, alors qu'un chiffre plus petit se lit
-            // encore. Même arbitrage que [FittedProse] pour les états vides.
-            Expanded(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  view.figure,
-                  maxLines: 1,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: metrics.budgetFigureSize,
-                    fontWeight: FontWeight.w500,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              // Le chiffre rapetisse plutôt que d'être tronqué : « 124 / 1… » ne
+              // vaut pas mieux que rien, alors qu'un chiffre plus petit se lit
+              // encore, s'il ne tient pas à côté du plafond dans la largeur
+              // naturelle de la carte.
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    view.figure,
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: metrics.budgetFigureSize,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
               ),
-            ),
-            // Le plafond du jour est du contexte, comme les pastilles : il part
-            // avec elles. Sans lui, la case garde ce qu'on est venu lire.
-            if (showContext) ...[
               SizedBox(width: metrics.gap),
               Text(
                 view.aside,
@@ -155,15 +143,13 @@ class TrainingBudgetCard extends StatelessWidget {
                 ),
               ),
             ],
-          ],
-        ),
-        SizedBox(height: metrics.gap),
-        _BudgetBar(view: view, height: metrics.barHeight),
-        if (showContext) ...[
+          ),
           SizedBox(height: metrics.gap),
-          _context(budget, metrics),
+          _BudgetBar(view: view, height: metrics.barHeight),
+          SizedBox(height: metrics.gap),
+          _context(budget),
         ],
-      ],
+      ),
     );
   }
 
@@ -227,11 +213,12 @@ class TrainingBudgetCard extends StatelessWidget {
     );
   }
 
-  /// Les pastilles. Elles rapetissent plutôt que de déborder : la place leur a
-  /// déjà été accordée ([BlockMetrics.budgetContextFits]), et ce qui dépasserait
-  /// malgré tout — une police système plus grande — vaut mieux en plus petit
-  /// qu'amputé d'un des deux chiffres.
-  Widget _context(TrainingBudget budget, BlockMetrics metrics) {
+  /// Les pastilles. Elles rapetissent plutôt que de déborder — dans la largeur
+  /// naturelle de la carte, une police système plus grande vaut mieux en plus
+  /// petit qu'amputée d'un des deux chiffres ; le reste vient de la mise à
+  /// l'échelle globale de [ScaleToFit].
+  Widget _context(TrainingBudget budget) {
+    const metrics = BlockMetrics.natural;
     return FittedBox(
       fit: BoxFit.scaleDown,
       alignment: Alignment.centerLeft,
@@ -240,22 +227,20 @@ class TrainingBudgetCard extends StatelessWidget {
         children: mode == TrainingBudgetMode.week
             ? [
                 _Chip(
-                  icon: metrics.showIcon ? Icons.event_available : null,
+                  icon: Icons.event_available,
                   color: _aheadColor,
                   label: '${budget.week.planned} prévus',
-                  metrics: metrics,
                 ),
               ]
             : [
                 _Chip(
-                  icon: metrics.showIcon ? Icons.battery_charging_full : null,
+                  icon: Icons.battery_charging_full,
                   color: _formColors[budget.form.zone],
                   label: _signed(budget.form.tsb),
-                  metrics: metrics,
                 ),
                 SizedBox(width: metrics.gap),
                 _Chip(
-                  icon: metrics.showIcon ? Icons.warning_amber_rounded : null,
+                  icon: Icons.warning_amber_rounded,
                   color: _riskColors[budget.risk.zone],
                   // Le tiret et pas un chiffre quand l'ACWR manque : il faut
                   // 28 jours d'historique pour qu'il veuille dire quelque chose,
@@ -263,7 +248,6 @@ class TrainingBudgetCard extends StatelessWidget {
                   label:
                       budget.risk.acwr?.toStringAsFixed(2).replaceAll('.', ',') ??
                           '—',
-                  metrics: metrics,
                 ),
               ],
       ),
@@ -369,26 +353,23 @@ class _Chip extends StatelessWidget {
   const _Chip({
     required this.color,
     required this.label,
-    required this.metrics,
-    this.icon,
+    required this.icon,
   });
 
   /// `null` quand le site n'a pas su classer la zone : la pastille reste grise,
   /// ce qui ne dit rien — et c'est exactement l'information.
   final Color? color;
   final String label;
-  final BlockMetrics metrics;
-  final IconData? icon;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
+    const metrics = BlockMetrics.natural;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (icon case final glyph?) ...[
-          Icon(glyph, size: metrics.iconSize, color: Colors.white54),
-          const SizedBox(width: 4),
-        ],
+        Icon(icon, size: metrics.iconSize, color: Colors.white54),
+        const SizedBox(width: 4),
         Container(
           width: metrics.unitSize * 0.7,
           height: metrics.unitSize * 0.7,
