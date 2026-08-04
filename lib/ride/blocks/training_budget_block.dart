@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import '../../account/rider_profile_store.dart';
 import '../../dashboard/block_density.dart';
@@ -100,14 +101,30 @@ class TrainingBudgetCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            _titleFor(budget, today),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: metrics.titleSize,
-            ),
+          Row(
+            children: [
+              // La charge du jour, en icône : le mode semaine n'en a pas
+              // besoin, son titre ne se confond avec rien d'autre.
+              if (mode == TrainingBudgetMode.day) ...[
+                FaIcon(
+                  FontAwesomeIcons.weightHanging,
+                  size: metrics.titleSize * 0.85,
+                  color: Colors.white70,
+                ),
+                SizedBox(width: metrics.gap * 0.6),
+              ],
+              Expanded(
+                child: Text(
+                  _titleFor(budget, today),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: metrics.titleSize,
+                  ),
+                ),
+              ),
+            ],
           ),
           SizedBox(height: metrics.gap),
           Row(
@@ -145,7 +162,13 @@ class TrainingBudgetCard extends StatelessWidget {
             ],
           ),
           SizedBox(height: metrics.gap),
-          _BudgetBar(view: view, height: metrics.barHeight),
+          // 95 % et non toute la largeur : la barre respire un peu dans la
+          // carte plutôt que de toucher ses deux bords.
+          FractionallySizedBox(
+            widthFactor: 0.95,
+            alignment: Alignment.centerLeft,
+            child: _BudgetBar(view: view, height: metrics.barHeight),
+          ),
           SizedBox(height: metrics.gap),
           _context(budget),
         ],
@@ -166,31 +189,31 @@ class TrainingBudgetCard extends StatelessWidget {
     return '$scope · au ${budget.date.day}/${budget.date.month}';
   }
 
-  /// Le mode « aujourd'hui ». L'échelle de la barre est le plafond de fatigue :
-  /// c'est ce qui donne son sens au repère de la cible, posé quelque part avant
-  /// la fin. Une sortie qui dépasse le plafond étire l'échelle plutôt que de
-  /// sortir de la case — on doit voir de combien on l'a dépassé.
+  /// Le mode « aujourd'hui ». Trois zones : le fait, la sortie en cours (en
+  /// orange, tant qu'elle reste sous le plafond), puis ce qu'il reste avant le
+  /// plafond de fatigue. L'échelle de la barre est ce plafond — c'est lui qui
+  /// donne son sens à la zone grise. Une sortie qui le dépasse étire l'échelle
+  /// plutôt que de sortir de la case, et repeint la queue de la barre en rouge :
+  /// c'est le moment où le composant a quelque chose à dire.
   _BudgetView _dayView(TrainingBudget budget) {
     final ride = recorder.isActive
         ? (rideTss(recorder.stats, riderProfile.profile)?.tss ?? 0)
         : 0.0;
     final done = budget.day.done.toDouble();
     final total = done + ride;
+    final cap = budget.day.max.toDouble();
 
     return _BudgetView(
       figure: '${total.round()} / ${budget.day.target}',
       aside: 'max ${budget.day.max}',
-      scale: [budget.day.max.toDouble(), total, 1.0].reduce((a, b) => a > b ? a : b),
+      scale: [cap, total, 1.0].reduce((a, b) => a > b ? a : b),
       done: done,
       live: ride,
-      // Au-delà de la cible, la sortie n'est plus « en route vers » mais
-      // « au-delà de » : la barre change de couleur là où le conseil change de
-      // sens. Au-delà du plafond, elle passe au rouge — c'est le moment où le
-      // composant a quelque chose à dire.
-      liveColor: total > budget.day.max
-          ? _overColor
-          : (total > budget.day.target ? _aheadColor : _doneColor),
-      mark: budget.day.target.toDouble(),
+      // Toujours orange : c'est « une activité est en cours », pas un verdict
+      // sur son ampleur — le dépassement se lit sur le curseur et le rouge.
+      liveColor: _aheadColor,
+      mark: null,
+      cap: cap,
     );
   }
 
@@ -210,6 +233,7 @@ class TrainingBudgetCard extends StatelessWidget {
       live: planned,
       liveColor: _aheadColor,
       mark: budget.week.target.toDouble(),
+      cap: null,
     );
   }
 
@@ -269,6 +293,7 @@ class _BudgetView {
     required this.live,
     required this.liveColor,
     required this.mark,
+    required this.cap,
   });
 
   final String figure;
@@ -287,11 +312,17 @@ class _BudgetView {
 
   final Color liveColor;
 
-  /// La cible, en TSS. Un trait blanc sur la barre.
-  final double mark;
+  /// La cible, en TSS. Un trait blanc sur la barre — mode semaine seulement.
+  final double? mark;
+
+  /// Le plafond de fatigue — mode jour seulement. En dessous, le fond de la
+  /// barre sert déjà de zone grise pour ce qu'il reste à placer ; au-delà, la
+  /// queue de la barre passe au rouge et un curseur marque où était le plafond.
+  final double? cap;
 }
 
-/// La barre : le fait, puis ce qui bouge, puis le repère de la cible par-dessus.
+/// La barre : le fait, puis ce qui bouge, puis le repère par-dessus — la cible
+/// en mode semaine, le franchissement du plafond en mode jour.
 class _BudgetBar extends StatelessWidget {
   const _BudgetBar({required this.view, required this.height});
 
@@ -302,7 +333,10 @@ class _BudgetBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final done = (view.done / view.scale).clamp(0.0, 1.0);
     final live = (view.live / view.scale).clamp(0.0, 1.0 - done);
-    final mark = (view.mark / view.scale).clamp(0.0, 1.0);
+    final mark = view.mark != null ? (view.mark! / view.scale).clamp(0.0, 1.0) : null;
+    final capFraction =
+        view.cap != null ? (view.cap! / view.scale).clamp(0.0, 1.0) : null;
+    final exceeded = view.cap != null && (view.done + view.live) > view.cap!;
 
     return SizedBox(
       height: height,
@@ -314,6 +348,8 @@ class _BudgetBar extends StatelessWidget {
             borderRadius: BorderRadius.circular(height / 2),
             child: Stack(
               children: [
+                // Sert de zone grise (« le restant ») en mode jour tant que le
+                // plafond n'est pas franchi : ce qui n'est ni fait ni en cours.
                 const Positioned.fill(child: ColoredBox(color: _trackColor)),
                 Row(
                   children: [
@@ -330,15 +366,35 @@ class _BudgetBar extends StatelessWidget {
                     ),
                   ],
                 ),
-                // Le repère de la cible, **par-dessus** les segments : il doit se
-                // voir aussi bien quand on en est loin que quand on l'a dépassé.
-                Positioned(
-                  left: (width * mark - 1).clamp(0.0, width - 2),
-                  top: 0,
-                  bottom: 0,
-                  width: 2,
-                  child: const ColoredBox(color: Colors.white),
-                ),
+                // Le dépassement du plafond : la queue de la barre repeinte en
+                // rouge, quelle que soit la couleur en dessous — fait ou en cours.
+                if (exceeded)
+                  Positioned(
+                    left: width * capFraction!,
+                    top: 0,
+                    bottom: 0,
+                    right: 0,
+                    child: const ColoredBox(color: _overColor),
+                  ),
+                // Le repère de la cible (semaine) ou du plafond franchi (jour),
+                // **par-dessus** les segments : il doit se voir aussi bien quand
+                // on en est loin que quand on l'a dépassé.
+                if (mark != null)
+                  Positioned(
+                    left: (width * mark - 1).clamp(0.0, width - 2),
+                    top: 0,
+                    bottom: 0,
+                    width: 2,
+                    child: const ColoredBox(color: Colors.white),
+                  ),
+                if (exceeded)
+                  Positioned(
+                    left: (width * capFraction! - 1).clamp(0.0, width - 2),
+                    top: 0,
+                    bottom: 0,
+                    width: 2,
+                    child: const ColoredBox(color: Colors.white),
+                  ),
               ],
             ),
           );
@@ -409,7 +465,6 @@ const _riskColors = <String?, Color>{
   'high_risk': Color(0xFFDC3545),
 };
 
-const _doneColor = Color(0xFF198754);
 const _doneDimColor = Color(0x8C198754);
 const _aheadColor = Color(0xFFFD7E14);
 const _overColor = Color(0xFFDC3545);

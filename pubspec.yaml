@@ -50,6 +50,10 @@ dependencies:
   # navigateur qu'Android confie l'installation d'un APK.
   url_launcher: ^6.3.2
 
+  # Icônes indisponibles dans Material Icons (weight-hanging du budget de
+  # charge) : mêmes glyphes que ceux déjà utilisés côté site (`fa-solid`).
+  font_awesome_flutter: ^11.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
