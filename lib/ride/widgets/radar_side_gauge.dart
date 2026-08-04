@@ -51,7 +51,6 @@ class RadarSideGauge extends StatelessWidget {
 
   static const _close = Color(0xFFEF5350);
   static const _approaching = Color(0xFFFFA726);
-  static const _track = Color(0x22FFFFFF);
 
   @override
   Widget build(BuildContext context) {
@@ -76,7 +75,6 @@ class RadarSideGauge extends StatelessWidget {
               color: view.severity == RadarSeverity.close
                   ? _close
                   : _approaching,
-              track: _track,
               pointsRight: side.pointsRight,
               glow: glow,
             ),
@@ -91,14 +89,12 @@ class _GaugePainter extends CustomPainter {
   const _GaugePainter({
     required this.positions,
     required this.color,
-    required this.track,
     required this.pointsRight,
     required this.glow,
   });
 
   final List<double> positions;
   final Color color;
-  final Color track;
   final bool pointsRight;
 
   /// Où en est le dégradé de bord, de 0 (éteint) à 1. Animé par le widget.
@@ -159,18 +155,6 @@ class _GaugePainter extends CustomPainter {
           ),
       );
     }
-
-    // La piste est dessinée dès qu'un radar répond, même route dégagée : c'est
-    // ce qui distingue « rien derrière » de « pas de radar », et la seule façon
-    // de s'assurer d'un coup d'œil que le capteur est toujours vivant.
-    canvas.drawLine(
-      Offset(x, top),
-      Offset(x, bottom),
-      Paint()
-        ..color = track
-        ..strokeWidth = 2
-        ..strokeCap = StrokeCap.round,
-    );
 
     final halo = Paint()
       ..color = _halo
