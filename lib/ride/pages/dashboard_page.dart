@@ -6,6 +6,8 @@ import '../../dashboard/grid_layout.dart';
 import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
 import '../blocks/averages_block.dart';
+import '../blocks/change_route_block.dart';
+import '../blocks/clear_route_block.dart';
 import '../blocks/metric_view.dart';
 import '../blocks/nav_state_block.dart';
 import '../blocks/radar_block.dart';
@@ -223,6 +225,15 @@ class DashboardPage extends StatelessWidget {
           AveragesCard(recorder: sources.recorder, mode: averages.mode),
         final RecordingBlock recording =>
           RecordingControl(recorder: sources.recorder, mode: recording.mode),
+        final ChangeRouteBlock changeRoute => ChangeRouteControl(
+            onChooseRoute: onChooseRoute,
+            mode: changeRoute.mode,
+          ),
+        final ClearRouteBlock clearRoute => ClearRouteControl(
+            onClearRoute: onClearRoute,
+            nav: sources.nav,
+            mode: clearRoute.mode,
+          ),
         final NavStateBlock nav =>
           NavStateCard(nav: sources.nav, mode: nav.mode),
         final RadarBlock radarBlock =>

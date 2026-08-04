@@ -35,6 +35,11 @@ sealed class DashboardBlock {
         AveragesBlock(mode: _modeOf(raw['mode'], AveragesMode.values)),
       'recording' =>
         RecordingBlock(mode: _modeOf(raw['mode'], RecordingMode.values)),
+      'change_route' => ChangeRouteBlock(
+          mode: _modeOf(raw['mode'], ChangeRouteMode.values),
+        ),
+      'clear_route' =>
+        ClearRouteBlock(mode: _modeOf(raw['mode'], ClearRouteMode.values)),
       'nav_state' =>
         NavStateBlock(mode: _modeOf(raw['mode'], NavStateMode.values)),
       'radar' => RadarBlock(mode: _modeOf(raw['mode'], RadarMode.values)),
@@ -202,6 +207,66 @@ enum RecordingMode with BlockMode {
   compact('compact');
 
   const RecordingMode(this.key);
+
+  @override
+  final String key;
+}
+
+/// Choisir un autre itinéraire sans quitter la sortie.
+///
+/// Même geste que « Choisir un autre itinéraire » du menu ⋮
+/// (`DashboardPage._actionsMenu`), posé directement sur une page plutôt que
+/// rangé dans un menu qu'on n'ouvre presque jamais.
+class ChangeRouteBlock extends DashboardBlock {
+  const ChangeRouteBlock({this.mode = ChangeRouteMode.full});
+
+  final ChangeRouteMode mode;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ChangeRouteBlock && other.mode == mode;
+
+  @override
+  int get hashCode => mode.hashCode;
+}
+
+enum ChangeRouteMode with BlockMode {
+  /// Le bouton large, à portée de pouce sur une route bosselée.
+  full('full'),
+
+  /// L'icône seule, pour une cellule de grille.
+  compact('compact');
+
+  const ChangeRouteMode(this.key);
+
+  @override
+  final String key;
+}
+
+/// Retirer le tracé qu'on suit, sans quitter la sortie.
+///
+/// Même geste que « Retirer l'itinéraire » du menu ⋮. Désactivé — jamais
+/// masqué — tant qu'aucun tracé n'est suivi : c'est un bouton qu'on a posé
+/// exprès sur sa page, et le faire disparaître ferait chercher une case vide
+/// plutôt qu'un bouton grisé qui explique pourquoi il ne répond pas.
+class ClearRouteBlock extends DashboardBlock {
+  const ClearRouteBlock({this.mode = ClearRouteMode.full});
+
+  final ClearRouteMode mode;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ClearRouteBlock && other.mode == mode;
+
+  @override
+  int get hashCode => mode.hashCode;
+}
+
+enum ClearRouteMode with BlockMode {
+  full('full'),
+  compact('compact');
+
+  const ClearRouteMode(this.key);
 
   @override
   final String key;
