@@ -79,13 +79,32 @@ class TrainingBudgetCard extends StatelessWidget {
         }
 
         final today = now ?? DateTime.now();
-        return BlockSurface(child: _content(budget, today));
+        return LayoutBuilder(
+          // Doit être capté ici, **avant** [BlockSurface] : son `FittedBox`
+          // mesure son enfant avec des contraintes non bornées (c'est ainsi
+          // qu'il calcule son facteur d'échelle), donc un `LayoutBuilder` posé
+          // plus bas, à l'intérieur de la carte, ne voit jamais la largeur
+          // réelle de la case en grille — seulement en page qui défile, où
+          // [ScaleToFit] renonce à envelopper faute de hauteur bornée. Sans ce
+          // rattrapage, la carte se construisait toujours à [_naturalWidth]
+          // en grille, quelle que soit la largeur de la case, et le
+          // `FittedBox` la réduisait alors depuis une taille sans rapport
+          // avec la case réelle.
+          builder: (context, constraints) {
+            final width = constraints.hasBoundedWidth
+                ? constraints.maxWidth - BlockMetrics.natural.padding * 2
+                : _naturalWidth;
+            return BlockSurface(child: _content(budget, today, width));
+          },
+        );
       },
     );
   }
 
-  /// La largeur à laquelle la carte se construit avant mise à l'échelle.
-  /// Fixe et non celle de la case — [ScaleToFit] la ramène à la case réelle.
+  /// La largeur à laquelle la carte se construit avant mise à l'échelle,
+  /// quand aucune contrainte réelle n'est disponible. Cas resté théorique en
+  /// pratique — grille et page qui défile fournissent toutes deux une largeur
+  /// bornée — gardé pour ne jamais construire une carte de largeur nulle.
   static const _naturalWidth = 240.0;
 
   /// L'écart entre les quatre sections empilées (titre, chiffres, barre,
@@ -102,101 +121,90 @@ class TrainingBudgetCard extends StatelessWidget {
   /// dicte l'échelle.
   static const _sectionGap = 6.0;
 
-  Widget _content(TrainingBudget budget, DateTime today) {
+  Widget _content(TrainingBudget budget, DateTime today, double width) {
     final view = mode == TrainingBudgetMode.week
         ? _weekView(budget)
         : _dayView(budget);
 
     const metrics = BlockMetrics.natural;
 
-    return LayoutBuilder(
-      builder: (context, constraints) => SizedBox(
-        // Sans largeur bornée, on est dans la branche `FittedBox` de
-        // [ScaleToFit] (une case de grille) : elle attend une référence fixe
-        // à mettre à l'échelle, [_naturalWidth]. Avec une largeur bornée — une
-        // page qui défile, où [ScaleToFit] ne s'applique pas — la carte a sa
-        // vraie largeur sous la main ; s'en tenir à [_naturalWidth] laissait
-        // la barre (et tout le reste) s'arrêter bien avant le bord réel de la
-        // carte, qui lui remplit déjà toute la largeur disponible.
-        width: constraints.hasBoundedWidth
-            ? constraints.maxWidth
-            : _naturalWidth,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                // La charge du jour, en icône : le mode semaine n'en a pas
-                // besoin, son titre ne se confond avec rien d'autre.
-                if (mode == TrainingBudgetMode.day) ...[
-                  FaIcon(
-                    FontAwesomeIcons.weightHanging,
-                    size: metrics.titleSize * 0.85,
-                    color: Colors.white70,
-                  ),
-                  SizedBox(width: metrics.gap * 0.6),
-                ],
-                Expanded(
-                  child: Text(
-                    _titleFor(budget, today),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white70,
-                      fontSize: metrics.titleSize,
-                    ),
-                  ),
+    return SizedBox(
+      width: width,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              // La charge du jour, en icône : le mode semaine n'en a pas
+              // besoin, son titre ne se confond avec rien d'autre.
+              if (mode == TrainingBudgetMode.day) ...[
+                FaIcon(
+                  FontAwesomeIcons.weightHanging,
+                  size: metrics.titleSize * 0.85,
+                  color: Colors.white70,
                 ),
+                SizedBox(width: metrics.gap * 0.6),
               ],
-            ),
-            const SizedBox(height: _sectionGap),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                // Le chiffre rapetisse plutôt que d'être tronqué : « 124 / 1… » ne
-                // vaut pas mieux que rien, alors qu'un chiffre plus petit se lit
-                // encore, s'il ne tient pas à côté du plafond dans la largeur
-                // naturelle de la carte.
-                Expanded(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      view.figure,
-                      maxLines: 1,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: metrics.budgetFigureSize,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ),
-                SizedBox(width: metrics.gap),
-                Text(
-                  view.aside,
+              Expanded(
+                child: Text(
+                  _titleFor(budget, today),
                   maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: Colors.white60,
-                    fontSize: metrics.unitSize,
+                    color: Colors.white70,
+                    fontSize: metrics.titleSize,
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: _sectionGap),
-            // 95 % et non toute la largeur : la barre respire un peu dans la
-            // carte plutôt que de toucher ses deux bords.
-            FractionallySizedBox(
-              widthFactor: 0.95,
-              alignment: Alignment.centerLeft,
-              child: _BudgetBar(view: view, height: metrics.barHeight),
-            ),
-            const SizedBox(height: _sectionGap),
-            _context(budget),
-          ],
-        ),
+              ),
+            ],
+          ),
+          const SizedBox(height: _sectionGap),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              // Le chiffre rapetisse plutôt que d'être tronqué : « 124 / 1… » ne
+              // vaut pas mieux que rien, alors qu'un chiffre plus petit se lit
+              // encore, s'il ne tient pas à côté du plafond dans la largeur
+              // naturelle de la carte.
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    view.figure,
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: metrics.budgetFigureSize,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(width: metrics.gap),
+              Text(
+                view.aside,
+                maxLines: 1,
+                style: TextStyle(
+                  color: Colors.white60,
+                  fontSize: metrics.unitSize,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: _sectionGap),
+          // 95 % et non toute la largeur : la barre respire un peu dans la
+          // carte plutôt que de toucher ses deux bords.
+          FractionallySizedBox(
+            widthFactor: 0.95,
+            alignment: Alignment.centerLeft,
+            child: _BudgetBar(view: view, height: metrics.barHeight),
+          ),
+          const SizedBox(height: _sectionGap),
+          _context(budget),
+        ],
       ),
     );
   }
