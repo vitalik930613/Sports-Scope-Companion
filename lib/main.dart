@@ -13,6 +13,7 @@ import 'account/threshold_gap.dart';
 import 'ble/sensor_hub.dart';
 import 'dashboard/companion_settings_fetch.dart';
 import 'dashboard/companion_settings_store.dart';
+import 'dashboard/preset_picker.dart';
 import 'dashboard/ride_preset.dart';
 import 'devices/device_linker.dart';
 import 'devices/known_devices_store.dart';
@@ -663,6 +664,15 @@ class _HomePageState extends State<HomePage> {
     await _navigate(target);
   }
 
+  /// Choisir le profil de la sortie, depuis l'accueil plutôt que depuis le
+  /// sélecteur de navigation : c'est le geste qu'on fait en premier — on
+  /// choisit son vélo avant son itinéraire — et il doit rester possible sans
+  /// même viser « Naviguer », pour l'enregistrement lancé d'ici.
+  Future<void> _choosePreset() async {
+    await choosePreset(context, widget.settings);
+    if (mounted) setState(() {});
+  }
+
   Future<void> _navigate(NavigationTarget target) => openNavigation(
         context,
         target: target,
@@ -714,10 +724,35 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _chooseNavigation,
-        icon: const Icon(Icons.navigation),
-        label: const Text('Naviguer'),
+      // Le profil d'abord, la navigation ensuite : c'est l'ordre du geste sur
+      // la route (on choisit son vélo avant son itinéraire), et Naviguer part
+      // avec le profil déjà choisi plutôt que de le redemander en route.
+      // Aucun des deux boutons ne joue son animation Hero — sans `heroTag`
+      // explicite, deux FAB visibles à la fois partagent le même tag par
+      // défaut et Flutter refuse de construire la page.
+      floatingActionButton: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (widget.settings.hasChoice) ...[
+            FloatingActionButton.extended(
+              heroTag: 'choosePreset',
+              onPressed: _choosePreset,
+              icon: Icon(
+                widget.settings.preset.hasMap
+                    ? Icons.map_outlined
+                    : Icons.home_outlined,
+              ),
+              label: Text(widget.settings.preset.name),
+            ),
+            const SizedBox(width: 12),
+          ],
+          FloatingActionButton.extended(
+            heroTag: 'navigate',
+            onPressed: _chooseNavigation,
+            icon: const Icon(Icons.navigation),
+            label: const Text('Naviguer'),
+          ),
+        ],
       ),
       body: ListView(
         // Une `ListView` sans marge explicite prendrait celle du système toute

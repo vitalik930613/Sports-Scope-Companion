@@ -5,7 +5,6 @@ import '../ui/formats.dart';
 import 'nav_session.dart';
 import 'navigation_target.dart';
 import 'route_catalog_fetch.dart';
-import '../dashboard/ride_preset.dart';
 import 'route_catalog_store.dart';
 import 'route_summary.dart';
 
@@ -29,12 +28,11 @@ class NavigationPickerSheet extends StatefulWidget {
 
   final RouteCatalogStore catalog;
 
-  /// Les profils de sortie, pour choisir celui du jour.
+  /// Les profils de sortie, pour savoir si le profil actuel a une carte — un
+  /// profil de home-trainer réduit la feuille au seul départ. Le choix du
+  /// profil lui-même se fait depuis l'accueil, pas ici.
   ///
-  /// Facultatif : nul dans les tests, et **la ligne ne paraît pas non plus quand
-  /// il n'y a qu'un profil** — un sélecteur à un seul choix est du bruit sur
-  /// l'écran d'avant-départ, celui où l'on a encore les mains libres mais pas
-  /// l'envie de lire.
+  /// Facultatif : nul dans les tests.
   final CompanionSettingsStore? settings;
 
   final RouteCatalogFetch fetch;
@@ -94,83 +92,6 @@ class _NavigationPickerSheetState extends State<NavigationPickerSheet> {
     _pick(target);
   }
 
-  /// Choisir le profil de la sortie.
-  ///
-  /// Une feuille de plus plutôt qu'un menu déroulant : les profils portent des
-  /// noms libres venus du site, et un menu qui déborde de l'écran se manipule
-  /// mal avec des gants.
-  Future<void> _choosePreset() async {
-    final settings = widget.settings;
-    if (settings == null) return;
-
-    final key = await showModalBottomSheet<String>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final preset in settings.settings.presets)
-              ListTile(
-                leading: Icon(
-                  preset.hasMap ? Icons.map_outlined : Icons.home_outlined,
-                ),
-                title: Text(preset.name),
-                subtitle: _subtitle(context, preset),
-                isThreeLine: preset.description != null,
-                selected: preset.key == settings.preset.key,
-                onTap: () => Navigator.of(context).pop(preset.key),
-              ),
-          ],
-        ),
-      ),
-    );
-
-    if (key == null) return;
-    await settings.select(key);
-    if (mounted) setState(() {});
-  }
-
-  /// Le sous-titre d'un profil dans le sélecteur.
-  ///
-  /// La description **vient d'abord**, quand il y en a une : c'est un texte
-  /// libre écrit sur le site pour justement aider à choisir entre deux profils
-  /// qui, sinon, ne se distinguent que par leurs pages. Les faits techniques
-  /// restent en dessous, plus discrets — ils continuent de servir quand il n'y
-  /// a pas de description, ou en appoint quand il y en a une.
-  Widget _subtitle(BuildContext context, RidePreset preset) {
-    final description = preset.description;
-    if (description == null) return Text(_describe(preset));
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(description),
-        Text(
-          _describe(preset),
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-      ],
-    );
-  }
-
-  /// Ce qu'un profil change, en une ligne.
-  ///
-  /// Les capteurs coupés sont **écrits en toutes lettres ici**, parce que c'est
-  /// le seul endroit où on les voit : la rangée d'état de l'accueil dit ce que
-  /// les appareils font, pas ce qu'un profil demande, et y ajouter un état
-  /// visuel de plus ferait trois façons différentes d'être gris.
-  static String _describe(RidePreset preset) {
-    final off = [
-      if (!preset.hasMap) 'sans carte',
-      if (!preset.sensors.gps) 'sans GPS',
-      if (!preset.sensors.radar) 'sans radar',
-    ];
-    final count = preset.pages.length;
-    final pages = '$count page${count > 1 ? 's' : ''}';
-    return off.isEmpty ? pages : '$pages · ${off.join(' · ')}';
-  }
-
   @override
   Widget build(BuildContext context) {
     final routes = widget.catalog.routes;
@@ -192,8 +113,6 @@ class _NavigationPickerSheetState extends State<NavigationPickerSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _presetTile(),
-            const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: () => _pick(const NavigationTarget.free()),
               icon: const Icon(Icons.play_arrow),
@@ -218,7 +137,6 @@ class _NavigationPickerSheetState extends State<NavigationPickerSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _presetTile(),
           if (_session != null) _resumeTile(_session!),
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -267,26 +185,6 @@ class _NavigationPickerSheetState extends State<NavigationPickerSheet> {
           ),
         ],
       ),
-    );
-  }
-
-  /// Le profil de la sortie, en tête de la feuille.
-  ///
-  /// En tête parce qu'il commande tout le reste — jusqu'à l'existence d'une
-  /// carte — et parce que c'est le geste qu'on fait en premier : on choisit son
-  /// vélo, puis son itinéraire.
-  Widget _presetTile() {
-    final settings = widget.settings;
-    if (settings == null || !settings.hasChoice) return const SizedBox.shrink();
-
-    final preset = settings.preset;
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(preset.hasMap ? Icons.map_outlined : Icons.home_outlined),
-      title: Text('Profil : ${preset.name}'),
-      subtitle: Text(_describe(preset)),
-      trailing: const Icon(Icons.expand_more),
-      onTap: _choosePreset,
     );
   }
 
