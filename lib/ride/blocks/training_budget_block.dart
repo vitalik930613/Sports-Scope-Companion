@@ -136,16 +136,12 @@ class TrainingBudgetCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              // La charge du jour, en icône : le mode semaine n'en a pas
-              // besoin, son titre ne se confond avec rien d'autre.
-              if (mode == TrainingBudgetMode.day) ...[
-                FaIcon(
-                  FontAwesomeIcons.weightHanging,
-                  size: metrics.titleSize * 0.85,
-                  color: Colors.white70,
-                ),
-                SizedBox(width: metrics.gap * 0.6),
-              ],
+              FaIcon(
+                FontAwesomeIcons.weightHanging,
+                size: metrics.titleSize * 0.85,
+                color: Colors.white70,
+              ),
+              SizedBox(width: metrics.gap * 0.6),
               Expanded(
                 child: Text(
                   _titleFor(budget, today),
@@ -394,20 +390,30 @@ class _BudgetBar extends StatelessWidget {
                 // Sert de zone grise (« le restant ») en mode jour tant que le
                 // plafond n'est pas franchi : ce qui n'est ni fait ni en cours.
                 const Positioned.fill(child: ColoredBox(color: _trackColor)),
-                Row(
-                  children: [
-                    // Le déjà-enregistré est le même vert que la sortie en cours,
-                    // en sourdine : c'est la même charge, mais ce n'est pas celle
-                    // qu'on est en train de produire.
-                    SizedBox(
-                      width: width * done,
-                      child: const ColoredBox(color: _doneDimColor),
-                    ),
-                    SizedBox(
-                      width: width * live,
-                      child: ColoredBox(color: view.liveColor),
-                    ),
-                  ],
+                // `Positioned.fill` + `stretch` : un `SizedBox` ne fixe que la
+                // largeur, et le `Row` ne monte pas ses enfants à la hauteur de
+                // la barre par défaut (`CrossAxisAlignment.center`). Une
+                // `ColoredBox` sans enfant, livrée à elle-même en hauteur, se
+                // réduit alors à zéro pixel de haut — invisible, quelle que
+                // soit sa largeur. C'était le fait et le prévu, tous les deux,
+                // qui ne se voyaient jamais.
+                Positioned.fill(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Le déjà-enregistré est le même vert que la sortie en
+                      // cours, en sourdine : c'est la même charge, mais ce
+                      // n'est pas celle qu'on est en train de produire.
+                      SizedBox(
+                        width: width * done,
+                        child: const ColoredBox(color: _doneDimColor),
+                      ),
+                      SizedBox(
+                        width: width * live,
+                        child: ColoredBox(color: view.liveColor),
+                      ),
+                    ],
+                  ),
                 ),
                 // Le dépassement du plafond : la queue de la barre repeinte en
                 // rouge, quelle que soit la couleur en dessous — fait ou en cours.
