@@ -280,6 +280,15 @@ Future<void> openNavigation(
 }) async {
   if (context == null || !context.mounted) return;
 
+  // Le profil choisi sur le site (modale de la page de partage) prime sur celui
+  // déjà retenu dans l'appli : c'est un choix plus frais, fait pour CETTE sortie.
+  // Une clé inconnue (profil supprimé depuis) ne fait pas échouer — `select`
+  // retombe sur le premier profil, comme n'importe quelle clé périmée.
+  if (target.presetKey != null) {
+    await settings.select(target.presetKey!);
+    if (!context.mounted) return;
+  }
+
   final preset = settings.preset;
 
   // La permission n'est demandée que si quelque chose s'en sert. Un profil de
@@ -299,8 +308,16 @@ Future<void> openNavigation(
     }
   }
 
+  // `autoRecord` vient de la même modale : un choix déjà fait sur le site n'a
+  // pas à être reposé au guidon. `null` (lien plus ancien, navigation choisie
+  // dans l'appli) garde la question ; `false` la saute sans démarrer ; `true`
+  // démarre directement, comme si le cycliste avait répondu « Enregistrer ».
   if (!recorder.isActive) {
-    await _offerRecording(context, recorder, preset.sensors);
+    if (target.autoRecord == true) {
+      await _startRecording(context, recorder, preset.sensors);
+    } else if (target.autoRecord == null) {
+      await _offerRecording(context, recorder, preset.sensors);
+    }
     if (!context.mounted) return;
   }
 
@@ -376,6 +393,17 @@ Future<void> _offerRecording(
 
   if (wanted != true || !context.mounted) return;
 
+  await _startRecording(context, recorder, sensors);
+}
+
+/// Démarre l'enregistrement, et dit si ça a échoué. Séparé de [_offerRecording]
+/// pour que le choix fait sur le site (`autoRecord: true`) puisse démarrer
+/// directement, sans reposer la question que la modale du site vient de poser.
+Future<void> _startRecording(
+  BuildContext context,
+  RideRecorder recorder,
+  SensorSettings sensors,
+) async {
   try {
     await recorder.start(sensors: sensors);
   } on GpsUnavailable catch (e) {

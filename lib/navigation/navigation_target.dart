@@ -17,6 +17,8 @@ class NavigationTarget {
     this.label,
     this.handoffToken,
     this.resume = false,
+    this.presetKey,
+    this.autoRecord,
   });
 
   /// Partir sans tracé : la carte nue, et rien de ce qui traînait.
@@ -49,6 +51,18 @@ class NavigationTarget {
   /// sens que sans [shareToken] : demander un itinéraire précis, c'est déjà dire
   /// lequel on veut.
   final bool resume;
+
+  /// Le profil de sortie choisi sur le site avant d'ouvrir l'appli, posé par la
+  /// modale de la page de partage (`CompanionNavigateAction.vue`). `null` sur un
+  /// lien plus ancien, ou sans compte pour en choisir un — [openNavigation]
+  /// garde alors le profil déjà sélectionné dans l'appli.
+  final String? presetKey;
+
+  /// Démarrer l'enregistrement sans le redemander à l'ouverture. `true`/`false`
+  /// vient d'un choix explicite fait sur le site (modale) ; `null` — lien plus
+  /// ancien, ou navigation choisie dans l'appli — laisse [openNavigation] poser
+  /// sa question comme avant.
+  final bool? autoRecord;
 
   bool get isFree => shareToken == null;
 
@@ -95,6 +109,12 @@ class NavigationTarget {
     // `?handoff=…` : présent sur les liens posés par le site pour un utilisateur
     // connecté, absent partout ailleurs (lien reçu par message, lien recopié).
     final handoff = uri.queryParameters['handoff'];
+    // `?preset=…` / `?record=0|1` : posés par la même modale, seulement quand
+    // elle a pu proposer un choix (compte connecté, au moins un profil). Un
+    // lien sans ces paramètres laisse l'appli décider comme avant.
+    final presetKey = uri.queryParameters['preset'];
+    final record = uri.queryParameters['record'];
+    final autoRecord = switch (record) { '1' => true, '0' => false, _ => null };
 
     if (uri.scheme == 'sportsscope') {
       // sportsscope://navigate/<token> : `navigate` est l'hôte, le token le
@@ -104,6 +124,8 @@ class NavigationTarget {
       return NavigationTarget(
         shareToken: token?.isEmpty == true ? null : token,
         handoffToken: handoff,
+        presetKey: presetKey,
+        autoRecord: autoRecord,
       );
     }
 
@@ -124,13 +146,18 @@ class NavigationTarget {
     // corriger. La reprise ne s'offre que là où on a vraiment lu le stockage,
     // c'est-à-dire dans le sélecteur.
     if (path.length == 1 && path.first == 'navigate') {
-      return NavigationTarget(handoffToken: handoff);
+      return NavigationTarget(handoffToken: handoff, presetKey: presetKey, autoRecord: autoRecord);
     }
     if (path.length == 3 &&
         path[0] == 'routes' &&
         path[2] == 'navigate' &&
         path[1].isNotEmpty) {
-      return NavigationTarget(shareToken: path[1], handoffToken: handoff);
+      return NavigationTarget(
+        shareToken: path[1],
+        handoffToken: handoff,
+        presetKey: presetKey,
+        autoRecord: autoRecord,
+      );
     }
     return null;
   }
