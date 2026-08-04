@@ -749,7 +749,7 @@ class _HomePageState extends State<HomePage> {
           // Pas affiché en session anonyme : le bandeau juste au-dessus dit
           // déjà que rien n'est connecté, ce qui est la vraie cause. Deux cartes
           // pour un seul problème se lisent comme deux problèmes.
-          if (widget.session.signedIn != false) _thresholdGapCard(),
+          if (widget.session.signedIn != false) _thresholdsCard(),
           // Avec les autres cartes « ce qu'il faudrait régler avant de partir »,
           // et pas en tête : une mise à jour n'empêche jamais de rouler. Elle
           // ne s'affiche que s'il y en a une, et l'installation se fait dans le
@@ -818,27 +818,34 @@ class _HomePageState extends State<HomePage> {
         },
       );
 
-  /// Dit ce qui manque aux seuils, quand il manque quelque chose.
+  /// FTP et LTHR telles que le site les connaît, et ce qui manque encore.
   ///
-  /// Reconstruit sur le magasin plutôt que sur un `setState` : le profil arrive
+  /// Toujours affichée (dès qu'on est connecté) plutôt que seulement en cas de
+  /// trou : c'est le seul endroit de l'appli où ces deux chiffres se lisent, le
+  /// bandeau de sortie ne portant que les zones qui en découlent.
+  ///
+  /// Reconstruite sur le magasin plutôt que sur un `setState` : le profil arrive
   /// pendant la navigation, donc pendant que cet écran est empilé dessous et ne
   /// se redessine pas de lui-même.
-  Widget _thresholdGapCard() => ListenableBuilder(
+  Widget _thresholdsCard() => ListenableBuilder(
         listenable: widget.riderProfile,
         builder: (context, _) {
+          final profile = widget.riderProfile.profile;
           final gap = ThresholdGap.of(
-            widget.riderProfile.profile,
+            profile,
             everReceived: widget.riderProfile.updatedAt != null,
           );
-          if (gap == null) return const SizedBox.shrink();
+          final ftp =
+              profile.ftpWatts != null ? '${profile.ftpWatts} W' : '—';
+          final lthr = profile.lthr != null ? '${profile.lthr} bpm' : '—';
 
           return Card(
             color: Theme.of(context).colorScheme.tertiaryContainer,
             child: ListTile(
               leading: const Icon(Icons.stacked_bar_chart),
-              title: Text(gap.title),
-              subtitle: Text(gap.detail),
-              isThreeLine: true,
+              title: Text('FTP $ftp · LTHR $lthr'),
+              subtitle: gap == null ? null : Text(gap.detail),
+              isThreeLine: gap != null,
             ),
           );
         },
