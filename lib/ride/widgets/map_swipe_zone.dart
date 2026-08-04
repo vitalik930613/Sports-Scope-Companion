@@ -3,7 +3,15 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
-import '../../sleep/sleep_hold.dart';
+/// La dérive du doigt qu'un appui tolère avant de n'être plus qu'un glissé.
+///
+/// Reprise du site (`HOLD_MOVE_TOL_PX`, `useSleepHold.ts` du dépôt Rails), et
+/// pour sa raison : on tient 700 ms sur un vélo qui roule, la main n'est pas
+/// immobile. Ne sert plus qu'ici — la veille par appui long de l'appli
+/// elle-même a été retirée, seule celle de la carte (le site) subsiste — mais
+/// [OneFingerHorizontalDragRecognizer] doit encore rendre à la page web
+/// exactement les appuis qu'elle saura reconnaître.
+const sleepHoldDrift = 16.0;
 
 /// Le glissé horizontal **en plein milieu de la carte**, qui change de page.
 ///

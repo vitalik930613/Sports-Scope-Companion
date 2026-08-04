@@ -5,7 +5,6 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
-import '../sleep/screen_sleep.dart';
 import '../ui/formats.dart';
 import 'fit_writer.dart';
 import 'ride_recorder.dart';
@@ -115,9 +114,8 @@ class _RidesPageState extends State<RidesPage> {
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
-  // La veille par appui long, comme sur tous les écrans sauf l'accueil.
   @override
-  Widget build(BuildContext context) => ScreenSleep(child: _screen(context));
+  Widget build(BuildContext context) => _screen(context);
 
   Widget _screen(BuildContext context) {
     final sessions = _sessions;
