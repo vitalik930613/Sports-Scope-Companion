@@ -180,7 +180,10 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
   /// ligne avant de partir est le cas banal, le cache fait autorité, et « les
   /// réglages n'ont pas pu être relus » n'est pas une information à poser sur
   /// l'écran d'avant-départ.
-  Future<void> _refreshSettings() => refreshCompanionSettings(widget.settings);
+  Future<void> _refreshSettings() => refreshCompanionSettings(
+        widget.settings,
+        trainingBudget: widget.trainingBudget,
+      );
 
   /// « Ouvrir dans l'appli » depuis le site, ou un lien d'itinéraire partagé.
   ///
@@ -556,7 +559,10 @@ class _HomePageState extends State<HomePage> {
 
     await Future.wait([
       _fetchRoutes(),
-      refreshCompanionSettings(widget.settings),
+      refreshCompanionSettings(
+        widget.settings,
+        trainingBudget: widget.trainingBudget,
+      ),
     ]);
   }
 

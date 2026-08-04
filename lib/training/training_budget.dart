@@ -33,6 +33,7 @@ class TrainingBudget {
     required this.week,
     required this.form,
     required this.risk,
+    this.days = const [],
   });
 
   /// Le jour pour lequel ce budget a été calculé.
@@ -50,6 +51,11 @@ class TrainingBudget {
 
   /// Le risque de blessure (ACWR) et sa zone.
   final InjuryRisk risk;
+
+  /// Le plan jour par jour de la semaine en cours (lundi → dimanche), quand le
+  /// site en a poussé un. Vide sur un budget plus ancien que ce champ — un site
+  /// plus récent que l'appli est déjà le cas ordinaire, jamais une exception.
+  final List<DayEstimate> days;
 
   /// Ce budget est-il celui de [now] ?
   bool isFor(DateTime now) =>
@@ -69,6 +75,7 @@ class TrainingBudget {
       week: WeekBudget.fromJson(raw['week']),
       form: RiderForm.fromJson(raw['form']),
       risk: InjuryRisk.fromJson(raw['risk']),
+      days: _days(raw['days']),
     );
   }
 
@@ -79,7 +86,52 @@ class TrainingBudget {
         'week': week.toJson(),
         'form': form.toJson(),
         'risk': risk.toJson(),
+        'days': days.map((d) => d.toJson()).toList(),
       };
+}
+
+/// Un jour de la semaine en cours du plan de charge : ce qui est visé, ce qui est
+/// fait. Distinct de [DayBudget] — celui-là ne décrit qu'aujourd'hui, avec le
+/// plafond de fatigue en plus ; celui-ci décrit un jour quelconque de la semaine,
+/// pour une vue d'ensemble plutôt qu'une décision « je continue ou je rentre ? ».
+///
+/// `target`/`done` sont individuellement nuls plutôt que zéro quand le site n'a
+/// rien à en dire — un jour à venir n'a pas de `done`, un jour passé sans plan
+/// reconstitué n'a pas de `target`. Confondre les deux avec zéro se lirait comme
+/// « repos », qui est un conseil et pas une absence de donnée.
+@immutable
+class DayEstimate {
+  const DayEstimate({required this.date, this.target, this.done});
+
+  final DateTime date;
+  final int? target;
+  final int? done;
+
+  static DayEstimate? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final date = DateTime.tryParse(raw['date']?.toString() ?? '');
+    if (date == null) return null;
+
+    return DayEstimate(
+      date: date,
+      target: raw['target'] is num ? (raw['target'] as num).round() : null,
+      done: raw['done'] is num ? (raw['done'] as num).round() : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'date':
+            '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}',
+        'target': target,
+        'done': done,
+      };
+}
+
+/// Sept jours au plus : au-delà, ce n'est plus la semaine en cours que le site
+/// décrirait.
+List<DayEstimate> _days(Object? raw) {
+  if (raw is! List) return const [];
+  return raw.take(7).map(DayEstimate.fromJson).whereType<DayEstimate>().toList();
 }
 
 /// Ce que la journée autorise.

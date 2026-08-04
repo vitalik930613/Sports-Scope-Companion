@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../navigation/navigation_target.dart';
+import '../training/training_budget.dart';
+import '../training/training_budget_store.dart';
 import 'companion_settings_store.dart';
 
 /// Va chercher les profils et les range, en un geste.
@@ -17,8 +19,17 @@ import 'companion_settings_store.dart';
 /// **Un échec ne touche pas au cache** : hors ligne avant de partir est le cas
 /// banal, et un site plus ancien que l'appli répond 404 sans que ce soit une
 /// panne. Le magasin refuse de son côté un document vide de profils.
+///
+/// [trainingBudget], s'il est fourni, reçoit aussi le budget de charge — rangé
+/// sous une clé à part du même document (cf. `CompanionSettingsController#show`
+/// côté site). C'est ce qui donne à l'appli un budget frais à **chaque
+/// lancement**, plutôt que seulement quand une page du site s'ouvre dans le
+/// WebView de navigation (`pushTrainingBudget`, l'autre voie qui alimente
+/// [TrainingBudgetStore]). Absent ou mal formé, il ne touche pas au cache : même
+/// garde-fou que pour les profils, déjà assuré par `TrainingBudgetStore.record`.
 Future<void> refreshCompanionSettings(
   CompanionSettingsStore store, {
+  TrainingBudgetStore? trainingBudget,
   CompanionSettingsFetch fetch = const CompanionSettingsFetch(),
 }) async {
   // La taille mesurée part avec la requête qu'on faisait de toute façon. Aucune
@@ -28,6 +39,11 @@ Future<void> refreshCompanionSettings(
   final result = await fetch.run(grid: store.grid);
   if (result.status != SettingsFetchStatus.ok) return;
   await store.record(result.document);
+
+  if (trainingBudget == null) return;
+  final document = result.document;
+  final raw = document is Map ? document['training_budget'] : null;
+  await trainingBudget.record(TrainingBudget.fromJson(raw));
 }
 
 /// Comment s'est terminé un rafraîchissement des profils.
