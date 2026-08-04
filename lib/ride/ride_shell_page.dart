@@ -198,6 +198,10 @@ class _RideShellPageState extends State<RideShellPage>
   /// Le cycliste a-t-il changé de page de sa main depuis la dernière décision ?
   bool _userMoved = false;
 
+  /// L'alerte vue au tic précédent — pour ne fermer la page du menu qu'au
+  /// **front montant**, voir [_decideReturn].
+  RideAlert _lastAlert = RideAlert.none;
+
   /// Nombre de déplacements en cours décidés par la politique. Un compteur et
   /// pas un booléen : deux animations peuvent se chevaucher.
   int _autoMoves = 0;
@@ -310,6 +314,10 @@ class _RideShellPageState extends State<RideShellPage>
     // vue ne compte plus.
     _alerts.reset();
     _autoReturn.reset();
+    // Idem pour le front de fermeture de la page du menu : un virage encore
+    // proche juste après le rechargement doit se relire comme une alerte
+    // neuve, pas comme la suite de celle d'avant.
+    _lastAlert = RideAlert.none;
     _checkSession();
   }
 
@@ -367,7 +375,16 @@ class _RideShellPageState extends State<RideShellPage>
     // pas une, si bien qu'un virage annoncé alors qu'on lit son bilan au-dessus
     // de la carte se serait lu « il est déjà sur la carte, rien à faire » — et
     // le cycliste aurait manqué le virage devant un tableau de chiffres.
-    if (alert != RideAlert.none) _setMenuPage(null);
+    //
+    // **Seulement au front montant.** `RideAlert.turn` et `offRoute` sont des
+    // niveaux, pas des impulsions (voir `RideAlertSource`) : sur `!=
+    // RideAlert.none` tout court, ce tic tournant chaque seconde refermait la
+    // page du menu qu'on venait d'ouvrir, tant que le virage restait « proche »
+    // — le cycliste ne pouvait plus jamais consulter un bilan tant qu'une
+    // alerte durait.
+    final alertRising = alert != RideAlert.none && _lastAlert == RideAlert.none;
+    _lastAlert = alert;
+    if (alertRising) _setMenuPage(null);
 
     final decision = _autoReturn.update(
       now: now,

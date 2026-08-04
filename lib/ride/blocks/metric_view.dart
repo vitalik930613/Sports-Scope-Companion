@@ -170,16 +170,73 @@ class MetricView extends StatelessWidget {
 
   /// L'aplat de la zone du moment, la mesure dessus.
   ///
-  /// Identique à [_big] quand la mesure porte une zone : c'est justement le
-  /// point, la couleur *est* l'information. Sans zone connue, la case reste sur
-  /// le fond du tableau de bord — une couleur inventée serait pire qu'une
-  /// couleur absente.
+  /// Comme [_big] — la couleur *est* l'information, sans zone connue la case
+  /// reste sur le fond du tableau de bord — mais l'icône de la mesure se pose
+  /// **devant** le chiffre plutôt qu'au-dessus : la case cardio et la case
+  /// puissance se peignent des mêmes couleurs de zone et affichent la même
+  /// forme (« Z3 »), seule l'icône (cœur / éclair) dit laquelle on regarde, et
+  /// elle doit se lire du même geste que le chiffre, pas dans un second temps.
   Widget _zone(
     MetricReading reading,
     BlockMetrics metrics, {
     required bool bounded,
-  }) =>
-      _big(reading, metrics, bounded: bounded);
+  }) {
+    final background = zoneColorOf(reading.zoneKey);
+    final ink = background == null ? Colors.white : foregroundOf(background);
+
+    final row = Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        if (metrics.showIcon) ...[
+          Icon(
+            metric.icon,
+            size: metrics.iconSize,
+            color: ink.withValues(alpha: 0.7),
+          ),
+          SizedBox(width: metrics.gap / 2),
+        ],
+        Flexible(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              reading.value ?? '—',
+              maxLines: 1,
+              style: TextStyle(
+                color: ink,
+                fontSize: 64,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+
+    return BlockSurface(
+      metrics: metrics,
+      background: background,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          bounded
+              ? Expanded(child: row)
+              : SizedBox(height: _unboundedValueHeight, child: row),
+          if (metrics.showUnit)
+            Text(
+              metric.unit,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: background == null
+                    ? Colors.white54
+                    : ink.withValues(alpha: 0.75),
+                fontSize: metrics.unitSize,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 
   /// La position dans la plage, plutôt que le chiffre exact.
   ///
