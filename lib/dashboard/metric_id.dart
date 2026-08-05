@@ -46,7 +46,8 @@ enum MetricId {
   calories('calories', 'kcal', Icons.local_fire_department),
   gears('gears', 'braquet', Icons.settings),
   routeRemaining('route_remaining', 'restant', Icons.flag_outlined),
-  routeRemainingGain('route_remaining_gain', 'D+ restant', Icons.trending_up);
+  routeRemainingGain('route_remaining_gain', 'D+ restant', Icons.trending_up),
+  routeEta('route_eta', 'temps restant', Icons.schedule);
 
   const MetricId(this.key, this.unit, this.icon);
 
@@ -117,6 +118,9 @@ enum MetricId {
       MetricId.routeRemaining || MetricId.routeRemainingGain => [
           if (nav != null) nav,
         ],
+      // Le temps restant croise la distance qui reste (la page) et la vitesse
+      // moyenne en roulant (l'enregistreur) : il lui faut suivre les deux.
+      MetricId.routeEta => [sources.recorder, if (nav != null) nav],
       _ => [sources.recorder],
     };
   }
@@ -149,7 +153,9 @@ enum MetricId {
               : null,
         ),
       MetricId.speed => MetricReading(_speed(sources)),
-      MetricId.speedAvg => MetricReading(_kmh(stats.avgSpeedMps)),
+      // Moyenne en roulant, pas la moyenne des échantillons bruts : sans ça,
+      // un feu rouge dilue la case pendant que la sortie continue.
+      MetricId.speedAvg => MetricReading(_kmh(_movingAvgSpeedMps(stats))),
       MetricId.speedMax => MetricReading(_kmh(stats.maxSpeedMps)),
       MetricId.heartRate => _zoned(
           sources.hub.latestHeartRate.value,
@@ -210,6 +216,7 @@ enum MetricId {
       MetricId.gears => MetricReading(_gears(sources)),
       MetricId.routeRemaining => MetricReading(_remaining(sources)),
       MetricId.routeRemainingGain => MetricReading(_remainingGain(sources)),
+      MetricId.routeEta => MetricReading(_eta(sources)),
     };
   }
 
@@ -255,6 +262,32 @@ enum MetricId {
     final nav = sources.nav?.value;
     if (nav == null || !nav.onRoute || nav.isStale(DateTime.now())) return null;
     return '${nav.remainingGainM.round()}';
+  }
+
+  /// Vitesse moyenne « en roulant » : la distance parcourue sur le seul temps
+  /// où [RideStats] juge qu'on avançait ([RideStats.movingTime]), pas sur les
+  /// échantillons bruts. C'est le même seuil qui sert déjà à corriger le
+  /// `total_moving_time` du `.fit` — un feu rouge n'y compte pas non plus.
+  /// `null` tant qu'on n'a pas roulé assez pour que ça veuille dire quelque
+  /// chose.
+  static double? _movingAvgSpeedMps(RideStats stats) {
+    final movingS = stats.movingTime.inMilliseconds / 1000;
+    if (movingS <= 0) return null;
+    return stats.distanceM / movingS;
+  }
+
+  /// Temps restant estimé sur l'itinéraire : la distance qui reste (la page)
+  /// divisée par la vitesse moyenne en roulant (l'enregistreur). `null` sans
+  /// itinéraire suivi, ou tant qu'on n'a pas encore de vitesse à projeter.
+  static String? _eta(MetricSources sources) {
+    final nav = sources.nav?.value;
+    if (nav == null || !nav.onRoute || nav.isStale(DateTime.now())) return null;
+
+    final speedMps = _movingAvgSpeedMps(sources.recorder.stats);
+    if (speedMps == null || speedMps <= 0) return null;
+
+    final etaSeconds = nav.remainingM / speedMps;
+    return formatDuration(Duration(seconds: etaSeconds.round()));
   }
 
   /// Le braquet en positions — `2 × 7` — et non en dents.
