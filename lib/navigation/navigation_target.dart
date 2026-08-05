@@ -19,6 +19,7 @@ class NavigationTarget {
     this.resume = false,
     this.presetKey,
     this.autoRecord,
+    this.autoDownloadOffline = false,
   });
 
   /// Partir sans tracé : la carte nue, et rien de ce qui traînait.
@@ -63,6 +64,12 @@ class NavigationTarget {
   /// ancien, ou navigation choisie dans l'appli — laisse [openNavigation] poser
   /// sa question comme avant.
   final bool? autoRecord;
+
+  /// Lance le téléchargement de la carte hors-ligne dès l'ouverture, sans
+  /// repasser par le menu manuel de la sortie. Posé par le bouton dédié de la
+  /// liste des itinéraires (`RoutesList.vue`, `?download=1`) — jamais par la
+  /// modale de navigation, qui ne concerne que le guidage.
+  final bool autoDownloadOffline;
 
   bool get isFree => shareToken == null;
 
@@ -115,6 +122,10 @@ class NavigationTarget {
     final presetKey = uri.queryParameters['preset'];
     final record = uri.queryParameters['record'];
     final autoRecord = switch (record) { '1' => true, '0' => false, _ => null };
+    // `?download=1` : posé par le bouton « Télécharger hors-ligne » de la liste
+    // des itinéraires (RoutesList.vue) — ne concerne jamais la reprise ni un
+    // lien de partage ordinaire, absent partout ailleurs.
+    final autoDownloadOffline = uri.queryParameters['download'] == '1';
 
     if (uri.scheme == 'sportsscope') {
       // sportsscope://navigate/<token> : `navigate` est l'hôte, le token le
@@ -126,6 +137,7 @@ class NavigationTarget {
         handoffToken: handoff,
         presetKey: presetKey,
         autoRecord: autoRecord,
+        autoDownloadOffline: autoDownloadOffline,
       );
     }
 
@@ -146,7 +158,12 @@ class NavigationTarget {
     // corriger. La reprise ne s'offre que là où on a vraiment lu le stockage,
     // c'est-à-dire dans le sélecteur.
     if (path.length == 1 && path.first == 'navigate') {
-      return NavigationTarget(handoffToken: handoff, presetKey: presetKey, autoRecord: autoRecord);
+      return NavigationTarget(
+        handoffToken: handoff,
+        presetKey: presetKey,
+        autoRecord: autoRecord,
+        autoDownloadOffline: autoDownloadOffline,
+      );
     }
     if (path.length == 3 &&
         path[0] == 'routes' &&
@@ -157,6 +174,7 @@ class NavigationTarget {
         handoffToken: handoff,
         presetKey: presetKey,
         autoRecord: autoRecord,
+        autoDownloadOffline: autoDownloadOffline,
       );
     }
     return null;

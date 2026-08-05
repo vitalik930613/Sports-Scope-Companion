@@ -221,6 +221,27 @@ class NavigationWebController {
     }
   }
 
+  /// Déclenche le téléchargement hors ligne du trajet affiché, depuis le menu
+  /// natif — voir `OfflineMapNotifier` et `companionBridge.ts` côté Rails. Le
+  /// téléchargement (tuiles, archive PMTiles) reste entièrement côté site :
+  /// l'appli ne fait que composer un des trois gestes que le panneau web
+  /// propose déjà en navigateur, panneau qui est lui-même masqué dans l'appli.
+  Future<void> requestOfflineDownload() => _offlineCommand('offlineStart');
+  Future<void> cancelOfflineDownload() => _offlineCommand('offlineCancel');
+  Future<void> removeOfflineDownload() => _offlineCommand('offlineRemove');
+
+  /// `?.` sur l'objet ET sur la méthode : un site plus ancien n'expose pas ces
+  /// commandes, et l'appeler ne doit pas lever d'exception.
+  Future<void> _offlineCommand(String method) async {
+    try {
+      await webView.runJavaScript(
+        'void (window.sportsScopeCompanion?.$method?.());',
+      );
+    } catch (e) {
+      debugPrint('[web] commande hors ligne ignorée : $e');
+    }
+  }
+
   void _onPageMessage(JavaScriptMessage message) {
     try {
       final decoded = jsonDecode(message.message);

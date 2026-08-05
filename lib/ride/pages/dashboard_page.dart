@@ -15,6 +15,7 @@ import '../blocks/recording_block.dart';
 import '../blocks/training_budget_block.dart';
 import '../blocks/zones_block.dart';
 import '../nav_state.dart';
+import '../offline_map_state.dart';
 import '../radar_severity.dart';
 
 /// Une page de données du tableau de bord, telle que le profil la décrit.
@@ -39,6 +40,8 @@ class DashboardPage extends StatelessWidget {
     this.onClose,
     this.onChooseRoute,
     this.onClearRoute,
+    this.offlineMap,
+    this.onDownloadOffline,
     this.onCalibratePower,
     this.onLeaveRide,
     this.onGridMeasured,
@@ -83,6 +86,18 @@ class DashboardPage extends StatelessWidget {
   /// que pas de commande.
   final VoidCallback? onChooseRoute;
   final VoidCallback? onClearRoute;
+
+  /// Où en est la carte hors-ligne du tracé affiché, poussée par la page — voir
+  /// `OfflineMapNotifier`. Le téléchargement lui-même reste entièrement côté
+  /// site ; ceci ne sert qu'à afficher une entrée de menu à jour (prête, en
+  /// cours, périmée, en échec). Nul dans un profil sans carte, même raison que
+  /// [onChooseRoute].
+  final ValueListenable<OfflineMapState?>? offlineMap;
+
+  /// Ouvrir la boîte de téléchargement hors ligne. Nulle tant qu'aucune archive
+  /// n'est envisageable ici (pas de tracé suivi, ou page trop ancienne) : voir
+  /// `OfflineMapState.supported`.
+  final VoidCallback? onDownloadOffline;
 
   /// Calibrer le capteur de puissance. Fourni par la coquille seulement quand un
   /// capteur connecté sait le faire — le menu ne montre pas une commande qui
@@ -288,6 +303,7 @@ class DashboardPage extends StatelessWidget {
         else if (menuPages.isNotEmpty ||
             onChooseRoute != null ||
             onClearRoute != null ||
+            onDownloadOffline != null ||
             onCalibratePower != null ||
             onLeaveRide != null)
           _actionsMenu(),
@@ -309,18 +325,24 @@ class DashboardPage extends StatelessWidget {
   /// sur la carte. Sans état reçu, on ne prétend pas savoir.
   Widget _actionsMenu() {
     final nav = sources.nav;
+    final offline = offlineMap;
 
     // Sans page web, il n'y a pas d'état à écouter et le menu est fixe : un
-    // `ValueNotifier` fabriqué ici pour la forme ne serait jamais libéré.
-    if (nav == null) return _menuFor(null);
+    // `Listenable` fabriqué ici pour la forme ne serait jamais libéré.
+    final listenables = <Listenable>[
+      if (nav != null) nav,
+      if (offline != null) offline,
+    ];
+    if (listenables.isEmpty) return _menuFor(null, null);
 
-    return ValueListenableBuilder<NavState?>(
-      valueListenable: nav,
-      builder: (context, state, _) => _menuFor(state),
+    return ListenableBuilder(
+      listenable: Listenable.merge(listenables),
+      builder: (context, _) => _menuFor(nav?.value, offline?.value),
     );
   }
 
-  Widget _menuFor(NavState? state) => PopupMenuButton<VoidCallback>(
+  Widget _menuFor(NavState? state, OfflineMapState? offline) =>
+      PopupMenuButton<VoidCallback>(
         icon: const Icon(Icons.more_vert, color: Colors.white70),
         tooltip: 'Actions',
         onSelected: (action) => action(),
@@ -363,6 +385,25 @@ class DashboardPage extends StatelessWidget {
                 title: Text('Retirer l\'itinéraire'),
               ),
             ),
+          // `offline?.supported` : pas de tracé suivi, ou page trop ancienne
+          // pour connaître ce message — une commande qui n'aurait que « non »
+          // à répondre ne doit pas paraître, même raison que les deux
+          // commandes de tracé au-dessus.
+          if (onDownloadOffline case final download?
+              when offline?.supported == true)
+            PopupMenuItem(
+              value: download,
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(offline!.downloading
+                    ? Icons.downloading
+                    : offline.ready && !offline.stale
+                        ? Icons.offline_pin
+                        : Icons.download_for_offline_outlined),
+                title: const Text('Carte hors ligne'),
+                subtitle: Text(_offlineSubtitle(offline)),
+              ),
+            ),
           if (onCalibratePower case final calibrate?)
             PopupMenuItem(
               value: calibrate,
@@ -388,4 +429,16 @@ class DashboardPage extends StatelessWidget {
           ],
         ],
       );
+
+  /// Le sous-titre de l'entrée « Carte hors ligne » : où ça en est, jamais
+  /// « oui/non » — c'est justement ce qui manque au panneau web pour qu'on
+  /// n'ait pas besoin de l'ouvrir pour vérifier.
+  static String _offlineSubtitle(OfflineMapState offline) {
+    if (offline.downloading) return '${offline.pct} %';
+    if (offline.errored) return 'Échec, à refaire';
+    if (offline.stale) return 'Tracé modifié, à mettre à jour';
+    if (offline.ready) return 'Prête';
+    if (offline.mb > 0) return '~${offline.mb.toStringAsFixed(0)} Mo';
+    return 'Pour rouler sans réseau';
+  }
 }

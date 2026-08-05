@@ -18,10 +18,12 @@ import '../navigation/route_catalog_store.dart';
 import '../navigation/screen_dimmer.dart';
 import '../phone/rider_compass.dart';
 import '../recording/ride_recorder.dart';
+import '../ui/offline_download_dialog.dart';
 import '../ui/power_calibration_dialog.dart';
 import 'auto_return_policy.dart';
 import 'nav_state.dart';
 import 'navigation_web_view.dart';
+import 'offline_map_state.dart';
 import 'pages/dashboard_page.dart';
 import 'radar_alert_sound.dart';
 import 'radar_severity.dart';
@@ -142,6 +144,15 @@ class _RideShellPageState extends State<RideShellPage>
   /// et surtout le retour automatique sur la carte à l'approche d'un virage.
   /// Sans carte, personne ne l'alimente jamais — et personne ne l'écoute.
   final _nav = NavStateNotifier();
+
+  /// Où en est la carte hors-ligne du tracé affiché. Même sort que [_nav] :
+  /// sans carte, personne ne l'alimente ni ne l'écoute.
+  final _offline = OfflineMapNotifier();
+
+  /// Le téléchargement demandé par [NavigationTarget.autoDownloadOffline] a-t-il
+  /// déjà été lancé ? Sans ce verrou, chaque nouveau message `'offline'` du pont
+  /// (il en arrive à chaque changement d'état) retenterait le téléchargement.
+  bool _autoOfflineTriggered = false;
 
   late final PageController _pages;
 
@@ -460,6 +471,56 @@ class _RideShellPageState extends State<RideShellPage>
   Future<void> _calibratePower() =>
       showPowerCalibration(context, hub: widget.hub);
 
+  /// Ouvre la carte hors-ligne du tracé affiché, sans quitter la sortie —
+  /// même raison que [_calibratePower] : c'est en montagne, sans réseau, qu'on
+  /// s'aperçoit qu'on aurait dû y penser avant de partir, mais c'est encore
+  /// utile en cours de route pour la suite. Le téléchargement lui-même reste
+  /// entièrement côté site ; voir `offline_download_dialog.dart`.
+  Future<void> _downloadOffline() {
+    final web = _web;
+    if (web == null) return Future.value();
+    return showOfflineDownloadDialog(
+      context,
+      state: _offline,
+      start: () => unawaited(web.requestOfflineDownload()),
+      cancel: () => unawaited(web.cancelOfflineDownload()),
+      remove: () => unawaited(web.removeOfflineDownload()),
+    );
+  }
+
+  /// Lance le téléchargement hors-ligne sans passer par le menu, quand le lien
+  /// qui a ouvert cette sortie le demandait (`?download=1` sur le site, voir
+  /// [NavigationTarget.autoDownloadOffline]) — la même boîte que
+  /// [_downloadOffline], ouverte automatiquement dès que le pont annonce un
+  /// tracé archivable, avec le téléchargement démarré dedans plutôt que
+  /// d'attendre un tap sur « Télécharger ».
+  ///
+  /// La boîte reste ouverte tant qu'on ne l'a pas fermée : contrairement à un
+  /// message qui s'efface tout seul, on peut toujours voir où en est le
+  /// téléchargement (progression, erreur, terminé) en y revenant.
+  ///
+  /// Appelé à chaque message `'offline'` : le verrou [_autoOfflineTriggered]
+  /// garantit un seul déclenchement par sortie, et `ready && !stale` évite de
+  /// relancer un téléchargement déjà à jour.
+  void _maybeAutoDownloadOffline() {
+    if (!widget.target.autoDownloadOffline || _autoOfflineTriggered) return;
+    final state = _offline.value;
+    final web = _web;
+    if (state == null || web == null) return;
+    if (!state.supported || state.downloading) return;
+    if (state.ready && !state.stale) return;
+
+    _autoOfflineTriggered = true;
+    unawaited(showOfflineDownloadDialog(
+      context,
+      state: _offline,
+      start: () => unawaited(web.requestOfflineDownload()),
+      cancel: () => unawaited(web.cancelOfflineDownload()),
+      remove: () => unawaited(web.removeOfflineDownload()),
+    ));
+    unawaited(web.requestOfflineDownload());
+  }
+
   /// Le bouton retour du téléphone, en **trois crans au plus** et dans l'ordre
   /// où le cycliste s'est éloigné de la carte : la page de données, puis la page
   /// web si elle s'est égarée ailleurs que sur le tracé ouvert, et enfin la
@@ -518,6 +579,7 @@ class _RideShellPageState extends State<RideShellPage>
     if (web == null) return;
 
     _nav.reset();
+    _offline.reset();
     web.openTarget(target);
     // Sur la carte : c'est là que le chargement se voit, et c'est ce qu'on veut
     // regarder juste après avoir choisi où aller.
@@ -613,12 +675,17 @@ class _RideShellPageState extends State<RideShellPage>
   /// `rider_profile` : les seuils du cycliste, relayés depuis le site.
   /// `training_budget` : ce qu'il reste à faire aujourd'hui, et le plafond que la
   /// fatigue autorise — calculés par le site, qui seul a l'historique.
+  /// `offline` : où en est la carte hors-ligne du tracé affiché (voir
+  /// `OfflineMapNotifier` et `companionBridge.ts` côté Rails).
   void _onPageMessage(Map<dynamic, dynamic> message) {
     switch (message['type']) {
       case 'ready':
         _web?.bridge.pushNow();
       case 'nav':
         _nav.accept(message);
+      case 'offline':
+        _offline.accept(message);
+        _maybeAutoDownloadOffline();
       case 'rider_profile':
         widget.riderProfile.record(RiderProfile.fromJson(message['profile']));
       case 'training_budget':
@@ -676,6 +743,7 @@ class _RideShellPageState extends State<RideShellPage>
     );
     _web?.dispose();
     _nav.dispose();
+    _offline.dispose();
     _pages.dispose();
     super.dispose();
   }
@@ -894,6 +962,10 @@ class _RideShellPageState extends State<RideShellPage>
       // commandes disparaissent plutôt que de répondre « non ».
       onChooseRoute: _preset.hasMap ? _chooseRoute : null,
       onClearRoute: _preset.hasMap ? _clearRoute : null,
+      // Même raison : sans carte, il n'y a rien à archiver. `_offline` dit
+      // lui-même si un tracé est effectivement suivi (`supported`).
+      offlineMap: _preset.hasMap ? _offline : null,
+      onDownloadOffline: _preset.hasMap ? _downloadOffline : null,
       // La commande n'apparaît que si un capteur connecté sait effectivement se
       // calibrer : évalué à chaque rendu, donc juste dès que le capteur répond.
       onCalibratePower:
