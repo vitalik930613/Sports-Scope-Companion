@@ -85,6 +85,14 @@ class NavigationWebController {
           // La page peut avoir été rechargée (retour de veille, perte de
           // réseau) : on republie l'état plutôt que d'attendre une trame.
           bridge.pushNow();
+          // Les cartes hors-ligne (OPFS) sont un stockage « best-effort » côté
+          // Android : sans cet appel, l'OS peut les évincer sous pression
+          // disque — silencieusement, précisément le jour où il n'y a plus de
+          // réseau pour retélécharger. `?.` : un WebView ancien peut ne pas
+          // exposer `navigator.storage.persist`.
+          webView.runJavaScript(
+            'void (navigator.storage?.persist?.());',
+          );
           onPageFinished();
         },
         onWebResourceError: (e) {
