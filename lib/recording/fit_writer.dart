@@ -35,9 +35,6 @@ class FitWriter {
   /// certains services vérifient la cohérence fabricant/produit.
   static const _manufacturerDevelopment = 255;
 
-  static const _sportCycling = 2;
-  static const _subSportGeneric = 0;
-
   /// Le fichier `.fit` d'une sortie.
   ///
   /// Lève [EmptyRide] si la sortie ne contient aucun point : un `.fit` sans
@@ -46,6 +43,7 @@ class FitWriter {
   static Uint8List build({
     required RideSession session,
     required List<TrackPoint> points,
+    FitSport sport = FitSport.cycling,
   }) {
     if (points.isEmpty) throw const EmptyRide();
 
@@ -194,8 +192,8 @@ class FitWriter {
       2: _timestamp(start),
       3: _semicircles(summary.firstLat),
       4: _semicircles(summary.firstLng),
-      5: _sportCycling,
-      6: _subSportGeneric,
+      5: sport.sport,
+      6: sport.subSport,
       7: _milliseconds(elapsed),
       8: _milliseconds(timer),
       9: _centimetres(summary.distanceM),
@@ -326,6 +324,28 @@ class EmptyRide implements Exception {
 
   @override
   String toString() => 'Sortie vide : aucun point enregistré.';
+}
+
+/// Le sport annoncé dans le `.fit` (messages `session` et `lap`).
+///
+/// L'appli ne sait pas ce qu'on fait avec — elle enregistre position et
+/// capteurs quelle que soit la sortie — donc rien ne renseignait ce champ
+/// jusqu'ici : il valait toujours `cycling`, y compris pour une randonnée.
+/// Trois valeurs seulement, alignées sur `Route.ACTIVITIES` côté site
+/// (`cycling`/`mtb`/`hiking` — voir `RouteSummary.activity` et
+/// `navigation_picker_sheet.dart`) : ni le `.fit` ni le site n'ont besoin de
+/// plus, et un import garde ainsi le même vocabulaire qu'un itinéraire.
+/// Codes du profil FIT (Garmin), confirmés dans la table `sport` de
+/// `fit-file-parser` (celui qui relit le fichier côté site).
+enum FitSport {
+  cycling(sport: 2, subSport: 0),
+  mtb(sport: 2, subSport: 8),
+  hiking(sport: 17, subSport: 0);
+
+  const FitSport({required this.sport, required this.subSport});
+
+  final int sport;
+  final int subSport;
 }
 
 /// Types de base du format, avec leur code, leur taille et leur valeur

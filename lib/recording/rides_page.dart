@@ -55,10 +55,13 @@ class _RidesPageState extends State<RidesPage> {
   /// jetable — la source reste le JSONL de la sortie, qu'on peut réexporter
   /// autant de fois qu'on veut.
   Future<void> _export(RideSession session) async {
+    final sport = await _pickSport();
+    if (sport == null) return;
+
     setState(() => _busyId = session.id);
     try {
       final points = await widget.store.points(session.id);
-      final bytes = FitWriter.build(session: session, points: points);
+      final bytes = FitWriter.build(session: session, points: points, sport: sport);
 
       final directory = await getTemporaryDirectory();
       final file = File(p.join(directory.path, FitWriter.fileName(session)));
@@ -80,6 +83,38 @@ class _RidesPageState extends State<RidesPage> {
       if (mounted) setState(() => _busyId = null);
     }
   }
+
+  /// Ce que la sortie était vraiment, pour le `.fit` — l'appli ne l'a jamais su
+  /// pendant l'enregistrement (voir `FitSport`). `null` si l'utilisateur ferme
+  /// la boîte sans choisir, ce qui annule l'export plutôt que de deviner.
+  Future<FitSport?> _pickSport() => showDialog<FitSport>(
+        context: context,
+        builder: (dialogContext) => SimpleDialog(
+          title: const Text('Sport de cette sortie'),
+          children: [
+            _sportOption(dialogContext, FitSport.cycling, Icons.directions_bike, 'Vélo'),
+            _sportOption(dialogContext, FitSport.mtb, Icons.terrain, 'VTT'),
+            _sportOption(dialogContext, FitSport.hiking, Icons.hiking, 'Randonnée'),
+          ],
+        ),
+      );
+
+  Widget _sportOption(
+    BuildContext dialogContext,
+    FitSport sport,
+    IconData icon,
+    String label,
+  ) =>
+      SimpleDialogOption(
+        onPressed: () => Navigator.of(dialogContext).pop(sport),
+        child: Row(
+          children: [
+            Icon(icon),
+            const SizedBox(width: 12),
+            Text(label),
+          ],
+        ),
+      );
 
   Future<void> _delete(RideSession session) async {
     final confirmed = await showDialog<bool>(
