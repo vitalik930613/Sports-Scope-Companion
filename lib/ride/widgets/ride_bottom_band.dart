@@ -107,8 +107,8 @@ class _RideBottomBandState extends State<RideBottomBand> {
           ),
           child: Row(
             children: [
-              for (final metric in widget.bands[_set].metrics)
-                Expanded(child: _metric(metric)),
+              for (final (index, metric) in widget.bands[_set].metrics.indexed)
+                Expanded(child: _metric(metric, index)),
             ],
           ),
         ),
@@ -116,7 +116,18 @@ class _RideBottomBandState extends State<RideBottomBand> {
     );
   }
 
-  Widget _metric(MetricId metric) {
+  /// Noir (le fond du bandeau lui-même) et l'anthracite des cartes ailleurs
+  /// dans la sortie — en alternance pour que deux chiffres voisins ne se
+  /// confondent pas en une seule masse. La couleur de zone, quand il y en a
+  /// une, garde toujours la priorité : c'est elle, l'information.
+  static const _alternateBackgrounds = [Color(0xFF101214), Color(0xFF1F2226)];
+
+  Widget _metric(MetricId? metric, int index) {
+    // Une case vide reste dans la rangée — le glissé de largeur du `Row`
+    // parent dépend du nombre de cases, pas de leur contenu — mais n'y
+    // dessine rien.
+    if (metric == null) return const SizedBox.shrink();
+
     final tile = ListenableBuilder(
       listenable: Listenable.merge(metric.dependencies(widget.sources)),
       builder: (context, _) {
@@ -125,6 +136,7 @@ class _RideBottomBandState extends State<RideBottomBand> {
           value: reading.value,
           label: metric.unit,
           zoneKey: reading.zoneKey,
+          altBackground: _alternateBackgrounds[index % 2],
         );
       },
     );
@@ -152,7 +164,12 @@ class _RideBottomBandState extends State<RideBottomBand> {
 /// [MetricTile], pour que le bandeau et l'écran de diagnostic ne racontent pas
 /// deux histoires différentes du même capteur muet.
 class _BandMetric extends StatelessWidget {
-  const _BandMetric({required this.value, required this.label, this.zoneKey});
+  const _BandMetric({
+    required this.value,
+    required this.label,
+    this.zoneKey,
+    this.altBackground,
+  });
 
   final String? value;
   final String label;
@@ -161,10 +178,14 @@ class _BandMetric extends StatelessWidget {
   /// laisser sur le fond du bandeau.
   final String? zoneKey;
 
+  /// Le noir ou l'anthracite de l'alternance, quand la case ne porte pas de
+  /// zone — c'est elle qui recule dès qu'une zone donne une vraie couleur.
+  final Color? altBackground;
+
   @override
   Widget build(BuildContext context) {
-    final background = zoneColorOf(zoneKey);
-    final foreground = background == null ? Colors.white : foregroundOf(background);
+    final zoneColor = zoneColorOf(zoneKey);
+    final foreground = zoneColor == null ? Colors.white : foregroundOf(zoneColor);
 
     final content = Column(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -191,14 +212,15 @@ class _BandMetric extends StatelessWidget {
           // Sur un aplat de zone, le libellé passe de « discret » à « lisible » :
           // le blanc à 54 % disparaît sur le jaune comme sur le rouge.
           style: TextStyle(
-            color: background == null ? Colors.white54 : foreground.withValues(alpha: 0.75),
+            color: zoneColor == null ? Colors.white54 : foreground.withValues(alpha: 0.75),
             fontSize: 11,
           ),
         ),
       ],
     );
 
-    if (background == null) return content;
+    final surface = zoneColor ?? altBackground;
+    if (surface == null) return content;
 
     // Symétrique depuis que les pastilles du jeu de valeurs ont quitté le bord
     // haut : la marge de 9 pt qui les dégageait ne tenait plus qu'à elles, et
@@ -207,7 +229,7 @@ class _BandMetric extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.fromLTRB(2, 3, 2, 3),
       decoration: BoxDecoration(
-        color: background,
+        color: surface,
         borderRadius: BorderRadius.circular(6),
       ),
       child: content,

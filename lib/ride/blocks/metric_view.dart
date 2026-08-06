@@ -80,7 +80,7 @@ class MetricView extends StatelessWidget {
         children: [
           _value(reading, ink, size: 64),
           Text(
-            metric.unit,
+            metric.unit.toUpperCase(),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
@@ -113,7 +113,7 @@ class MetricView extends StatelessWidget {
           const SizedBox(height: 4),
           _value(reading, ink, size: 26, weight: FontWeight.w400, leading: 1.1),
           Text(
-            metric.unit,
+            metric.unit.toUpperCase(),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
@@ -130,31 +130,34 @@ class MetricView extends StatelessWidget {
   /// L'aplat de la zone du moment, la mesure dessus.
   ///
   /// Comme [_big] — la couleur *est* l'information, sans zone connue la case
-  /// reste sur le fond du tableau de bord — mais l'icône de la mesure se pose
-  /// **devant** le chiffre plutôt qu'au-dessus : la case cardio et la case
-  /// puissance se peignent des mêmes couleurs de zone et affichent la même
-  /// forme (« Z3 »), seule l'icône (cœur / éclair) dit laquelle on regarde, et
-  /// elle doit se lire du même geste que le chiffre, pas dans un second temps.
+  /// reste sur le fond du tableau de bord. L'icône se pose devant le **titre**
+  /// et non devant le chiffre : elle dit quelle mesure on regarde (cœur /
+  /// éclair pour la case cardio et la case puissance, qui se peignent des
+  /// mêmes couleurs de zone et affichent la même forme « Z3 ») au même endroit
+  /// que le nom qui le confirme, avant qu'on descende lire le chiffre lui-même.
   Widget _zone(MetricReading reading) {
     final background = zoneColorOf(reading.zoneKey);
     final ink = background == null ? Colors.white : foregroundOf(background);
+    final titleColor =
+        background == null ? Colors.white70 : ink.withValues(alpha: 0.85);
 
-    final row = Row(
+    final title = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(
           metric.icon,
           size: BlockMetrics.natural.iconSize,
-          color: ink.withValues(alpha: 0.7),
+          color: titleColor,
         ),
         SizedBox(width: BlockMetrics.natural.gap / 2),
         Text(
-          reading.value ?? '—',
+          metric.unit.toUpperCase(),
           maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            color: ink,
-            fontSize: 64,
-            fontWeight: FontWeight.w500,
+            color: titleColor,
+            fontSize: BlockMetrics.natural.unitSize + 6,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ],
@@ -165,15 +168,19 @@ class MetricView extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(height: _valueHeight, child: Center(child: row)),
+          title,
+          const SizedBox(height: 2),
+          // `height: 1` : sans lui, l'interligne par défaut de la police ajoute
+          // un blanc au-dessus des chiffres, qui se voyait comme un écart bien
+          // plus grand que le `SizedBox` entre le titre et eux.
           Text(
-            metric.unit,
+            reading.value ?? '—',
             maxLines: 1,
-            overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color:
-                  background == null ? Colors.white54 : ink.withValues(alpha: 0.75),
-              fontSize: BlockMetrics.natural.unitSize,
+              color: ink,
+              fontSize: 64,
+              fontWeight: FontWeight.w500,
+              height: 1,
             ),
           ),
         ],
@@ -233,7 +240,7 @@ class MetricView extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              metric.unit,
+              metric.unit.toUpperCase(),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,

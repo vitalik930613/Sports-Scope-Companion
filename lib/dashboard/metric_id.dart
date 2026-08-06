@@ -27,7 +27,7 @@ enum MetricId {
   movingTime('moving_time', 'en mouvement', Icons.directions_bike),
   distance('distance', 'distance', Icons.straighten),
   speed('speed', 'km/h', Icons.speed),
-  speedAvg('speed_avg', 'km/h moy', Icons.speed),
+  speedAvg('speed_avg', 'Vitesse moyenne', Icons.speed),
   speedMax('speed_max', 'km/h max', Icons.speed),
   heartRate('heart_rate', 'bpm', Icons.favorite),
   hrZone('hr_zone', 'zone bpm', Icons.favorite),
@@ -40,12 +40,12 @@ enum MetricId {
   powerMax('power_max', 'W max', Icons.bolt),
   cadence('cadence', 'tr/min', Icons.autorenew),
   cadenceAvg('cadence_avg', 'tr/min moy', Icons.autorenew),
-  ascent('ascent', 'm D+', Icons.trending_up),
+  ascent('ascent', 'D+', Icons.trending_up),
   altitude('altitude', 'm', Icons.terrain),
   grade('grade', '% pente', Icons.north_east),
   calories('calories', 'kcal', Icons.local_fire_department),
   gears('gears', 'braquet', Icons.settings),
-  routeRemaining('route_remaining', 'restant', Icons.flag_outlined),
+  routeRemaining('route_remaining', 'Distance restante', Icons.flag_outlined),
   routeRemainingGain('route_remaining_gain', 'D+ restant', Icons.trending_up),
   routeEta('route_eta', 'temps restant', Icons.schedule);
 
@@ -140,22 +140,23 @@ enum MetricId {
       // enregistrement elles n'existent pas, et un zéro ferait croire à un
       // compteur remis à zéro plutôt qu'à une sortie non lancée.
       MetricId.duration => MetricReading(
-          active ? formatDuration(sources.recorder.recorded) : null,
+          active ? formatDurationHms(sources.recorder.recorded) : null,
         ),
       MetricId.movingTime =>
-        MetricReading(active ? formatDuration(stats.movingTime) : null),
+        MetricReading(active ? formatDurationHms(stats.movingTime) : null),
       // Sans GPS (home-trainer), la distance n'a pas de source : un « 0 m » se
       // lirait comme « je n'ai pas bougé », alors que la question ne se pose
       // même pas. Le tiret dit la bonne chose — on ne mesure pas ça ici.
       MetricId.distance => MetricReading(
           active && sources.recorder.gpsEnabled
-              ? formatDistance(sources.recorder.distanceM)
+              ? formatDistanceKm(sources.recorder.distanceM)
               : null,
         ),
       MetricId.speed => MetricReading(_speed(sources)),
       // Moyenne en roulant, pas la moyenne des échantillons bruts : sans ça,
       // un feu rouge dilue la case pendant que la sortie continue.
-      MetricId.speedAvg => MetricReading(_kmh(_movingAvgSpeedMps(stats))),
+      MetricId.speedAvg =>
+        MetricReading(_kmhUnit(_movingAvgSpeedMps(stats))),
       MetricId.speedMax => MetricReading(_kmh(stats.maxSpeedMps)),
       MetricId.heartRate => _zoned(
           sources.hub.latestHeartRate.value,
@@ -202,7 +203,7 @@ enum MetricId {
       // et un cumul avant le départ vaut « rien », pas « zéro mètre ».
       MetricId.ascent => MetricReading(
           active && sources.recorder.gpsEnabled
-              ? '${stats.ascentM.round()}'
+              ? '${stats.ascentM.round()} m'
               : null,
         ),
       MetricId.altitude => MetricReading(
@@ -255,13 +256,13 @@ enum MetricId {
   static String? _remaining(MetricSources sources) {
     final nav = sources.nav?.value;
     if (nav == null || !nav.onRoute || nav.isStale(DateTime.now())) return null;
-    return formatDistance(nav.remainingM);
+    return formatDistanceKm(nav.remainingM);
   }
 
   static String? _remainingGain(MetricSources sources) {
     final nav = sources.nav?.value;
     if (nav == null || !nav.onRoute || nav.isStale(DateTime.now())) return null;
-    return '${nav.remainingGainM.round()}';
+    return '${nav.remainingGainM.round()} m';
   }
 
   /// Vitesse moyenne « en roulant » : la distance parcourue sur le seul temps
@@ -287,7 +288,7 @@ enum MetricId {
     if (speedMps == null || speedMps <= 0) return null;
 
     final etaSeconds = nav.remainingM / speedMps;
-    return formatDuration(Duration(seconds: etaSeconds.round()));
+    return formatDurationHms(Duration(seconds: etaSeconds.round()));
   }
 
   /// Le braquet en positions — `2 × 7` — et non en dents.
@@ -325,6 +326,14 @@ enum MetricId {
 
   static String? _kmh(double? metresPerSecond) =>
       metresPerSecond == null ? null : _decimal(metresPerSecond * 3.6);
+
+  /// La vitesse moyenne porte son unité sur le chiffre lui-même : sa case
+  /// affiche un titre (« Vitesse moyenne ») là où les autres cases de vitesse
+  /// gardent l'unité en dessous.
+  static String? _kmhUnit(double? metresPerSecond) {
+    final value = _kmh(metresPerSecond);
+    return value == null ? null : '$value km/h';
+  }
 
   static String _decimal(double value) =>
       value.toStringAsFixed(1).replaceAll('.', ',');

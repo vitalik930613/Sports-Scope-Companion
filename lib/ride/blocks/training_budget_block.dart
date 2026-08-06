@@ -144,7 +144,7 @@ class TrainingBudgetCard extends StatelessWidget {
               SizedBox(width: metrics.gap * 0.6),
               Expanded(
                 child: Text(
-                  _titleFor(budget, today),
+                  _titleFor(budget, today).toUpperCase(),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(

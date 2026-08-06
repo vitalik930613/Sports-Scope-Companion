@@ -34,7 +34,7 @@ class BlockMetrics {
     titleSize: 13,
     lineSize: 16,
     unitSize: 13,
-    iconSize: 18,
+    iconSize: 26,
     barHeight: 22,
   );
 

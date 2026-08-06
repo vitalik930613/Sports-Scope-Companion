@@ -387,19 +387,21 @@ class RideBandSpec {
 
   static const maxMetrics = 4;
 
-  final List<MetricId> metrics;
+  // Une case peut être vide (`null`) : c'est le site qui décide où, une case
+  // du milieu laissée vide ne doit pas recoller celles qui suivent.
+  final List<MetricId?> metrics;
 
   static RideBandSpec? parse(Object? raw) {
     final list = raw is Map ? raw['metrics'] : raw;
     if (list is! List) return null;
 
-    final metrics = <MetricId>[];
+    final metrics = <MetricId?>[];
     for (final entry in list) {
       if (metrics.length == maxMetrics) break;
-      if (MetricId.fromKey(entry) case final metric?) metrics.add(metric);
+      metrics.add(MetricId.fromKey(entry));
     }
 
-    return metrics.isEmpty ? null : RideBandSpec(metrics);
+    return metrics.every((metric) => metric == null) ? null : RideBandSpec(metrics);
   }
 }
 
