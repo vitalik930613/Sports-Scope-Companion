@@ -21,6 +21,7 @@ import '../recording/ride_recorder.dart';
 import '../ui/offline_download_dialog.dart';
 import '../ui/power_calibration_dialog.dart';
 import 'auto_return_policy.dart';
+import 'native_turn_alerts.dart';
 import 'nav_state.dart';
 import 'navigation_web_view.dart';
 import 'offline_map_state.dart';
@@ -201,6 +202,11 @@ class _RideShellPageState extends State<RideShellPage>
   late final AutoReturnPolicy _autoReturn;
   static const _proximity = TurnProximity();
 
+  /// Filet natif de virages, voir `native_turn_alerts.dart`. `null` tant que le
+  /// tracé n'a pas de jeton (reprise, navigation libre) ou que la récupération
+  /// n'a pas encore répondu.
+  NativeTurnAlerts? _nativeTurns;
+
   /// L'horloge du retour automatique. Le front d'une alerte arrive par le pont,
   /// mais « rendre la page une fois le calme revenu » n'est piloté que par le
   /// temps qui passe.
@@ -287,6 +293,7 @@ class _RideShellPageState extends State<RideShellPage>
         onPageFinished: _onPageFinished,
       );
       _webView = NavigationWebView(controller: _web!);
+      unawaited(_loadNativeTurnAlerts(widget.target));
     }
 
     _sources = MetricSources(
@@ -305,6 +312,7 @@ class _RideShellPageState extends State<RideShellPage>
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       _decideReturn();
       _updateRadarWake();
+      _checkNativeTurnAlert();
       // Même source que le chien de garde (`recorder.lastFix`) et même
       // conséquence assumée : hors enregistrement la boussole n'a aucune course
       // à laquelle se comparer, donc elle ne se validera pas.
@@ -406,6 +414,40 @@ class _RideShellPageState extends State<RideShellPage>
     _userMoved = false;
 
     if (decision.goTo case final page?) _goToPage(page, auto: true);
+  }
+
+  /// Va chercher les virages du tracé auprès du site, pour le filet natif.
+  ///
+  /// Sans jeton (reprise, navigation libre), la page est seule à savoir quel
+  /// tracé elle suit : rien à récupérer, [_nativeTurns] reste nul.
+  Future<void> _loadNativeTurnAlerts(NavigationTarget target) async {
+    final token = target.shareToken;
+    if (token == null) return;
+
+    final hints = await fetchRouteVoiceHints(token, baseUrl: widget.baseUrl);
+    if (!mounted || hints == null || hints.isEmpty) return;
+    // Le tracé a pu changer pendant la requête : ne pas écraser la réponse
+    // d'un jeton plus récent avec celle d'un jeton périmé.
+    if (widget.target.shareToken != token) return;
+    _nativeTurns = NativeTurnAlerts(hints);
+  }
+
+  /// Vibre pour un virage que la page ne peut plus annoncer elle-même.
+  ///
+  /// Même garde que [TurnProximity] : tant que le pont est frais, c'est la
+  /// page qui alerte (bandeau, son, vibration) — vibrer en plus ferait
+  /// double emploi à chaque virage d'une sortie parfaitement normale.
+  void _checkNativeTurnAlert() {
+    final turns = _nativeTurns;
+    if (turns == null || turns.isDone) return;
+    final state = _nav.value;
+    if (state != null && !state.isStale(DateTime.now())) return;
+
+    if (turns.update(widget.recorder.lastFix)) {
+      HapticFeedback.heavyImpact();
+      Future.delayed(const Duration(milliseconds: 220), HapticFeedback.heavyImpact);
+      Future.delayed(const Duration(milliseconds: 440), HapticFeedback.heavyImpact);
+    }
   }
 
   Future<void> _checkSession() async {
@@ -580,6 +622,8 @@ class _RideShellPageState extends State<RideShellPage>
 
     _nav.reset();
     _offline.reset();
+    _nativeTurns = null;
+    unawaited(_loadNativeTurnAlerts(target));
     web.openTarget(target);
     // Sur la carte : c'est là que le chargement se voit, et c'est ce qu'on veut
     // regarder juste après avoir choisi où aller.
