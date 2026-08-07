@@ -39,6 +39,7 @@ sealed class DashboardBlock {
       'lap_summary' => LapSummaryBlock(
           mode: _modeOf(raw['mode'], LapSummaryMode.values),
         ),
+      'lap_selector' => const LapSelectorBlock(),
       'mark_lap' => MarkLapBlock(
           series: raw['series'] is String ? raw['series'] as String : 'default',
           mode: _modeOf(raw['mode'], MarkLapMode.values),
@@ -50,6 +51,7 @@ sealed class DashboardBlock {
         ),
       'clear_route' =>
         ClearRouteBlock(mode: _modeOf(raw['mode'], ClearRouteMode.values)),
+      'route' => RouteBlock(mode: _modeOf(raw['mode'], RouteMode.values)),
       'nav_state' =>
         NavStateBlock(mode: _modeOf(raw['mode'], NavStateMode.values)),
       'radar' => RadarBlock(mode: _modeOf(raw['mode'], RadarMode.values)),
@@ -260,11 +262,36 @@ class LapSummaryBlock extends DashboardBlock {
 enum LapSummaryMode with BlockMode {
   cards('cards'),
   list('list');
-
   const LapSummaryMode(this.key);
 
   @override
   final String key;
+}
+
+/// La liste déroulante qui choisit le tour affiché par les autres composants
+/// d'une page Tours ([LapZonesBlock], [LapAveragesBlock], [LapSummaryBlock]).
+///
+/// **Un composant placé comme un autre, et non un en-tête imposé.** La
+/// version d'avant le posait d'office au-dessus de la page ; la hauteur
+/// qu'elle prenait n'était alors comptée nulle part, et une page Tours en
+/// grille se retrouvait avec moins de place que ce que l'éditeur avait
+/// composé — la grille semblait décalée une fois sur le téléphone. En le
+/// rendant plaçable comme `lap_summary` ou `metric`, la page qui le porte
+/// tient tout entière dans `rows` × `cols` (ou dans sa liste), sans rien caché
+/// que l'éditeur ignorerait.
+///
+/// **Absent, la page reste utilisable** : elle montre alors toujours le tour
+/// le plus récent, sans rien à choisir — la même valeur de repli qu'avant
+/// qu'un choix explicite n'existe (`_selectedIndex ?? laps.length - 1`, cf.
+/// `LapListBody`).
+class LapSelectorBlock extends DashboardBlock {
+  const LapSelectorBlock();
+
+  @override
+  bool operator ==(Object other) => other is LapSelectorBlock;
+
+  @override
+  int get hashCode => 0;
 }
 
 /// Démarrer, suspendre, reprendre l'enregistrement.
@@ -385,6 +412,39 @@ enum ClearRouteMode with BlockMode {
   compact('compact');
 
   const ClearRouteMode(this.key);
+
+  @override
+  final String key;
+}
+
+/// [ChangeRouteBlock] et [ClearRouteBlock], combinés en un seul bouton.
+///
+/// C'est l'état de la navigation qui décide lequel des deux gestes il pose —
+/// retirer le tracé suivi s'il y en a un, en choisir un sinon. Gardé à côté
+/// des deux commandes séparées et non à leur place : un profil déjà composé
+/// avec elles ne doit rien perdre à l'enregistrement (`CompanionSettings`,
+/// site).
+///
+/// Jamais désactivé, contrairement à [ClearRouteBlock] seul : hors tracé, le
+/// bouton propose déjà le geste qui en pose un plutôt que de se griser sans
+/// rien pouvoir faire.
+class RouteBlock extends DashboardBlock {
+  const RouteBlock({this.mode = RouteMode.full});
+
+  final RouteMode mode;
+
+  @override
+  bool operator ==(Object other) => other is RouteBlock && other.mode == mode;
+
+  @override
+  int get hashCode => mode.hashCode;
+}
+
+enum RouteMode with BlockMode {
+  full('full'),
+  compact('compact');
+
+  const RouteMode(this.key);
 
   @override
   final String key;

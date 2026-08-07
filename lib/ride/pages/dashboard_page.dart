@@ -12,6 +12,7 @@ import '../blocks/metric_view.dart';
 import '../blocks/nav_state_block.dart';
 import '../blocks/radar_block.dart';
 import '../blocks/recording_block.dart';
+import '../blocks/route_block.dart';
 import '../blocks/training_budget_block.dart';
 import '../blocks/zones_block.dart';
 import '../nav_state.dart';
@@ -204,13 +205,16 @@ class DashboardPage extends StatelessWidget {
             series: markLap.series,
             mode: markLap.mode,
           ),
-        // Ces trois-là n'ont de sens que sur une LapListPageSpec, qui les
+        // Ces quatre-là n'ont de sens que sur une LapListPageSpec, qui les
         // rend elle-même avec le tour choisi (`LapListBody._block`) — ici, sur
-        // une page ordinaire, il n'existe aucun tour sélectionné à leur
-        // donner. Posés par erreur hors d'une page de tours, ils disparaissent
-        // plutôt que d'afficher des tirets qui se liraient comme des mesures
-        // absentes.
-        LapZonesBlock() || LapAveragesBlock() || LapSummaryBlock() =>
+        // une page ordinaire, il n'existe ni tour sélectionné à leur donner,
+        // ni liste de tours à faire choisir. Posés par erreur hors d'une page
+        // de tours, ils disparaissent plutôt que d'afficher des tirets qui se
+        // liraient comme des mesures absentes.
+        LapZonesBlock() ||
+        LapAveragesBlock() ||
+        LapSummaryBlock() ||
+        LapSelectorBlock() =>
           const SizedBox.shrink(),
         final ChangeRouteBlock changeRoute => ChangeRouteControl(
             onChooseRoute: onChooseRoute,
@@ -220,6 +224,12 @@ class DashboardPage extends StatelessWidget {
             onClearRoute: onClearRoute,
             nav: sources.nav,
             mode: clearRoute.mode,
+          ),
+        final RouteBlock route => RouteControl(
+            onChooseRoute: onChooseRoute,
+            onClearRoute: onClearRoute,
+            nav: sources.nav,
+            mode: route.mode,
           ),
         final NavStateBlock nav =>
           NavStateCard(nav: sources.nav, mode: nav.mode),

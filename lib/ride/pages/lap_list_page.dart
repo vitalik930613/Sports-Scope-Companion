@@ -10,8 +10,17 @@ import '../blocks/mark_lap_block.dart';
 import '../blocks/zones_block.dart';
 import '../widgets/dashboard_grid.dart';
 
-/// Le corps d'une page de tours : liste déroulante, puis les composants du
-/// tour choisi.
+/// Le corps d'une page de tours : ses composants, dont le sélecteur de tour
+/// s'il en porte un.
+///
+/// **Le sélecteur n'est plus un en-tête imposé** : c'est un composant
+/// ([LapSelectorBlock]) comme un autre, posé où l'éditeur l'a mis. La version
+/// d'avant le dessinait d'office au-dessus de la page, et sa hauteur n'était
+/// alors comptée nulle part — une page Tours en grille se retrouvait avec
+/// moins de place que ce que l'éditeur avait composé, et la grille semblait
+/// décalée une fois sur le téléphone. En le rendant plaçable, la page tient
+/// tout entière dans ce qu'elle déclare (`rows` × `cols`, ou sa liste), sans
+/// rien de caché.
 ///
 /// `StatefulWidget` parce que c'est le seul endroit du tableau de bord qui a
 /// besoin d'un état mutable en dehors de `RidePageSpec`/`DashboardBlock`
@@ -63,32 +72,25 @@ class _LapListBodyState extends State<LapListBody> {
 
         final selected =
             (_selectedIndex ?? laps.length - 1).clamp(0, laps.length - 1);
-        final lap = laps[selected];
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _selector(laps, selected),
-            const SizedBox(height: 12),
-            Expanded(child: _body(lap)),
-          ],
-        );
+        return _body(laps, selected);
       },
     );
   }
 
-  /// Le contenu sous le sélecteur : une liste défilante ([LapBlocksLayout],
-  /// le cas d'avant ce chantier) ou une grille qui tient tout entière
-  /// ([LapGridLayout]) — même choix, et pour la même raison, qu'entre
-  /// [ListPageSpec] et [GridPageSpec] sur une page de mesures.
-  Widget _body(RideLap lap) => switch (widget.spec.layout) {
+  /// Une liste défilante ([LapBlocksLayout], le cas d'avant ce chantier) ou
+  /// une grille qui tient tout entière ([LapGridLayout]) — même choix, et
+  /// pour la même raison, qu'entre [ListPageSpec] et [GridPageSpec] sur une
+  /// page de mesures.
+  Widget _body(List<RideLap> laps, int selected) =>
+      switch (widget.spec.layout) {
         final LapBlocksLayout list => ListView(
             padding: const EdgeInsets.only(bottom: 24),
             children: [
               for (final block in list.blocks)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
-                  child: _block(block, lap),
+                  child: _block(block, laps: laps, selected: selected),
                 ),
             ],
           ),
@@ -96,7 +98,8 @@ class _LapListBodyState extends State<LapListBody> {
             rows: grid.rows,
             cols: grid.cols,
             cells: grid.cells,
-            cellBuilder: (block) => _block(block, lap),
+            cellBuilder: (block) =>
+                _block(block, laps: laps, selected: selected),
             onMeasured: widget.onGridMeasured,
           ),
       };
@@ -139,29 +142,40 @@ class _LapListBodyState extends State<LapListBody> {
   /// avec une série différente de celle affichée marque bien un tour, mais
   /// pas dans la liste qu'on a sous les yeux ; c'est à l'éditeur du site de
   /// les poser cohérents.
-  Widget _block(DashboardBlock block, RideLap lap) => switch (block) {
-        final LapZonesBlock zones => ZonesCard(
-            source: zones.source,
-            recorder: widget.sources.recorder,
-            riderProfile: widget.sources.riderProfile,
-            mode: zones.mode,
-            statsOverride: lap.stats,
-          ),
-        final LapAveragesBlock averages => AveragesCard(
-            recorder: widget.sources.recorder,
-            mode: averages.mode,
-            statsOverride: lap.stats,
-          ),
-        final LapSummaryBlock summary => LapSummaryCard(
-            lap: lap,
-            riderProfile: widget.sources.riderProfile,
-            mode: summary.mode,
-          ),
-        final MarkLapBlock markLap => MarkLapControl(
-            recorder: widget.sources.recorder,
-            series: markLap.series,
-            mode: markLap.mode,
-          ),
-        _ => const SizedBox.shrink(),
-      };
+  Widget _block(
+    DashboardBlock block, {
+    required List<RideLap> laps,
+    required int selected,
+  }) {
+    // Seul `LapSelectorBlock` a besoin de la liste entière : les autres ne
+    // lisent que le tour déjà choisi.
+    if (block is LapSelectorBlock) return _selector(laps, selected);
+
+    final lap = laps[selected];
+    return switch (block) {
+      final LapZonesBlock zones => ZonesCard(
+          source: zones.source,
+          recorder: widget.sources.recorder,
+          riderProfile: widget.sources.riderProfile,
+          mode: zones.mode,
+          statsOverride: lap.stats,
+        ),
+      final LapAveragesBlock averages => AveragesCard(
+          recorder: widget.sources.recorder,
+          mode: averages.mode,
+          statsOverride: lap.stats,
+        ),
+      final LapSummaryBlock summary => LapSummaryCard(
+          lap: lap,
+          riderProfile: widget.sources.riderProfile,
+          mode: summary.mode,
+        ),
+      final MarkLapBlock markLap => MarkLapControl(
+          recorder: widget.sources.recorder,
+          series: markLap.series,
+          mode: markLap.mode,
+        ),
+      _ => const SizedBox.shrink(),
+    };
+  }
 }
