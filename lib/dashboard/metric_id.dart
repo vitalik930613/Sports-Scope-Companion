@@ -47,6 +47,7 @@ enum MetricId {
   altitude('altitude', 'm', Icons.terrain),
   grade('grade', '% pente', Icons.north_east),
   calories('calories', 'kcal', Icons.local_fire_department),
+  caloriesPerHour('calories_per_hour', 'kcal/h', Icons.local_fire_department),
   gears('gears', 'braquet', Icons.settings),
   chainringPosition('chainring_position', 'plateau', Icons.donut_large),
   sprocketPosition('sprocket_position', 'pignon', Icons.album),
@@ -234,6 +235,7 @@ enum MetricId {
       // départ ni sur un rouleau, où l'on ne se déplace pas.
       MetricId.grade => MetricReading(active ? _grade(stats) : null),
       MetricId.calories => MetricReading(stats.calories?.toString()),
+      MetricId.caloriesPerHour => MetricReading(_caloriesPerHour(stats)),
       MetricId.gears => MetricReading(_gears(sources)),
       MetricId.chainringPosition =>
         MetricReading(sources.hub.latestGears.value?.frontPosition.toString()),
@@ -300,6 +302,21 @@ enum MetricId {
     final movingS = stats.movingTime.inMilliseconds / 1000;
     if (movingS <= 0) return null;
     return stats.distanceM / movingS;
+  }
+
+  /// La dépense énergétique rapportée à l'heure de roulage, et non à l'heure
+  /// chronométrée : même raison que [_movingAvgSpeedMps] — un arrêt casse-croûte
+  /// n'accumule presque pas de kJ mais continue de faire tourner l'horloge, et
+  /// diviser par le temps total ferait chuter le chiffre sans qu'on ait
+  /// pédalé moins fort. `null` sans capteur de puissance ([RideStats.calories])
+  /// ou tant qu'on n'a pas encore roulé assez pour que le taux veuille dire
+  /// quelque chose.
+  static String? _caloriesPerHour(RideStats stats) {
+    final calories = stats.calories;
+    if (calories == null) return null;
+    final movingHours = stats.movingTime.inMilliseconds / 1000 / 3600;
+    if (movingHours <= 0) return null;
+    return (calories / movingHours).round().toString();
   }
 
   /// Temps restant estimé sur l'itinéraire : la distance qui reste (la page)
