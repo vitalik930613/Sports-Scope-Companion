@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import '../../dashboard/block_density.dart';
 import '../../dashboard/dashboard_block.dart';
 import '../radar_severity.dart';
-import '../widgets/radar_side_gauge.dart';
 import 'block_card.dart';
 
 /// Le radar arrière, posé dans une page de données.
@@ -162,10 +161,7 @@ class RadarBlockView extends StatelessWidget {
 
   /// Une icône par véhicule suivi, sans chiffre : le compte se lit d'un coup
   /// d'œil plutôt qu'en déchiffrant un nombre. Une seule couleur pour toute la
-  /// rangée, celle du véhicule le plus proche — même convention que
-  /// [RadarSideGauge], qui peint ses marques d'un seul bloc plutôt qu'une par
-  /// véhicule : deux affichages du même capteur ne doivent pas raconter deux
-  /// histoires.
+  /// rangée, celle du véhicule le plus proche.
   Widget _icons(RadarView view) {
     final empty = _emptyState(view.severity);
     if (empty != null) return _emptyText(empty);
@@ -203,33 +199,23 @@ class RadarBlockView extends StatelessWidget {
     );
   }
 
-  /// La jauge de la gouttière, posée dans une cellule et **couchée** : la
-  /// proximité va vers la droite, le sens d'une cellule large. Les mêmes
-  /// positions et les mêmes couleurs que sur les bords de la carte : deux
-  /// affichages du même capteur ne doivent pas raconter deux histoires.
-  ///
-  /// Un véhicule entre **par la gauche** et arrive à droite : c'est la jauge
-  /// du bord gauche tournée dans le sens des aiguilles, donc le haut (la
-  /// roue) qui devient la droite. Les pointes suivent la rotation et
-  /// désignent alors le haut.
-  ///
-  /// Sa taille est celle de la gouttière, en dur : dans une case plus étroite,
-  /// elle est mise à l'échelle par [ScaleToFit] (posé par [BlockSurface])
-  /// plutôt que rognée — une jauge coupée dans sa longueur montrerait une
-  /// voiture ailleurs qu'où elle est.
+  /// Un simple aplat de couleur, sans chiffre ni icône : ce qui se lit le
+  /// plus vite du coin de l'œil, pour la case la plus petite de la grille.
+  /// Mêmes couleurs que partout ailleurs sur ce bloc — orange qui approche,
+  /// rouge qui est proche — plus le vert et le gris des états sans alerte,
+  /// via [_emptyState].
   Widget _gauge(RadarView view) {
-    final gauge = SizedBox(
-      width: RadarSideGauge.width,
-      height: RadarSideGauge.width * 2,
-      child: RadarSideGauge(view: view, side: RadarGaugeSide.left),
-    );
+    final color = _emptyState(view.severity)?.$2 ??
+        (view.severity == RadarSeverity.close ? _close : _approaching);
 
     return BlockSurface(
-      // `RotatedBox` et non `Transform.rotate` : la rotation est prise en
-      // compte à la mise en page, si bien que la mise à l'échelle mesure le
-      // rectangle couché — sinon la jauge déborderait de sa case d'un côté et
-      // flotterait de l'autre.
-      child: RotatedBox(quarterTurns: 1, child: gauge),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const SizedBox.square(dimension: 64),
+      ),
     );
   }
 }

@@ -327,9 +327,9 @@ enum RadarMode with BlockMode {
   /// où l'on préfère compter d'un coup d'œil que lire un nombre.
   icons('icons'),
 
-  /// La jauge de position, comme dans les gouttières de la carte, mais
-  /// **couchée** : la proximité va vers la droite. C'est le sens d'une cellule
-  /// large, celle qu'on obtient en fusionnant une ligne de la grille.
+  /// Un simple carré de couleur, sans chiffre ni icône : orange pour une
+  /// voiture détectée, rouge pour une voiture proche. Ce qui se lit le plus
+  /// vite du coin de l'œil, pour la plus petite case de la grille.
   gauge('gauge');
 
   const RadarMode(this.key);
