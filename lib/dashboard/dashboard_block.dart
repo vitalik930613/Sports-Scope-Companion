@@ -330,13 +330,7 @@ enum RadarMode with BlockMode {
   /// La jauge de position, comme dans les gouttières de la carte, mais
   /// **couchée** : la proximité va vers la droite. C'est le sens d'une cellule
   /// large, celle qu'on obtient en fusionnant une ligne de la grille.
-  gauge('gauge'),
-
-  /// La même, debout — le sens de la gouttière, la proximité vers le haut.
-  /// C'est celui d'une cellule haute, et le seul qui garde les véhicules à la
-  /// même place que sur les bords de l'écran : deux affichages du même capteur
-  /// ne doivent pas raconter deux histoires.
-  gaugeVertical('gauge_vertical');
+  gauge('gauge');
 
   const RadarMode(this.key);
 

@@ -341,13 +341,7 @@ void main() {
       expect((block! as MetricBlock).mode, MetricMode.big);
     });
 
-    test('la jauge radar se pose dans les deux sens', () {
-      // Deux clés et non un booléen : c'est le mode qui décide du dessin, ici
-      // comme partout, et le site en déplie une vignette par sens.
-      expect(
-        DashboardBlock.parse({'kind': 'radar', 'mode': 'gauge_vertical'}),
-        const RadarBlock(mode: RadarMode.gaugeVertical),
-      );
+    test('la jauge radar se pose depuis la clé du site', () {
       expect(
         DashboardBlock.parse({'kind': 'radar', 'mode': 'gauge'}),
         const RadarBlock(mode: RadarMode.gauge),

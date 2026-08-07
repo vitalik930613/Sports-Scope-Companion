@@ -47,8 +47,7 @@ class RadarBlockView extends StatelessWidget {
     return ValueListenableBuilder<RadarView>(
       valueListenable: radar,
       builder: (context, view, _) => switch (mode) {
-        RadarMode.gauge => _gauge(view, vertical: false),
-        RadarMode.gaugeVertical => _gauge(view, vertical: true),
+        RadarMode.gauge => _gauge(view),
         RadarMode.distance => _distance(view),
         RadarMode.compact => _compactDistance(view),
         RadarMode.count => _count(view),
@@ -204,26 +203,21 @@ class RadarBlockView extends StatelessWidget {
     );
   }
 
-  /// La jauge de la gouttière, posée dans une cellule. Les mêmes positions et
-  /// les mêmes couleurs que sur les bords de la carte : deux affichages du même
-  /// capteur ne doivent pas raconter deux histoires.
+  /// La jauge de la gouttière, posée dans une cellule et **couchée** : la
+  /// proximité va vers la droite, le sens d'une cellule large. Les mêmes
+  /// positions et les mêmes couleurs que sur les bords de la carte : deux
+  /// affichages du même capteur ne doivent pas raconter deux histoires.
   ///
-  /// Debout ou couchée selon le mode, et **c'est la seule différence** : le
-  /// dessin est le même, tourné d'un quart de tour. Une cellule large et une
-  /// cellule haute ne veulent pas de la même jauge — mise à l'échelle dans la
-  /// mauvaise, elle finit en réglette de la largeur d'un doigt au milieu d'une
-  /// case vide.
-  ///
-  /// Couchée, un véhicule entre **par la gauche** et arrive à droite : c'est la
-  /// jauge du bord gauche tournée dans le sens des aiguilles, donc le haut
-  /// (la roue) qui devient la droite. Les pointes suivent la rotation et
+  /// Un véhicule entre **par la gauche** et arrive à droite : c'est la jauge
+  /// du bord gauche tournée dans le sens des aiguilles, donc le haut (la
+  /// roue) qui devient la droite. Les pointes suivent la rotation et
   /// désignent alors le haut.
   ///
   /// Sa taille est celle de la gouttière, en dur : dans une case plus étroite,
   /// elle est mise à l'échelle par [ScaleToFit] (posé par [BlockSurface])
   /// plutôt que rognée — une jauge coupée dans sa longueur montrerait une
   /// voiture ailleurs qu'où elle est.
-  Widget _gauge(RadarView view, {required bool vertical}) {
+  Widget _gauge(RadarView view) {
     final gauge = SizedBox(
       width: RadarSideGauge.width,
       height: RadarSideGauge.width * 2,
@@ -233,9 +227,9 @@ class RadarBlockView extends StatelessWidget {
     return BlockSurface(
       // `RotatedBox` et non `Transform.rotate` : la rotation est prise en
       // compte à la mise en page, si bien que la mise à l'échelle mesure le
-      // rectangle couché et non le rectangle debout — sinon la jauge
-      // déborderait de sa case d'un côté et flotterait de l'autre.
-      child: vertical ? gauge : RotatedBox(quarterTurns: 1, child: gauge),
+      // rectangle couché — sinon la jauge déborderait de sa case d'un côté et
+      // flotterait de l'autre.
+      child: RotatedBox(quarterTurns: 1, child: gauge),
     );
   }
 }

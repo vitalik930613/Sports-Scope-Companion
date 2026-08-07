@@ -64,19 +64,6 @@ void main() {
     expect(rotationOf(tester)?.quarterTurns, 1);
   });
 
-  testWidgets('debout, elle garde le sens de la gouttière', (tester) async {
-    // Pas de rotation du tout : c'est le seul mode où les véhicules sont à la
-    // même place que sur les bords de l'écran, et c'est ce qui le justifie.
-    await pump(
-      tester,
-      mode: RadarMode.gaugeVertical,
-      size: const Size(150, 300),
-    );
-
-    expect(find.byType(RadarSideGauge), findsOneWidget);
-    expect(rotationOf(tester), isNull);
-  });
-
   testWidgets('sans radar, le bloc le dit plutôt que d\'annoncer voie libre',
       (tester) async {
     // `absent` n'est pas `clear` : écrire « Voie libre » sans capteur serait la
