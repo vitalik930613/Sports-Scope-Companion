@@ -315,9 +315,9 @@ Future<void> openNavigation(
   // démarre directement, comme si le cycliste avait répondu « Enregistrer ».
   if (!recorder.isActive) {
     if (target.autoRecord == true) {
-      await _startRecording(context, recorder, preset.sensors);
+      await _startRecording(context, recorder, preset.sensors, preset.lapSeries);
     } else if (target.autoRecord == null) {
-      await _offerRecording(context, recorder, preset.sensors);
+      await _offerRecording(context, recorder, preset.sensors, preset.lapSeries);
     }
     if (!context.mounted) return;
   }
@@ -366,6 +366,7 @@ Future<void> _offerRecording(
   BuildContext context,
   RideRecorder recorder,
   SensorSettings sensors,
+  Set<String> lapSeries,
 ) async {
   final wanted = await showDialog<bool>(
     context: context,
@@ -394,7 +395,7 @@ Future<void> _offerRecording(
 
   if (wanted != true || !context.mounted) return;
 
-  await _startRecording(context, recorder, sensors);
+  await _startRecording(context, recorder, sensors, lapSeries);
 }
 
 /// Démarre l'enregistrement, et dit si ça a échoué. Séparé de [_offerRecording]
@@ -404,9 +405,10 @@ Future<void> _startRecording(
   BuildContext context,
   RideRecorder recorder,
   SensorSettings sensors,
+  Set<String> lapSeries,
 ) async {
   try {
-    await recorder.start(sensors: sensors);
+    await recorder.start(sensors: sensors, lapSeries: lapSeries);
   } on GpsUnavailable catch (e) {
     if (!context.mounted) return;
     await _tellRecordingFailed(context, e.message);
@@ -834,6 +836,7 @@ class _HomePageState extends State<HomePage> {
             recorder: _recorder,
             store: widget.rides,
             sensors: widget.settings.preset.sensors,
+            lapSeries: widget.settings.preset.lapSeries,
           ),
           const SizedBox(height: 12),
           LiveValuesCard(hub: _hub, drivetrain: _drivetrain),

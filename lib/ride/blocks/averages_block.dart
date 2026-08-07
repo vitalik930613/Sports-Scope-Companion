@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../dashboard/block_density.dart';
 import '../../dashboard/dashboard_block.dart';
 import '../../recording/ride_recorder.dart';
+import '../../recording/ride_stats.dart';
 import 'block_card.dart';
 
 /// Les moyennes de la sortie : cardio, puissance, cadence, vitesse.
@@ -28,10 +29,16 @@ class AveragesCard extends StatelessWidget {
     super.key,
     required this.recorder,
     this.mode = AveragesMode.cards,
+    this.statsOverride,
   });
 
   final RideRecorder recorder;
   final AveragesMode mode;
+
+  /// Cible d'autres agrégats que ceux de la sortie entière — ceux d'un tour,
+  /// par exemple (`RideLap.stats`). `recorder` reste nécessaire même alors :
+  /// c'est encore lui qui dit si la sortie est active.
+  final RideStats? statsOverride;
 
   /// La largeur à laquelle les quatre cartes se construisent avant mise à
   /// l'échelle. Fixe et non celle de la case — [ScaleToFit] la ramène à la
@@ -52,7 +59,7 @@ class AveragesCard extends StatelessWidget {
       );
     }
 
-    final stats = recorder.stats;
+    final stats = statsOverride ?? recorder.stats;
 
     final cards = [
       _Stat('Cardio', 'bpm', _or(stats.avgHeartRate), _or(stats.minHeartRate),

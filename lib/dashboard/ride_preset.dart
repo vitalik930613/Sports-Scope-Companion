@@ -161,6 +161,45 @@ class RidePreset {
 
   bool get hasMap => mapPageIndex != null;
 
+  /// Toutes les clés de série de tours que ce profil peut produire — celles
+  /// des pages de tours et celles des boutons « marquer un tour », où qu'ils
+  /// soient posés (grille comprise). Sert à peupler `RideRecorder.start`
+  /// (paramètre `lapSeries`) : une série doit exister dès le départ de la
+  /// sortie, pas seulement à son premier tour marqué, sous peine de perdre ce
+  /// qui la précède.
+  Set<String> get lapSeries {
+    final keys = <String>{};
+
+    void collect(DashboardBlock block) {
+      if (block is MarkLapBlock) keys.add(block.series);
+    }
+
+    for (final page in pages) {
+      switch (page) {
+        case LapListPageSpec(:final series, :final layout):
+          keys.add(series);
+          switch (layout) {
+            case LapBlocksLayout(:final blocks):
+              blocks.forEach(collect);
+            case LapGridLayout(:final cells):
+              for (final cell in cells) {
+                collect(cell.block);
+              }
+          }
+        case ListPageSpec(:final blocks):
+          blocks.forEach(collect);
+        case GridPageSpec(:final cells):
+          for (final cell in cells) {
+            collect(cell.block);
+          }
+        case MapPageSpec():
+          break;
+      }
+    }
+
+    return keys;
+  }
+
   /// Décode un profil du document, ou `null` s'il n'en reste rien d'utilisable.
   static RidePreset? parse(Object? raw) {
     if (raw is! Map) return null;
@@ -258,6 +297,7 @@ sealed class RidePageSpec {
       'map' => const MapPageSpec(),
       'grid' => GridPageSpec.parse(raw, title: title, menu: menu),
       'list' => ListPageSpec.parse(raw, title: title, menu: menu),
+      'laps' => LapListPageSpec.parse(raw, title: title, menu: menu),
       _ => null,
     };
   }
@@ -303,19 +343,9 @@ class GridPageSpec extends RidePageSpec {
     String? title,
     bool menu = false,
   }) {
-    final rows = _side(raw['rows']);
-    final cols = _side(raw['cols']);
-
-    final cells = placedCells<GridCell>(
-      [
-        for (final entry in (raw['cells'] is List ? raw['cells'] as List : []))
-          if (GridCell.parse(entry) case final cell?) cell,
-      ],
-      spanOf: (cell) => cell.span,
-      withSpan: (cell, span) => GridCell(span: span, block: cell.block),
-      rows: rows,
-      cols: cols,
-    );
+    final rows = _gridSide(raw['rows']);
+    final cols = _gridSide(raw['cols']);
+    final cells = _gridCells(raw['cells'], rows: rows, cols: cols);
 
     // Une grille sans une seule cellule plaçable n'est pas une page vide, c'est
     // une page qui n'a rien à dire : on la retire plutôt que de faire défiler le
@@ -330,9 +360,31 @@ class GridPageSpec extends RidePageSpec {
       menu: menu,
     );
   }
+}
 
-  static int _side(Object? raw) =>
-      (raw is num ? raw.toInt() : 1).clamp(1, maxSide);
+/// Borne un côté de grille à [GridPageSpec.maxSide], partagé avec
+/// [LapGridLayout] : les deux grilles obéissent à la même limite de
+/// lisibilité en roulant.
+int _gridSide(Object? raw) =>
+    (raw is num ? raw.toInt() : 1).clamp(1, GridPageSpec.maxSide);
+
+/// Place les cellules d'une entrée `cells`, partagé entre [GridPageSpec] et
+/// [LapGridLayout] — même géométrie, seul ce qu'elles contiennent diffère.
+List<GridCell> _gridCells(
+  Object? raw, {
+  required int rows,
+  required int cols,
+}) {
+  return placedCells<GridCell>(
+    [
+      for (final entry in (raw is List ? raw : []))
+        if (GridCell.parse(entry) case final cell?) cell,
+    ],
+    spanOf: (cell) => cell.span,
+    withSpan: (cell, span) => GridCell(span: span, block: cell.block),
+    rows: rows,
+    cols: cols,
+  );
 }
 
 /// Une cellule posée : où, et quoi.
@@ -373,6 +425,104 @@ class ListPageSpec extends RidePageSpec {
     ];
     if (blocks.isEmpty) return null;
     return ListPageSpec(title: title ?? 'Sortie', blocks: blocks, menu: menu);
+  }
+}
+
+/// La page d'une série de tours : une liste déroulante pour choisir le tour,
+/// puis des composants dont le contenu dépend de ce choix.
+///
+/// **La série appartient à la page, pas à chaque composant** : tous les blocs
+/// qu'elle porte (répartition par zone, moyennes, bilan) montrent le tour
+/// sélectionné *de cette série-là*. Rien n'empêche plusieurs pages sur la même
+/// série (chacune garde son propre tour choisi, indépendamment des autres) ni
+/// sur des séries différentes — voir `RidePreset.lapSeries`, qui les
+/// rassemble toutes pour que `RideRecorder.start` les connaisse dès le départ.
+class LapListPageSpec extends RidePageSpec {
+  const LapListPageSpec({
+    required super.title,
+    required this.series,
+    required this.layout,
+    super.menu,
+  });
+
+  final String series;
+
+  /// Défilante ou en grille — voir [LapPageLayout]. Même choix que pour les
+  /// pages de mesures ([ListPageSpec] / [GridPageSpec]), et pour la même
+  /// raison : un bilan de tour tient parfois en un coup d'œil, parfois pas.
+  final LapPageLayout layout;
+
+  static LapListPageSpec? parse(
+    Map<dynamic, dynamic> raw, {
+    String? title,
+    bool menu = false,
+  }) {
+    final layout = LapPageLayout.parse(raw);
+    // Une page de tours sans le moindre composant n'a rien à montrer une fois
+    // le tour choisi : même règle qu'une ListPageSpec vidée.
+    if (layout == null) return null;
+    return LapListPageSpec(
+      title: title ?? 'Tours',
+      series: raw['series'] is String ? raw['series'] as String : 'default',
+      layout: layout,
+      menu: menu,
+    );
+  }
+}
+
+/// Ce que montre une page de tours, une fois le tour choisi.
+///
+/// **`grid` seulement sur demande explicite** (`layout: 'grid'`) : un document
+/// plus ancien que l'appli, ou qui omet la clé, doit retomber sur la liste
+/// défilante d'aujourd'hui — jamais sur une grille dont il n'a jamais décrit
+/// `rows`/`cols`.
+@immutable
+sealed class LapPageLayout {
+  const LapPageLayout();
+
+  static LapPageLayout? parse(Map<dynamic, dynamic> raw) {
+    return raw['layout'] == 'grid'
+        ? LapGridLayout.parse(raw)
+        : LapBlocksLayout.parse(raw);
+  }
+}
+
+/// La liste défilante, telle qu'elle existait avant que le choix se pose.
+class LapBlocksLayout extends LapPageLayout {
+  const LapBlocksLayout(this.blocks);
+
+  final List<DashboardBlock> blocks;
+
+  static LapBlocksLayout? parse(Map<dynamic, dynamic> raw) {
+    final blocks = [
+      for (final entry in (raw['blocks'] is List ? raw['blocks'] as List : []))
+        if (DashboardBlock.parse(entry) case final block?) block,
+    ];
+    return blocks.isEmpty ? null : LapBlocksLayout(blocks);
+  }
+}
+
+/// La grille du bilan de tour, `rows` × `cols`, avec fusions — même géométrie
+/// que [GridPageSpec], parce que rien ne la distingue d'une grille de mesures
+/// une fois le tour choisi : elle **ne défile pas** non plus.
+class LapGridLayout extends LapPageLayout {
+  const LapGridLayout({
+    required this.rows,
+    required this.cols,
+    required this.cells,
+  });
+
+  final int rows;
+  final int cols;
+  final List<GridCell> cells;
+
+  static LapGridLayout? parse(Map<dynamic, dynamic> raw) {
+    final rows = _gridSide(raw['rows']);
+    final cols = _gridSide(raw['cols']);
+    final cells = _gridCells(raw['cells'], rows: rows, cols: cols);
+    return cells.isEmpty
+        ? null
+        : LapGridLayout(rows: rows, cols: cols, cells: cells);
   }
 }
 

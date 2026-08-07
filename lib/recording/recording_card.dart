@@ -19,6 +19,7 @@ class RecordingCard extends StatelessWidget {
     required this.recorder,
     required this.store,
     this.sensors = const SensorSettings(),
+    this.lapSeries = const {},
   });
 
   final RideRecorder recorder;
@@ -29,6 +30,11 @@ class RecordingCard extends StatelessWidget {
   /// navigation : sans ça, démarrer avant de partir donnerait un GPS allumé sur
   /// un profil de home-trainer.
   final SensorSettings sensors;
+
+  /// Les séries de tours du profil courant (`RidePreset.lapSeries`), même
+  /// raison que [sensors] : une sortie lancée d'ici doit connaître les mêmes
+  /// séries que si elle avait démarré depuis la navigation.
+  final Set<String> lapSeries;
 
   @override
   Widget build(BuildContext context) {
@@ -139,7 +145,7 @@ class RecordingCard extends StatelessWidget {
   Future<void> _start(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await recorder.start(sensors: sensors);
+      await recorder.start(sensors: sensors, lapSeries: lapSeries);
     } on GpsUnavailable catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.message)));
     } catch (e) {

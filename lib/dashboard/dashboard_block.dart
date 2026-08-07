@@ -33,6 +33,17 @@ sealed class DashboardBlock {
       'zones' => ZonesBlock.parse(raw),
       'averages' =>
         AveragesBlock(mode: _modeOf(raw['mode'], AveragesMode.values)),
+      'lap_zones' => LapZonesBlock.parse(raw),
+      'lap_averages' =>
+        LapAveragesBlock(mode: _modeOf(raw['mode'], AveragesMode.values)),
+      'lap_summary' => LapSummaryBlock(
+          mode: _modeOf(raw['mode'], LapSummaryMode.values),
+        ),
+      'lap_selector' => const LapSelectorBlock(),
+      'mark_lap' => MarkLapBlock(
+          series: raw['series'] is String ? raw['series'] as String : 'default',
+          mode: _modeOf(raw['mode'], MarkLapMode.values),
+        ),
       'recording' =>
         RecordingBlock(mode: _modeOf(raw['mode'], RecordingMode.values)),
       'change_route' => ChangeRouteBlock(
@@ -40,6 +51,7 @@ sealed class DashboardBlock {
         ),
       'clear_route' =>
         ClearRouteBlock(mode: _modeOf(raw['mode'], ClearRouteMode.values)),
+      'route' => RouteBlock(mode: _modeOf(raw['mode'], RouteMode.values)),
       'nav_state' =>
         NavStateBlock(mode: _modeOf(raw['mode'], NavStateMode.values)),
       'radar' => RadarBlock(mode: _modeOf(raw['mode'], RadarMode.values)),
@@ -161,6 +173,35 @@ enum ZonesMode with BlockMode {
   final String key;
 }
 
+/// Le temps passé par zone, mais **depuis le début du tour sélectionné**, pas
+/// depuis le départ de la sortie.
+///
+/// Même contenu que [ZonesBlock], et volontairement une classe à part plutôt
+/// qu'un paramètre « depuis quand » sur celui-ci : ce bloc n'a de sens que sur
+/// une page qui porte un tour sélectionné ([LapListPageSpec.series]), là où
+/// [ZonesBlock] peut se poser n'importe où.
+class LapZonesBlock extends DashboardBlock {
+  const LapZonesBlock({required this.source, this.mode = ZonesMode.bar});
+
+  final ZonesSource source;
+  final ZonesMode mode;
+
+  static LapZonesBlock parse(Map<dynamic, dynamic> raw) => LapZonesBlock(
+        source: switch (raw['source']) {
+          'power' => ZonesSource.power,
+          _ => ZonesSource.hr,
+        },
+        mode: DashboardBlock._modeOf(raw['mode'], ZonesMode.values),
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is LapZonesBlock && other.source == source && other.mode == mode;
+
+  @override
+  int get hashCode => Object.hash(source, mode);
+}
+
 /// Les moyennes de la sortie : cardio, puissance, cadence, D+, calories.
 class AveragesBlock extends DashboardBlock {
   const AveragesBlock({this.mode = AveragesMode.cards});
@@ -185,6 +226,74 @@ enum AveragesMode with BlockMode {
   final String key;
 }
 
+/// Les moyennes, mais du tour sélectionné plutôt que de la sortie entière.
+/// Même remarque que [LapZonesBlock] : une classe à part parce qu'elle n'a de
+/// sens que sur une page de tours.
+class LapAveragesBlock extends DashboardBlock {
+  const LapAveragesBlock({this.mode = AveragesMode.cards});
+
+  final AveragesMode mode;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LapAveragesBlock && other.mode == mode;
+
+  @override
+  int get hashCode => mode.hashCode;
+}
+
+/// Le bilan du tour sélectionné : durée, distance, D+, calories, TSS — ce
+/// qu'on demanderait d'un tour entier plutôt qu'à une seule mesure. Le TSS
+/// suit `rideTss` (`training/ride_load.dart`), déjà générique sur n'importe
+/// quelle `RideStats`, donc valable tel quel sur celle d'un tour.
+class LapSummaryBlock extends DashboardBlock {
+  const LapSummaryBlock({this.mode = LapSummaryMode.cards});
+
+  final LapSummaryMode mode;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LapSummaryBlock && other.mode == mode;
+
+  @override
+  int get hashCode => mode.hashCode;
+}
+
+enum LapSummaryMode with BlockMode {
+  cards('cards'),
+  list('list');
+  const LapSummaryMode(this.key);
+
+  @override
+  final String key;
+}
+
+/// La liste déroulante qui choisit le tour affiché par les autres composants
+/// d'une page Tours ([LapZonesBlock], [LapAveragesBlock], [LapSummaryBlock]).
+///
+/// **Un composant placé comme un autre, et non un en-tête imposé.** La
+/// version d'avant le posait d'office au-dessus de la page ; la hauteur
+/// qu'elle prenait n'était alors comptée nulle part, et une page Tours en
+/// grille se retrouvait avec moins de place que ce que l'éditeur avait
+/// composé — la grille semblait décalée une fois sur le téléphone. En le
+/// rendant plaçable comme `lap_summary` ou `metric`, la page qui le porte
+/// tient tout entière dans `rows` × `cols` (ou dans sa liste), sans rien caché
+/// que l'éditeur ignorerait.
+///
+/// **Absent, la page reste utilisable** : elle montre alors toujours le tour
+/// le plus récent, sans rien à choisir — la même valeur de repli qu'avant
+/// qu'un choix explicite n'existe (`_selectedIndex ?? laps.length - 1`, cf.
+/// `LapListBody`).
+class LapSelectorBlock extends DashboardBlock {
+  const LapSelectorBlock();
+
+  @override
+  bool operator ==(Object other) => other is LapSelectorBlock;
+
+  @override
+  int get hashCode => 0;
+}
+
 /// Démarrer, suspendre, reprendre l'enregistrement.
 class RecordingBlock extends DashboardBlock {
   const RecordingBlock({this.mode = RecordingMode.full});
@@ -207,6 +316,42 @@ enum RecordingMode with BlockMode {
   compact('compact');
 
   const RecordingMode(this.key);
+
+  @override
+  final String key;
+}
+
+/// Marquer un tour : clôt le tour courant d'une série et en ouvre un nouveau.
+///
+/// Peut se poser sur n'importe quelle page, pas seulement une page de tours —
+/// c'est en roulant, entre deux mesures, qu'on veut marquer un tour. [series]
+/// dit **dans quelle série** ce bouton marque un tour ; plusieurs boutons de
+/// séries différentes tournent sans se fermer l'une l'autre (voir
+/// `RideRecorder.markLap`). `'default'` sans configuration : c'est aussi la
+/// seule série que l'export `.fit` sait porter, le format n'ayant qu'une
+/// hiérarchie de tours.
+class MarkLapBlock extends DashboardBlock {
+  const MarkLapBlock({this.series = 'default', this.mode = MarkLapMode.full});
+
+  final String series;
+  final MarkLapMode mode;
+
+  @override
+  bool operator ==(Object other) =>
+      other is MarkLapBlock && other.series == series && other.mode == mode;
+
+  @override
+  int get hashCode => Object.hash(series, mode);
+}
+
+enum MarkLapMode with BlockMode {
+  /// Le bouton large, à portée de pouce sur une route bosselée.
+  full('full'),
+
+  /// L'icône seule, pour une cellule de grille.
+  compact('compact');
+
+  const MarkLapMode(this.key);
 
   @override
   final String key;
@@ -267,6 +412,39 @@ enum ClearRouteMode with BlockMode {
   compact('compact');
 
   const ClearRouteMode(this.key);
+
+  @override
+  final String key;
+}
+
+/// [ChangeRouteBlock] et [ClearRouteBlock], combinés en un seul bouton.
+///
+/// C'est l'état de la navigation qui décide lequel des deux gestes il pose —
+/// retirer le tracé suivi s'il y en a un, en choisir un sinon. Gardé à côté
+/// des deux commandes séparées et non à leur place : un profil déjà composé
+/// avec elles ne doit rien perdre à l'enregistrement (`CompanionSettings`,
+/// site).
+///
+/// Jamais désactivé, contrairement à [ClearRouteBlock] seul : hors tracé, le
+/// bouton propose déjà le geste qui en pose un plutôt que de se griser sans
+/// rien pouvoir faire.
+class RouteBlock extends DashboardBlock {
+  const RouteBlock({this.mode = RouteMode.full});
+
+  final RouteMode mode;
+
+  @override
+  bool operator ==(Object other) => other is RouteBlock && other.mode == mode;
+
+  @override
+  int get hashCode => mode.hashCode;
+}
+
+enum RouteMode with BlockMode {
+  full('full'),
+  compact('compact');
+
+  const RouteMode(this.key);
 
   @override
   final String key;

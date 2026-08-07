@@ -2,21 +2,24 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../dashboard/dashboard_block.dart';
-import '../../dashboard/grid_layout.dart';
 import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
 import '../blocks/averages_block.dart';
 import '../blocks/change_route_block.dart';
 import '../blocks/clear_route_block.dart';
+import '../blocks/mark_lap_block.dart';
 import '../blocks/metric_view.dart';
 import '../blocks/nav_state_block.dart';
 import '../blocks/radar_block.dart';
 import '../blocks/recording_block.dart';
+import '../blocks/route_block.dart';
 import '../blocks/training_budget_block.dart';
 import '../blocks/zones_block.dart';
 import '../nav_state.dart';
 import '../offline_map_state.dart';
 import '../radar_severity.dart';
+import '../widgets/dashboard_grid.dart';
+import 'lap_list_page.dart';
 
 /// Une page de données du tableau de bord, telle que le profil la décrit.
 ///
@@ -161,62 +164,19 @@ class DashboardPage extends StatelessWidget {
                 ),
             ],
           ),
-        final GridPageSpec grid => _grid(grid),
-      };
-
-  /// La grille : chaque cellule à son rectangle, calculé par [gridRectsFor].
-  ///
-  /// `LayoutBuilder` + `Positioned` plutôt qu'un `Table` — qui ne sait pas
-  /// fusionner sans imbriquer — et surtout **pas un `GridView`**, qui défile
-  /// alors que cette page ne doit justement pas défiler : elle se lit en
-  /// roulant, tout doit tenir à l'écran.
-  Widget _grid(GridPageSpec grid) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final size = Size(constraints.maxWidth, constraints.maxHeight);
-          _report(size);
-
-          final rects = gridRectsFor(
-            [for (final cell in grid.cells) cell.span],
+        final GridPageSpec grid => DashboardGrid(
             rows: grid.rows,
             cols: grid.cols,
-            size: size,
-          );
-
-          return Stack(
-            children: [
-              for (var i = 0; i < grid.cells.length; i++)
-                Positioned.fromRect(
-                  rect: rects[i],
-                  // Chaque cellule est coupée à son rectangle. Les composants se
-                  // dégradent pour tenir (`BlockMetrics`), mais un `Stack` ne
-                  // borne pas ses enfants : sans ceci, ce qui dépasserait malgré
-                  // tout — une phrase plus longue qu'attendu, une police système
-                  // plus grande — se peindrait sur la case voisine, en roulant,
-                  // sans que rien ne le dise.
-                  child: ClipRect(child: _block(grid.cells[i].block)),
-                ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  /// Annonce la taille mesurée, **après la trame et pas pendant**.
-  ///
-  /// L'appelant écrit un fichier et pourrait vouloir se reconstruire ; le faire
-  /// depuis un `LayoutBuilder` reviendrait à modifier l'arbre au milieu de sa
-  /// propre mise en page. Le magasin, lui, ignore une taille qu'il connaît
-  /// déjà : l'appel a beau revenir à chaque pose, il n'écrit qu'une fois.
-  void _report(Size size) {
-    final report = onGridMeasured;
-    if (report == null || size.isEmpty) return;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) => report(size));
-  }
+            cells: grid.cells,
+            cellBuilder: _block,
+            onMeasured: onGridMeasured,
+          ),
+        final LapListPageSpec laps => LapListBody(
+            spec: laps,
+            sources: sources,
+            onGridMeasured: onGridMeasured,
+          ),
+      };
 
   /// Le composant d'un bloc. `switch` exhaustif sur la hiérarchie scellée :
   /// ajouter un composant fait échouer la compilation ici, plutôt que de le
@@ -240,6 +200,22 @@ class DashboardPage extends StatelessWidget {
           AveragesCard(recorder: sources.recorder, mode: averages.mode),
         final RecordingBlock recording =>
           RecordingControl(recorder: sources.recorder, mode: recording.mode),
+        final MarkLapBlock markLap => MarkLapControl(
+            recorder: sources.recorder,
+            series: markLap.series,
+            mode: markLap.mode,
+          ),
+        // Ces quatre-là n'ont de sens que sur une LapListPageSpec, qui les
+        // rend elle-même avec le tour choisi (`LapListBody._block`) — ici, sur
+        // une page ordinaire, il n'existe ni tour sélectionné à leur donner,
+        // ni liste de tours à faire choisir. Posés par erreur hors d'une page
+        // de tours, ils disparaissent plutôt que d'afficher des tirets qui se
+        // liraient comme des mesures absentes.
+        LapZonesBlock() ||
+        LapAveragesBlock() ||
+        LapSummaryBlock() ||
+        LapSelectorBlock() =>
+          const SizedBox.shrink(),
         final ChangeRouteBlock changeRoute => ChangeRouteControl(
             onChooseRoute: onChooseRoute,
             mode: changeRoute.mode,
@@ -248,6 +224,12 @@ class DashboardPage extends StatelessWidget {
             onClearRoute: onClearRoute,
             nav: sources.nav,
             mode: clearRoute.mode,
+          ),
+        final RouteBlock route => RouteControl(
+            onChooseRoute: onChooseRoute,
+            onClearRoute: onClearRoute,
+            nav: sources.nav,
+            mode: route.mode,
           ),
         final NavStateBlock nav =>
           NavStateCard(nav: sources.nav, mode: nav.mode),
@@ -358,9 +340,12 @@ class DashboardPage extends StatelessWidget {
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(
-                    menuPage is GridPageSpec
-                        ? Icons.grid_view
-                        : Icons.view_agenda_outlined,
+                    switch (menuPage) {
+                      GridPageSpec() => Icons.grid_view,
+                      LapListPageSpec(layout: LapGridLayout()) =>
+                        Icons.grid_view,
+                      _ => Icons.view_agenda_outlined,
+                    },
                   ),
                   title: Text(menuPage.title),
                 ),

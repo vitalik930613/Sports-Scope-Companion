@@ -12,6 +12,7 @@ import '../phone/barometric_altitude.dart';
 import '../phone/phone_sensors.dart';
 import 'gps_fix.dart';
 import 'gps_source.dart';
+import 'ride_lap.dart';
 import 'ride_session.dart';
 import 'ride_stats.dart';
 import 'ride_store.dart';
@@ -137,6 +138,19 @@ class RideRecorder extends ChangeNotifier {
   /// résume la sortie à l'export : l'écran et le `.fit` ne peuvent pas diverger.
   final stats = RideStats();
 
+  /// Les séries de tours de la sortie en cours, par clé de série. Plusieurs
+  /// séries tournent en parallèle sans se fermer l'une l'autre — voir
+  /// [markLap]. Connues dès [start] (le paramètre `lapSeries`) : une série
+  /// apparue seulement à son premier tour marqué perdrait tout ce qui la
+  /// précède, qu'on veut pourtant pouvoir lire (« avant la première côte »).
+  final Map<String, List<RideLap>> _series = {};
+
+  /// Les tours de [series], du premier au tour courant (le dernier de la
+  /// liste, toujours ouvert). Vide si la série n'a pas été déclarée au départ
+  /// ou si rien n'est enregistré.
+  List<RideLap> lapsOf(String series) =>
+      List.unmodifiable(_series[series] ?? const []);
+
   /// Dernière position connue, même périmée — l'UI s'en sert pour dire si le
   /// GPS a accroché.
   GpsFix? get lastFix => _lastFix;
@@ -167,6 +181,7 @@ class RideRecorder extends ChangeNotifier {
   /// puissance disent tout.
   Future<RideSession> start({
     SensorSettings sensors = const SensorSettings(),
+    Set<String> lapSeries = const {},
   }) async {
     final existing = _session;
     if (existing != null) return existing;
@@ -185,6 +200,15 @@ class RideRecorder extends ChangeNotifier {
     _lastFix = null;
     _referenceFix = null;
     _lastMetaSave = DateTime.now();
+
+    // Un tour 0 par série dès le départ, jamais au premier tour marqué : sinon
+    // ce premier tour perdrait tout ce qui le précède.
+    final now = DateTime.now();
+    _series
+      ..clear()
+      ..addEntries(lapSeries.map(
+        (key) => MapEntry(key, [RideLap(index: 0, startedAt: now, startDistanceM: 0)]),
+      ));
 
     _altimeter.reset();
     _pressureAt = null;
@@ -230,6 +254,23 @@ class RideRecorder extends ChangeNotifier {
   void resume() {
     if (_state != RecorderState.paused) return;
     _state = RecorderState.recording;
+    _notify();
+  }
+
+  /// Clôt le tour courant de [series] et en ouvre un nouveau. Le tour clos ne
+  /// reçoit plus aucun point ; ses stats sont figées telles quelles.
+  ///
+  /// Sans effet — jamais une exception — si [series] n'a pas été déclarée à
+  /// [start] (profil différent de celui attendu) ou si rien n'est enregistré :
+  /// un tap égaré ne doit jamais faire tomber la sortie.
+  void markLap(String series) {
+    final laps = _series[series];
+    if (!isActive || laps == null) return;
+    laps.add(RideLap(
+      index: laps.length,
+      startedAt: DateTime.now(),
+      startDistanceM: _distanceM,
+    ));
     _notify();
   }
 
@@ -333,6 +374,11 @@ class RideRecorder extends ChangeNotifier {
     // Avant l'écriture : un disque plein ne doit pas effacer le point de
     // l'affichage, où il vient tout juste d'être mesuré.
     stats.add(point);
+    for (final laps in _series.values) {
+      final lap = laps.last;
+      lap.stats.add(point);
+      lap.pointCount++;
+    }
 
     try {
       sink.writeln(jsonEncode(point.toJson()));
@@ -384,6 +430,10 @@ class RideRecorder extends ChangeNotifier {
       wheelSpeedMps: _fresh(_wheelSpeedMps, _wheelSpeedAt, now, sensorTtl),
       gearFront: _gearFront,
       gearRear: _gearRear,
+      laps: {
+        for (final entry in _series.entries)
+          if (entry.value.length > 1) entry.key: entry.value.length - 1,
+      },
     );
   }
 

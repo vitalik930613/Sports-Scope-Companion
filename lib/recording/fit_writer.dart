@@ -89,15 +89,15 @@ class FitWriter {
 
     file.data(_Local.event, {253: _timestamp(end), 0: 0, 1: 4, 4: 0});
 
-    // — lap : un seul tour, la sortie entière. Les tours manuels n'existent pas
-    // encore côté appli ; le jour où ils existeront, cette liste en aura
-    // plusieurs et le reste ne bougera pas.
-    final elapsed = end.difference(start);
-    final timer = Duration(seconds: points.length);
+    // — lap : un groupe par tour de la série de tours 'default' — c'est la
+    // seule que le format .fit puisse porter (une hiérarchie de tours, pas
+    // plusieurs séries en parallèle comme l'appli en connaît). Une sortie sans
+    // tour marqué dans cette série donne un seul groupe couvrant toute la
+    // sortie : exactement le comportement d'avant les tours manuels.
+    final lapGroups = _lapGroups(points);
     // Le temps chronométré compte une seconde par point capturé, donc aussi les
     // feux rouges : sans `total_moving_time` à côté, un lecteur prend le premier
     // pour le second et en tire une vitesse moyenne fausse. Cf. `RideStats`.
-    final moving = summary.movingTime;
 
     file.define(_Local.lap, _Mesg.lap, const [
       _FieldDef(254, _BaseType.uint16), // message_index
@@ -125,32 +125,54 @@ class FitWriter {
       _FieldDef(22, _BaseType.uint16), // total_descent
       _FieldDef(52, _BaseType.uint32), // total_moving_time
     ]);
-    file.data(_Local.lap, {
-      254: 0,
-      253: _timestamp(end),
-      0: 9,
-      1: 1,
-      2: _timestamp(start),
-      3: _semicircles(summary.firstLat),
-      4: _semicircles(summary.firstLng),
-      5: _semicircles(summary.lastLat),
-      6: _semicircles(summary.lastLng),
-      7: _milliseconds(elapsed),
-      8: _milliseconds(timer),
-      9: _centimetres(summary.distanceM),
-      11: summary.calories,
-      13: _millimetresPerSecond(summary.avgSpeedMps),
-      14: _millimetresPerSecond(summary.maxSpeedMps),
-      15: summary.avgHeartRate,
-      16: summary.maxHeartRate,
-      17: summary.avgCadence,
-      18: summary.maxCadence,
-      19: summary.avgPower,
-      20: summary.maxPower,
-      21: summary.ascentM.round(),
-      22: summary.descentM.round(),
-      52: _milliseconds(moving),
-    });
+
+    // La distance d'un tour, contrairement à celle d'un `record`, n'est pas
+    // celle du dernier point (cumulée depuis le départ de la sortie) : c'est
+    // le delta depuis la fin du tour précédent. `lapBaselineM` porte ce repère
+    // d'un tour à l'autre — même correction que `RideLap.distanceM` côté
+    // enregistreur, ici recalculée depuis le JSONL plutôt que tenue en direct.
+    var lapBaselineM = 0.0;
+    for (var i = 0; i < lapGroups.length; i++) {
+      final group = lapGroups[i];
+      final lapStats = RideStats.of(group);
+      final lapStart = group.first.at;
+      final lapEnd = group.last.at;
+      final lapDistanceM = group.last.distanceM - lapBaselineM;
+      lapBaselineM = group.last.distanceM;
+
+      file.data(_Local.lap, {
+        254: i,
+        253: _timestamp(lapEnd),
+        0: 9,
+        1: 1,
+        2: _timestamp(lapStart),
+        3: _semicircles(lapStats.firstLat),
+        4: _semicircles(lapStats.firstLng),
+        5: _semicircles(lapStats.lastLat),
+        6: _semicircles(lapStats.lastLng),
+        7: _milliseconds(lapEnd.difference(lapStart)),
+        8: _milliseconds(Duration(seconds: group.length)),
+        9: _centimetres(lapDistanceM),
+        11: lapStats.calories,
+        13: _millimetresPerSecond(lapStats.avgSpeedMps),
+        14: _millimetresPerSecond(lapStats.maxSpeedMps),
+        15: lapStats.avgHeartRate,
+        16: lapStats.maxHeartRate,
+        17: lapStats.avgCadence,
+        18: lapStats.maxCadence,
+        19: lapStats.avgPower,
+        20: lapStats.maxPower,
+        21: lapStats.ascentM.round(),
+        22: lapStats.descentM.round(),
+        52: _milliseconds(lapStats.movingTime),
+      });
+    }
+
+    // Le résumé de la sortie entière (session, activity) garde ses propres
+    // temps, distincts de ceux d'un tour.
+    final elapsed = end.difference(start);
+    final timer = Duration(seconds: points.length);
+    final moving = summary.movingTime;
 
     // — session : le résumé que lisent les sites d'analyse.
     file.define(_Local.session, _Mesg.session, const [
@@ -209,7 +231,7 @@ class FitWriter {
       22: summary.ascentM.round(),
       23: summary.descentM.round(),
       25: 0,
-      26: 1,
+      26: lapGroups.length,
       59: _milliseconds(moving),
     });
 
@@ -316,6 +338,25 @@ class FitWriter {
       mps == null ? null : (mps * 1000).round().clamp(0, 0xFFFE).toInt();
 
   static int _milliseconds(Duration duration) => duration.inMilliseconds;
+
+  /// Découpe les points par tour de la série `'default'`, dans l'ordre
+  /// d'enregistrement. Un simple changement d'index suffit à trancher : les
+  /// tours d'une série se suivent, jamais entrelacés.
+  static List<List<TrackPoint>> _lapGroups(List<TrackPoint> points) {
+    final groups = <List<TrackPoint>>[];
+    List<TrackPoint>? current;
+    int? currentIndex;
+    for (final point in points) {
+      final index = point.laps['default'] ?? 0;
+      if (current == null || index != currentIndex) {
+        current = [];
+        groups.add(current);
+        currentIndex = index;
+      }
+      current.add(point);
+    }
+    return groups;
+  }
 }
 
 /// Une sortie sans le moindre point ne fait pas un `.fit`.
