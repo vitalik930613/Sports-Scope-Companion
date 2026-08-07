@@ -21,6 +21,7 @@ import '../recording/ride_recorder.dart';
 import '../ui/offline_download_dialog.dart';
 import '../ui/power_calibration_dialog.dart';
 import 'auto_return_policy.dart';
+import 'climb_debug_data.dart';
 import 'climb_profile.dart';
 import 'native_turn_alerts.dart';
 import 'nav_state.dart';
@@ -162,6 +163,25 @@ class _RideShellPageState extends State<RideShellPage>
   /// s'ouvre grand tout seul recouvrirait la carte au moment précis où le
   /// cycliste a le plus besoin de voir la route devant lui.
   final _climbExpanded = ValueNotifier<bool>(false);
+
+  /// Un col de démonstration, affiché par-dessus la sortie réelle (carte,
+  /// bandeau, radar) — voir le bouton « Simuler un col » du menu d'actions.
+  /// Juger la pastille et le graphique dans une vraie sortie, sans attendre
+  /// de grimper un col, est ce que la page isolée `ClimbDebugPage` ne permet
+  /// pas : elle n'a ni carte ni radar à côté.
+  bool _debugClimbActive = false;
+
+  /// Fixe et pas animé : contrairement à `ClimbDebugPage` (qui a son propre
+  /// curseur), ce bouton sert à juger la *composition* avec le reste de la
+  /// sortie, pas le mouvement du profil.
+  static const _debugClimbRatio = 0.42;
+
+  late final _debugClimbProfile = debugClimbProfile();
+
+  void _toggleDebugClimb() {
+    setState(() => _debugClimbActive = !_debugClimbActive);
+    if (!_debugClimbActive) _climbExpanded.value = false;
+  }
 
   /// Où en est la carte hors-ligne du tracé affiché. Même sort que [_nav] :
   /// sans carte, personne ne l'alimente ni ne l'écoute.
@@ -997,7 +1017,11 @@ class _RideShellPageState extends State<RideShellPage>
               child: ValueListenableBuilder<NavState?>(
                 valueListenable: _nav,
                 builder: (context, nav, _) {
-                  final climb = nav?.climb;
+                  // Le col simulé prime sur le vrai : c'est un banc d'essai,
+                  // pas un second col qui s'ajouterait au premier.
+                  final climb = _debugClimbActive
+                      ? debugClimbFor(_debugClimbProfile, _debugClimbRatio)
+                      : nav?.climb;
                   if (climb == null) return const SizedBox.shrink();
                   return ValueListenableBuilder<bool>(
                     valueListenable: _climbExpanded,
@@ -1030,13 +1054,17 @@ class _RideShellPageState extends State<RideShellPage>
                   return ValueListenableBuilder<NavState?>(
                     valueListenable: _nav,
                     builder: (context, nav, _) {
-                      final climb = nav?.climb;
+                      final climb = _debugClimbActive
+                          ? debugClimbFor(_debugClimbProfile, _debugClimbRatio)
+                          : nav?.climb;
                       if (climb == null) return const SizedBox.shrink();
                       return ValueListenableBuilder<ClimbProfile?>(
                         valueListenable: _climbProfile,
                         builder: (context, profile, _) => ClimbProfileOverlay(
                           climb: climb,
-                          profile: profile,
+                          profile: _debugClimbActive
+                              ? _debugClimbProfile
+                              : profile,
                           onTap: () => _climbExpanded.value = false,
                         ),
                       );
@@ -1112,6 +1140,8 @@ class _RideShellPageState extends State<RideShellPage>
       // calibrer : évalué à chaque rendu, donc juste dès que le capteur répond.
       onCalibratePower:
           powerCalibrationAvailable(widget.hub) ? _calibratePower : null,
+      debugClimbActive: _debugClimbActive,
+      onSimulateClimb: _toggleDebugClimb,
       onLeaveRide: _leaveRide,
       onGridMeasured: widget.onGridMeasured,
     );

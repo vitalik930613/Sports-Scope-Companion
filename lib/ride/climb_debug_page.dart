@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'climb_debug_data.dart';
 import 'climb_profile.dart';
 import 'nav_state.dart';
 import 'widgets/climb_badge.dart';
@@ -20,59 +21,12 @@ class ClimbDebugPage extends StatefulWidget {
 }
 
 class _ClimbDebugPageState extends State<ClimbDebugPage> {
-  late final ClimbProfile _profile = _syntheticProfile();
+  late final ClimbProfile _profile = debugClimbProfile();
 
   double _ratio = 0.42;
   bool _expanded = false;
 
-  NavClimb get _climb {
-    final gainM = _profile.gainM;
-    return NavClimb(
-      ratio: _ratio,
-      remainingGainM: gainM * (1 - _ratio),
-      grade: _gradeAt(_ratio),
-      gainM: gainM,
-      lengthM: _profile.lengthM,
-      category: _profile.category,
-    );
-  }
-
-  double _gradeAt(double ratio) {
-    final grades = _profile.segmentGrades;
-    if (grades.isEmpty) return 0;
-    final i = (ratio * grades.length).floor().clamp(0, grades.length - 1);
-    return grades[i];
-  }
-
-  /// Reprend la forme de `buildDebugClimb` (navHelpers.ts) : 28 segments, une
-  /// pente qui monte de 3 % en bas à 14 % au sommet.
-  static ClimbProfile _syntheticProfile() {
-    const n = 28;
-    const lengthM = 8400.0;
-    const gainM = 560.0;
-    final points = <ClimbProfilePoint>[];
-    for (var i = 0; i <= n; i++) {
-      final f = i / n;
-      points.add(
-        ClimbProfilePoint(
-          distM: f * lengthM,
-          altM: 800 + gainM * (f * f), // profil convexe, comme le curseur y du site.
-        ),
-      );
-    }
-    final grades = <double>[
-      for (var i = 0; i < n; i++) 3 + (i / n) * 11,
-    ];
-    return ClimbProfile(
-      id: -1,
-      gainM: gainM,
-      lengthM: lengthM,
-      avgGrade: gainM / lengthM * 100,
-      category: '2',
-      points: points,
-      segmentGrades: grades,
-    );
-  }
+  NavClimb get _climb => debugClimbFor(_profile, _ratio);
 
   @override
   Widget build(BuildContext context) {
