@@ -24,6 +24,7 @@ class TrackPoint {
     this.wheelSpeedMps,
     this.gearFront,
     this.gearRear,
+    this.laps = const {},
   });
 
   final DateTime at;
@@ -69,6 +70,12 @@ class TrackPoint {
   final int? gearFront;
   final int? gearRear;
 
+  /// Où en est chaque série de tours, par clé de série — absente d'une série
+  /// encore à son tour 0, comme les autres champs qui ne portent rien à dire.
+  /// Plusieurs séries tournent en parallèle sans se fermer l'une l'autre (ex.
+  /// « tours manuels » et « tours par côte ») : voir `RideRecorder.markLap`.
+  final Map<String, int> laps;
+
   bool get hasPosition => lat != null && lng != null;
 
   Map<String, dynamic> toJson() => {
@@ -87,6 +94,7 @@ class TrackPoint {
         if (wheelSpeedMps != null) 'wspd': _round(wheelSpeedMps!, 3),
         if (gearFront != null) 'gf': gearFront,
         if (gearRear != null) 'gr': gearRear,
+        if (laps.isNotEmpty) 'laps': laps,
       };
 
   /// Renvoie `null` sur une ligne inexploitable au lieu de lever.
@@ -117,7 +125,19 @@ class TrackPoint {
       wheelSpeedMps: _double(json['wspd']),
       gearFront: _int(json['gf']),
       gearRear: _int(json['gr']),
+      laps: _laps(json['laps']),
     );
+  }
+
+  static Map<String, int> _laps(Object? value) {
+    if (value is! Map) return const {};
+    final laps = <String, int>{};
+    for (final entry in value.entries) {
+      final key = entry.key;
+      final index = _int(entry.value);
+      if (key is String && index != null) laps[key] = index;
+    }
+    return laps;
   }
 
   static double? _double(Object? value) =>

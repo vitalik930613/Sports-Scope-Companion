@@ -8,6 +8,7 @@ import '../../dashboard/ride_preset.dart';
 import '../blocks/averages_block.dart';
 import '../blocks/change_route_block.dart';
 import '../blocks/clear_route_block.dart';
+import '../blocks/mark_lap_block.dart';
 import '../blocks/metric_view.dart';
 import '../blocks/nav_state_block.dart';
 import '../blocks/radar_block.dart';
@@ -17,6 +18,7 @@ import '../blocks/zones_block.dart';
 import '../nav_state.dart';
 import '../offline_map_state.dart';
 import '../radar_severity.dart';
+import 'lap_list_page.dart';
 
 /// Une page de données du tableau de bord, telle que le profil la décrit.
 ///
@@ -162,6 +164,7 @@ class DashboardPage extends StatelessWidget {
             ],
           ),
         final GridPageSpec grid => _grid(grid),
+        final LapListPageSpec laps => LapListBody(spec: laps, sources: sources),
       };
 
   /// La grille : chaque cellule à son rectangle, calculé par [gridRectsFor].
@@ -240,6 +243,19 @@ class DashboardPage extends StatelessWidget {
           AveragesCard(recorder: sources.recorder, mode: averages.mode),
         final RecordingBlock recording =>
           RecordingControl(recorder: sources.recorder, mode: recording.mode),
+        final MarkLapBlock markLap => MarkLapControl(
+            recorder: sources.recorder,
+            series: markLap.series,
+            mode: markLap.mode,
+          ),
+        // Ces trois-là n'ont de sens que sur une LapListPageSpec, qui les
+        // rend elle-même avec le tour choisi (`LapListBody._block`) — ici, sur
+        // une page ordinaire, il n'existe aucun tour sélectionné à leur
+        // donner. Posés par erreur hors d'une page de tours, ils disparaissent
+        // plutôt que d'afficher des tirets qui se liraient comme des mesures
+        // absentes.
+        LapZonesBlock() || LapAveragesBlock() || LapSummaryBlock() =>
+          const SizedBox.shrink(),
         final ChangeRouteBlock changeRoute => ChangeRouteControl(
             onChooseRoute: onChooseRoute,
             mode: changeRoute.mode,

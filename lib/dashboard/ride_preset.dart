@@ -161,6 +161,38 @@ class RidePreset {
 
   bool get hasMap => mapPageIndex != null;
 
+  /// Toutes les clés de série de tours que ce profil peut produire — celles
+  /// des pages de tours et celles des boutons « marquer un tour », où qu'ils
+  /// soient posés (grille comprise). Sert à peupler `RideRecorder.start`
+  /// (paramètre `lapSeries`) : une série doit exister dès le départ de la
+  /// sortie, pas seulement à son premier tour marqué, sous peine de perdre ce
+  /// qui la précède.
+  Set<String> get lapSeries {
+    final keys = <String>{};
+
+    void collect(DashboardBlock block) {
+      if (block is MarkLapBlock) keys.add(block.series);
+    }
+
+    for (final page in pages) {
+      switch (page) {
+        case LapListPageSpec(:final series, :final blocks):
+          keys.add(series);
+          blocks.forEach(collect);
+        case ListPageSpec(:final blocks):
+          blocks.forEach(collect);
+        case GridPageSpec(:final cells):
+          for (final cell in cells) {
+            collect(cell.block);
+          }
+        case MapPageSpec():
+          break;
+      }
+    }
+
+    return keys;
+  }
+
   /// Décode un profil du document, ou `null` s'il n'en reste rien d'utilisable.
   static RidePreset? parse(Object? raw) {
     if (raw is! Map) return null;
@@ -258,6 +290,7 @@ sealed class RidePageSpec {
       'map' => const MapPageSpec(),
       'grid' => GridPageSpec.parse(raw, title: title, menu: menu),
       'list' => ListPageSpec.parse(raw, title: title, menu: menu),
+      'laps' => LapListPageSpec.parse(raw, title: title, menu: menu),
       _ => null,
     };
   }
@@ -373,6 +406,47 @@ class ListPageSpec extends RidePageSpec {
     ];
     if (blocks.isEmpty) return null;
     return ListPageSpec(title: title ?? 'Sortie', blocks: blocks, menu: menu);
+  }
+}
+
+/// La page d'une série de tours : une liste déroulante pour choisir le tour,
+/// puis des composants dont le contenu dépend de ce choix.
+///
+/// **La série appartient à la page, pas à chaque composant** : tous les blocs
+/// qu'elle porte (répartition par zone, moyennes, bilan) montrent le tour
+/// sélectionné *de cette série-là*. Rien n'empêche plusieurs pages sur la même
+/// série (chacune garde son propre tour choisi, indépendamment des autres) ni
+/// sur des séries différentes — voir `RidePreset.lapSeries`, qui les
+/// rassemble toutes pour que `RideRecorder.start` les connaisse dès le départ.
+class LapListPageSpec extends RidePageSpec {
+  const LapListPageSpec({
+    required super.title,
+    required this.series,
+    required this.blocks,
+    super.menu,
+  });
+
+  final String series;
+  final List<DashboardBlock> blocks;
+
+  static LapListPageSpec? parse(
+    Map<dynamic, dynamic> raw, {
+    String? title,
+    bool menu = false,
+  }) {
+    final blocks = [
+      for (final entry in (raw['blocks'] is List ? raw['blocks'] as List : []))
+        if (DashboardBlock.parse(entry) case final block?) block,
+    ];
+    // Une page de tours sans le moindre composant n'a rien à montrer une fois
+    // le tour choisi : même règle qu'une ListPageSpec vidée.
+    if (blocks.isEmpty) return null;
+    return LapListPageSpec(
+      title: title ?? 'Tours',
+      series: raw['series'] is String ? raw['series'] as String : 'default',
+      blocks: blocks,
+      menu: menu,
+    );
   }
 }
 

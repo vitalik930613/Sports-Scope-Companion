@@ -33,6 +33,16 @@ sealed class DashboardBlock {
       'zones' => ZonesBlock.parse(raw),
       'averages' =>
         AveragesBlock(mode: _modeOf(raw['mode'], AveragesMode.values)),
+      'lap_zones' => LapZonesBlock.parse(raw),
+      'lap_averages' =>
+        LapAveragesBlock(mode: _modeOf(raw['mode'], AveragesMode.values)),
+      'lap_summary' => LapSummaryBlock(
+          mode: _modeOf(raw['mode'], LapSummaryMode.values),
+        ),
+      'mark_lap' => MarkLapBlock(
+          series: raw['series'] is String ? raw['series'] as String : 'default',
+          mode: _modeOf(raw['mode'], MarkLapMode.values),
+        ),
       'recording' =>
         RecordingBlock(mode: _modeOf(raw['mode'], RecordingMode.values)),
       'change_route' => ChangeRouteBlock(
@@ -161,6 +171,35 @@ enum ZonesMode with BlockMode {
   final String key;
 }
 
+/// Le temps passé par zone, mais **depuis le début du tour sélectionné**, pas
+/// depuis le départ de la sortie.
+///
+/// Même contenu que [ZonesBlock], et volontairement une classe à part plutôt
+/// qu'un paramètre « depuis quand » sur celui-ci : ce bloc n'a de sens que sur
+/// une page qui porte un tour sélectionné ([LapListPageSpec.series]), là où
+/// [ZonesBlock] peut se poser n'importe où.
+class LapZonesBlock extends DashboardBlock {
+  const LapZonesBlock({required this.source, this.mode = ZonesMode.bar});
+
+  final ZonesSource source;
+  final ZonesMode mode;
+
+  static LapZonesBlock parse(Map<dynamic, dynamic> raw) => LapZonesBlock(
+        source: switch (raw['source']) {
+          'power' => ZonesSource.power,
+          _ => ZonesSource.hr,
+        },
+        mode: DashboardBlock._modeOf(raw['mode'], ZonesMode.values),
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is LapZonesBlock && other.source == source && other.mode == mode;
+
+  @override
+  int get hashCode => Object.hash(source, mode);
+}
+
 /// Les moyennes de la sortie : cardio, puissance, cadence, D+, calories.
 class AveragesBlock extends DashboardBlock {
   const AveragesBlock({this.mode = AveragesMode.cards});
@@ -180,6 +219,49 @@ enum AveragesMode with BlockMode {
   list('list');
 
   const AveragesMode(this.key);
+
+  @override
+  final String key;
+}
+
+/// Les moyennes, mais du tour sélectionné plutôt que de la sortie entière.
+/// Même remarque que [LapZonesBlock] : une classe à part parce qu'elle n'a de
+/// sens que sur une page de tours.
+class LapAveragesBlock extends DashboardBlock {
+  const LapAveragesBlock({this.mode = AveragesMode.cards});
+
+  final AveragesMode mode;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LapAveragesBlock && other.mode == mode;
+
+  @override
+  int get hashCode => mode.hashCode;
+}
+
+/// Le bilan du tour sélectionné : durée, distance, D+, calories, TSS — ce
+/// qu'on demanderait d'un tour entier plutôt qu'à une seule mesure. Le TSS
+/// suit `rideTss` (`training/ride_load.dart`), déjà générique sur n'importe
+/// quelle `RideStats`, donc valable tel quel sur celle d'un tour.
+class LapSummaryBlock extends DashboardBlock {
+  const LapSummaryBlock({this.mode = LapSummaryMode.cards});
+
+  final LapSummaryMode mode;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LapSummaryBlock && other.mode == mode;
+
+  @override
+  int get hashCode => mode.hashCode;
+}
+
+enum LapSummaryMode with BlockMode {
+  cards('cards'),
+  list('list');
+
+  const LapSummaryMode(this.key);
 
   @override
   final String key;
@@ -207,6 +289,42 @@ enum RecordingMode with BlockMode {
   compact('compact');
 
   const RecordingMode(this.key);
+
+  @override
+  final String key;
+}
+
+/// Marquer un tour : clôt le tour courant d'une série et en ouvre un nouveau.
+///
+/// Peut se poser sur n'importe quelle page, pas seulement une page de tours —
+/// c'est en roulant, entre deux mesures, qu'on veut marquer un tour. [series]
+/// dit **dans quelle série** ce bouton marque un tour ; plusieurs boutons de
+/// séries différentes tournent sans se fermer l'une l'autre (voir
+/// `RideRecorder.markLap`). `'default'` sans configuration : c'est aussi la
+/// seule série que l'export `.fit` sait porter, le format n'ayant qu'une
+/// hiérarchie de tours.
+class MarkLapBlock extends DashboardBlock {
+  const MarkLapBlock({this.series = 'default', this.mode = MarkLapMode.full});
+
+  final String series;
+  final MarkLapMode mode;
+
+  @override
+  bool operator ==(Object other) =>
+      other is MarkLapBlock && other.series == series && other.mode == mode;
+
+  @override
+  int get hashCode => Object.hash(series, mode);
+}
+
+enum MarkLapMode with BlockMode {
+  /// Le bouton large, à portée de pouce sur une route bosselée.
+  full('full'),
+
+  /// L'icône seule, pour une cellule de grille.
+  compact('compact');
+
+  const MarkLapMode(this.key);
 
   @override
   final String key;

@@ -31,12 +31,20 @@ class ZonesCard extends StatelessWidget {
     required this.recorder,
     required this.riderProfile,
     this.mode = ZonesMode.bar,
+    this.statsOverride,
   });
 
   final ZonesSource source;
   final RideRecorder recorder;
   final RiderProfileStore riderProfile;
   final ZonesMode mode;
+
+  /// Cible d'autres agrégats que ceux de la sortie entière — ceux d'un tour,
+  /// par exemple (`RideLap.stats`). `recorder` reste nécessaire même alors :
+  /// c'est encore lui qui dit si la sortie est active et qui porte la zone du
+  /// moment (`hub.latestHeartRate`/`latestPower`), une notion ride-large qui
+  /// n'a pas de sens « par tour ».
+  final RideStats? statsOverride;
 
   @override
   Widget build(BuildContext context) {
@@ -68,8 +76,9 @@ class ZonesCard extends StatelessWidget {
           );
         }
 
+        final stats = statsOverride ?? recorder.stats;
         final shares = zoneSharesOf(
-          hr ? recorder.stats.hrHistogram : recorder.stats.powerHistogram,
+          hr ? stats.hrHistogram : stats.powerHistogram,
           bucket: hr ? RideStats.hrBucketBpm : RideStats.powerBucketW,
           zones: hr ? profile.hrZones : profile.powerZones,
           perPoint: recorder.tickPeriod,
