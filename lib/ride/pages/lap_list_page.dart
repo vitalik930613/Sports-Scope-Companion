@@ -6,6 +6,7 @@ import '../../dashboard/ride_preset.dart';
 import '../../recording/ride_lap.dart';
 import '../blocks/averages_block.dart';
 import '../blocks/lap_summary_block.dart';
+import '../blocks/mark_lap_block.dart';
 import '../blocks/zones_block.dart';
 import '../widgets/dashboard_grid.dart';
 
@@ -125,12 +126,19 @@ class _LapListBodyState extends State<LapListBody> {
   }
 
   /// `switch` **non exhaustif** — délibérément, contrairement à celui de
-  /// `DashboardPage._block()` : seuls les composants qui dépendent d'un tour
-  /// ont un sens ici. Un `MarkLapBlock` posé sur cette page par erreur
-  /// marquerait un tour de *sa propre* série, indépendante de
-  /// `widget.spec.series` — pas absurde, mais pas ce qu'on attend d'une page
-  /// qui *lit* des tours ; il disparaît donc, même tolérance qu'une clé
-  /// inconnue.
+  /// `DashboardPage._block()` : un composant sans intérêt sur une page de
+  /// tours (changer d'itinéraire, calories de la sortie entière…) disparaît
+  /// plutôt que d'afficher quelque chose qui n'a pas de sens ici, même
+  /// tolérance qu'une clé inconnue.
+  ///
+  /// `MarkLapBlock` **fait exception** et se dessine comme partout ailleurs :
+  /// c'est en consultant les tours qu'on a le plus de raisons d'en marquer un
+  /// nouveau. Sa série (`markLap.series`) n'a par contre **aucun lien** avec
+  /// celle de la page (`widget.spec.series`) — ce sont deux réglages
+  /// indépendants de l'éditeur, et rien ici ne les assortit. Un bouton posé
+  /// avec une série différente de celle affichée marque bien un tour, mais
+  /// pas dans la liste qu'on a sous les yeux ; c'est à l'éditeur du site de
+  /// les poser cohérents.
   Widget _block(DashboardBlock block, RideLap lap) => switch (block) {
         final LapZonesBlock zones => ZonesCard(
             source: zones.source,
@@ -148,6 +156,11 @@ class _LapListBodyState extends State<LapListBody> {
             lap: lap,
             riderProfile: widget.sources.riderProfile,
             mode: summary.mode,
+          ),
+        final MarkLapBlock markLap => MarkLapControl(
+            recorder: widget.sources.recorder,
+            series: markLap.series,
+            mode: markLap.mode,
           ),
         _ => const SizedBox.shrink(),
       };
