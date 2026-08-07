@@ -315,6 +315,10 @@ enum RadarMode with BlockMode {
   /// Les mètres du véhicule le plus proche, en gros.
   distance('distance'),
 
+  /// Les mêmes mètres, sans l'icône ni le `×N` : rien que le chiffre, pour la
+  /// cellule qui n'a pas la hauteur d'en placer deux lignes.
+  compact('compact'),
+
   /// Le compte des véhicules suivis : une icône, et le nombre à côté. Pour qui
   /// veut savoir combien remontent, pas à quelle distance est le premier.
   count('count'),

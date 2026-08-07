@@ -50,6 +50,7 @@ class RadarBlockView extends StatelessWidget {
         RadarMode.gauge => _gauge(view, vertical: false),
         RadarMode.gaugeVertical => _gauge(view, vertical: true),
         RadarMode.distance => _distance(view),
+        RadarMode.compact => _compactDistance(view),
         RadarMode.count => _count(view),
         RadarMode.icons => _icons(view),
       },
@@ -116,6 +117,22 @@ class RadarBlockView extends StatelessWidget {
     );
   }
 
+  /// Les mêmes mètres que [_distance], sans l'icône ni le compte au-dessus :
+  /// juste le chiffre, pour la cellule trop basse pour deux lignes. Couleurs
+  /// et texte de repli partagés avec [_count] et [_icons] via [_emptyState] —
+  /// les trois racontent le même radar, ils ne doivent pas le raconter
+  /// différemment.
+  Widget _compactDistance(RadarView view) {
+    final empty = _emptyState(view.severity);
+    return _emptyText(
+      empty ??
+          (
+            '${view.nearestM} m',
+            view.severity == RadarSeverity.close ? _close : _approaching,
+          ),
+    );
+  }
+
   /// Le compte, pour qui veut savoir combien de véhicules remontent plutôt
   /// qu'à quelle distance est le premier : une icône, et le nombre en gros à
   /// côté. Contrairement à [_distance], le compte s'écrit même à un seul
@@ -168,10 +185,9 @@ class RadarBlockView extends StatelessWidget {
     );
   }
 
-  /// Le texte partagé par [_count] et [_icons] quand il n'y a rien à
-  /// compter : `absent` et `clear` ne s'écrivent jamais en chiffre, un compte
-  /// à zéro se lirait comme une route dégagée — ce qu'un radar débranché n'a
-  /// pas le droit de dire.
+  /// Le texte partagé par [_compactDistance], [_count] et [_icons] : la même
+  /// mise en forme sert au chiffre normal comme au texte de repli, pour que
+  /// les trois passent de l'un à l'autre sans changer de taille ni de poids.
   Widget _emptyText((String, Color) state) {
     final (label, color) = state;
     return BlockSurface(
