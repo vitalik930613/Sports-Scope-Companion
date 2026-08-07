@@ -301,6 +301,7 @@ class _RideShellPageState extends State<RideShellPage>
       recorder: widget.recorder,
       riderProfile: widget.riderProfile,
       trainingBudget: widget.trainingBudget,
+      drivetrain: widget.recorder.drivetrain,
       // Sans carte, aucune page ne publiera d'état : les mesures qui en
       // dépendent s'abstiennent au lieu d'attendre pour toujours.
       nav: _preset.hasMap ? _nav : null,

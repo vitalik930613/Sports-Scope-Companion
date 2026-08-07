@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../account/rider_profile.dart';
 import '../account/rider_profile_store.dart';
 import '../ble/sensor_hub.dart';
+import '../drivetrain.dart';
 import '../recording/ride_recorder.dart';
 import '../recording/ride_stats.dart';
 import '../ride/nav_state.dart';
@@ -45,6 +46,9 @@ enum MetricId {
   grade('grade', '% pente', Icons.north_east),
   calories('calories', 'kcal', Icons.local_fire_department),
   gears('gears', 'braquet', Icons.settings),
+  chainringPosition('chainring_position', 'plateau', Icons.donut_large),
+  sprocketPosition('sprocket_position', 'pignon', Icons.album),
+  gearRatio('gear_ratio', 'rapport', Icons.compare_arrows),
   routeRemaining('route_remaining', 'Distance restante', Icons.flag_outlined),
   routeRemainingGain('route_remaining_gain', 'D+ restant', Icons.trending_up),
   routeEta('route_eta', 'temps restant', Icons.schedule);
@@ -111,7 +115,11 @@ enum MetricId {
           sources.riderProfile,
         ],
       MetricId.cadence => [sources.hub.latestCadence],
-      MetricId.gears => [sources.hub.latestGears],
+      MetricId.gears ||
+      MetricId.chainringPosition ||
+      MetricId.sprocketPosition ||
+      MetricId.gearRatio =>
+        [sources.hub.latestGears],
       // La vitesse a deux sources et doit suivre les deux : la page quand il y
       // en a une, le GPS de l'enregistreur sinon.
       MetricId.speed => [sources.recorder, if (nav != null) nav],
@@ -215,6 +223,11 @@ enum MetricId {
       MetricId.grade => MetricReading(active ? _grade(stats) : null),
       MetricId.calories => MetricReading(stats.calories?.toString()),
       MetricId.gears => MetricReading(_gears(sources)),
+      MetricId.chainringPosition =>
+        MetricReading(sources.hub.latestGears.value?.frontPosition.toString()),
+      MetricId.sprocketPosition =>
+        MetricReading(sources.hub.latestGears.value?.rearPosition.toString()),
+      MetricId.gearRatio => MetricReading(_gearRatio(sources)),
       MetricId.routeRemaining => MetricReading(_remaining(sources)),
       MetricId.routeRemainingGain => MetricReading(_remainingGain(sources)),
       MetricId.routeEta => MetricReading(_eta(sources)),
@@ -303,6 +316,17 @@ enum MetricId {
     return '${gears.frontPosition} × ${gears.rearPosition}';
   }
 
+  /// Le rapport de développement — dents du plateau sur dents du pignon — à une
+  /// décimale : c'est ce qui se compare d'un vélo à l'autre, indépendamment de
+  /// la circonférence de roue. `null` sans transmission connue pour cette
+  /// position ([Drivetrain]), le Di2 ne publiant que des positions.
+  static String? _gearRatio(MetricSources sources) {
+    final gears = sources.hub.latestGears.value;
+    if (gears == null) return null;
+    final ratio = sources.drivetrain.ratio(gears);
+    return ratio == null ? null : _decimal(ratio);
+  }
+
   static MetricReading _zoned(
     int? value, {
     required RiderProfile profile,
@@ -351,11 +375,17 @@ class MetricSources {
     required this.recorder,
     required this.riderProfile,
     required this.trainingBudget,
+    this.drivetrain = Drivetrain.road,
     this.nav,
   });
 
   final SensorHub hub;
   final RideRecorder recorder;
+
+  /// Traduit une position Di2 en dents, pour [MetricId.gearRatio]. Même
+  /// convention par défaut que [RideRecorder] et `LiveValuesCard` : la
+  /// transmission réelle du vélo, pas une hypothèse recalculée ici.
+  final Drivetrain drivetrain;
 
   /// Les seuils du cycliste, d'où sortent les zones. **Jamais une zone calculée
   /// sur un seuil par défaut** : sans seuil, la case l'annonce en toutes lettres.
