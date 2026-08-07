@@ -25,7 +25,7 @@ import '../ui/formats.dart';
 /// connaîtra la clé ; l'appli plus ancienne, elle, l'ignorera sans broncher.
 enum MetricId {
   duration('duration', 'durée', Icons.timer_outlined),
-  movingTime('moving_time', 'en mouvement', Icons.directions_bike),
+  movingTime('moving_time', 'Durée en mouvement', Icons.directions_bike),
   distance('distance', 'distance', Icons.straighten),
   speed('speed', 'km/h', Icons.speed),
   speedAvg('speed_avg', 'Vitesse moyenne', Icons.speed),
@@ -51,7 +51,7 @@ enum MetricId {
   gearRatio('gear_ratio', 'rapport', Icons.compare_arrows),
   routeRemaining('route_remaining', 'Distance restante', Icons.flag_outlined),
   routeRemainingGain('route_remaining_gain', 'D+ restant', Icons.trending_up),
-  routeEta('route_eta', 'temps restant', Icons.schedule);
+  routeEta('route_eta', 'Durée restante', Icons.schedule);
 
   const MetricId(this.key, this.unit, this.icon);
 
