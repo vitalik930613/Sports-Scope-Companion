@@ -26,6 +26,7 @@ import 'navigation/route_catalog_fetch.dart';
 import 'navigation/route_catalog_store.dart';
 import 'phone/phone_sensors.dart';
 import 'phone/rider_compass.dart';
+import 'ride/climb_debug_page.dart';
 import 'ride/radar_debug_page.dart';
 import 'ride/ride_shell_page.dart';
 import 'recording/gps_source.dart';
@@ -554,6 +555,14 @@ class _HomePageState extends State<HomePage> {
     ));
   }
 
+  /// Le banc d'essai du col : juger la pastille et le graphique gradué sans
+  /// attendre de grimper un vrai col.
+  void _openClimbDebug() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const ClimbDebugPage(),
+    ));
+  }
+
   /// L'écran Compte, et **ce qu'il faut aller chercher au retour**.
   ///
   /// La page rend `true` quand la connexion vient d'aboutir. Ça n'est pas une
@@ -718,6 +727,11 @@ class _HomePageState extends State<HomePage> {
             onPressed: _openRadarSimulator,
             icon: const Icon(Icons.radar),
             tooltip: 'Simuler le radar',
+          ),
+          IconButton(
+            onPressed: _openClimbDebug,
+            icon: const Icon(Icons.landscape),
+            tooltip: 'Simuler un col',
           ),
           IconButton(
             onPressed: _openSensors,

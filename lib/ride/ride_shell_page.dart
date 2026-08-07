@@ -21,6 +21,7 @@ import '../recording/ride_recorder.dart';
 import '../ui/offline_download_dialog.dart';
 import '../ui/power_calibration_dialog.dart';
 import 'auto_return_policy.dart';
+import 'climb_profile.dart';
 import 'native_turn_alerts.dart';
 import 'nav_state.dart';
 import 'navigation_web_view.dart';
@@ -32,6 +33,8 @@ import 'radar_wake_policy.dart';
 import 'ride_pages.dart';
 import 'screen_policy.dart';
 import 'turn_proximity.dart';
+import 'widgets/climb_badge.dart';
+import 'widgets/climb_profile_overlay.dart';
 import 'widgets/map_edge_handle.dart';
 import 'widgets/map_swipe_zone.dart';
 import 'widgets/radar_distance_badges.dart';
@@ -145,6 +148,20 @@ class _RideShellPageState extends State<RideShellPage>
   /// et surtout le retour automatique sur la carte à l'approche d'un virage.
   /// Sans carte, personne ne l'alimente jamais — et personne ne l'écoute.
   final _nav = NavStateNotifier();
+
+  /// Le profil du col en cours, poussé une fois par col (voir
+  /// climb_profile.dart). Sans carte, personne ne l'alimente ni ne l'écoute —
+  /// même sort que [_nav].
+  final _climbProfile = ClimbProfileNotifier();
+
+  /// La pastille de col est-elle dépliée en graphique ? Un simple booléen
+  /// possédé par la coquille suffit ici — pas de politique séparée comme
+  /// [RadarWakePolicy] : il n'y a qu'une seule transition à arbitrer (le tap),
+  /// pas d'horloge ni de plusieurs sources concurrentes à départager. Repliée
+  /// par défaut et à chaque nouveau col (voir _onPageMessage) : un col qui
+  /// s'ouvre grand tout seul recouvrirait la carte au moment précis où le
+  /// cycliste a le plus besoin de voir la route devant lui.
+  final _climbExpanded = ValueNotifier<bool>(false);
 
   /// Où en est la carte hors-ligne du tracé affiché. Même sort que [_nav] :
   /// sans carte, personne ne l'alimente ni ne l'écoute.
@@ -717,6 +734,9 @@ class _RideShellPageState extends State<RideShellPage>
   /// `screen` : elle entre ou sort de sa veille, et demande le rétroéclairage
   /// correspondant — ce qu'un navigateur ne sait pas faire lui-même.
   /// `nav` : où en est la navigation (virage, hors-trace, arrivée, col).
+  /// `climb_profile` : le profil gradué du col en cours, poussé une seule
+  /// fois par col (voir climb_profile.dart) — le `nav.climb` scalaire, lui,
+  /// arrive chaque seconde.
   /// `rider_profile` : les seuils du cycliste, relayés depuis le site.
   /// `training_budget` : ce qu'il reste à faire aujourd'hui, et le plafond que la
   /// fatigue autorise — calculés par le site, qui seul a l'historique.
@@ -727,7 +747,21 @@ class _RideShellPageState extends State<RideShellPage>
       case 'ready':
         _web?.bridge.pushNow();
       case 'nav':
+        // Front descendant du col : « il y avait un climb, il n'y en a
+        // plus ». Comparé AVANT d'accepter le nouveau message, pas après —
+        // sinon les deux valent toujours la nouvelle. Un profil laissé en
+        // place après la fin du col redessinerait le dernier col fini sur un
+        // col suivant qui n'a pas encore poussé le sien (fenêtre de quelques
+        // centaines de ms entre climb_profile et le premier nav.climb, cf.
+        // climb_profile.dart).
+        final hadClimb = _nav.value?.climb != null;
         _nav.accept(message);
+        if (hadClimb && _nav.value?.climb == null) {
+          _climbProfile.reset();
+          _climbExpanded.value = false;
+        }
+      case 'climb_profile':
+        _climbProfile.accept(message);
       case 'offline':
         _offline.accept(message);
         _maybeAutoDownloadOffline();
@@ -788,6 +822,8 @@ class _RideShellPageState extends State<RideShellPage>
     );
     _web?.dispose();
     _nav.dispose();
+    _climbProfile.dispose();
+    _climbExpanded.dispose();
     _offline.dispose();
     _pages.dispose();
     super.dispose();
@@ -946,6 +982,67 @@ class _RideShellPageState extends State<RideShellPage>
               bottom: bandHeight + 12,
               child: Center(
                 child: RidePageFlash(page: _page, count: _pageCount),
+              ),
+            ),
+            // La pastille de col : repliée, épinglée en haut à droite, sous la
+            // bande de l'encoche (RadarDistanceBadges) pour ne jamais
+            // s'empiler avec elle. Posée après le bandeau/numéro de page pour
+            // rester visible même par-dessus la veille radar (reveil-radar) —
+            // un col en cours ne doit pas disparaître derrière une alerte
+            // voiture, les deux sont des informations indépendantes.
+            Positioned(
+              key: const ValueKey('col-pastille'),
+              top: 8,
+              right: RadarSideGauge.width + 8,
+              child: ValueListenableBuilder<NavState?>(
+                valueListenable: _nav,
+                builder: (context, nav, _) {
+                  final climb = nav?.climb;
+                  if (climb == null) return const SizedBox.shrink();
+                  return ValueListenableBuilder<bool>(
+                    valueListenable: _climbExpanded,
+                    builder: (context, expanded, _) => expanded
+                        ? const SizedBox.shrink()
+                        : SafeArea(
+                            bottom: false,
+                            child: ClimbBadge(
+                              climb: climb,
+                              onTap: () => _climbExpanded.value = true,
+                            ),
+                          ),
+                  );
+                },
+              ),
+            ),
+            // La carte de col dépliée : ancrée en bas, au-dessus du bandeau —
+            // même position que .nav-climb côté site (bottom-anchored), pour
+            // que le geste de repli tape au même endroit qu'on vient de
+            // taper pour déplier.
+            Positioned(
+              key: const ValueKey('col-profil'),
+              left: 12,
+              right: 12,
+              bottom: bandHeight + 12,
+              child: ValueListenableBuilder<bool>(
+                valueListenable: _climbExpanded,
+                builder: (context, expanded, _) {
+                  if (!expanded) return const SizedBox.shrink();
+                  return ValueListenableBuilder<NavState?>(
+                    valueListenable: _nav,
+                    builder: (context, nav, _) {
+                      final climb = nav?.climb;
+                      if (climb == null) return const SizedBox.shrink();
+                      return ValueListenableBuilder<ClimbProfile?>(
+                        valueListenable: _climbProfile,
+                        builder: (context, profile, _) => ClimbProfileOverlay(
+                          climb: climb,
+                          profile: profile,
+                          onTap: () => _climbExpanded.value = false,
+                        ),
+                      );
+                    },
+                  );
+                },
               ),
             ),
             // La veille par appui long n'existe plus que sur la carte, où
