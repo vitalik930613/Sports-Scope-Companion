@@ -8,6 +8,7 @@ import '../drivetrain.dart';
 import '../recording/ride_recorder.dart';
 import '../recording/ride_stats.dart';
 import '../ride/nav_state.dart';
+import '../training/ride_load.dart';
 import '../training/training_budget_store.dart';
 import '../ui/formats.dart';
 
@@ -48,6 +49,7 @@ enum MetricId {
   grade('grade', '% pente', Icons.north_east),
   calories('calories', 'kcal', Icons.local_fire_department),
   caloriesPerHour('calories_per_hour', 'kcal/h', Icons.local_fire_department),
+  tss('tss', 'TSS', Icons.bar_chart),
   gears('gears', 'braquet', Icons.settings),
   chainringPosition('chainring_position', 'plateau', Icons.donut_large),
   sprocketPosition('sprocket_position', 'pignon', Icons.album),
@@ -117,6 +119,9 @@ enum MetricId {
           sources.hub.latestPower,
           sources.riderProfile,
         ],
+      // Le TSS suit la même cascade que le budget de charge (cf. `rideTss`) :
+      // il lui faut donc les seuils en plus de l'agrégat de l'enregistreur.
+      MetricId.tss => [sources.recorder, sources.riderProfile],
       MetricId.cadence => [sources.hub.latestCadence],
       MetricId.gears ||
       MetricId.chainringPosition ||
@@ -236,6 +241,7 @@ enum MetricId {
       MetricId.grade => MetricReading(active ? _grade(stats) : null),
       MetricId.calories => MetricReading(stats.calories?.toString()),
       MetricId.caloriesPerHour => MetricReading(_caloriesPerHour(stats)),
+      MetricId.tss => MetricReading(_tss(stats, profile)),
       MetricId.gears => MetricReading(_gears(sources)),
       MetricId.chainringPosition =>
         MetricReading(sources.hub.latestGears.value?.frontPosition.toString()),
@@ -318,6 +324,13 @@ enum MetricId {
     if (movingHours <= 0) return null;
     return (calories / movingHours).round().toString();
   }
+
+  /// Le TSS de la sortie en cours, arrondi — même cascade que le budget de
+  /// charge (cf. `rideTss`) : puissance normalisée sur FTP, puis cardio moyen
+  /// sur seuil, puis l'intensité par défaut du vélo. `null` tant qu'il n'y a
+  /// pas eu de mouvement, jamais un zéro qui se lirait comme un score nul.
+  static String? _tss(RideStats stats, RiderProfile profile) =>
+      rideTss(stats, profile)?.tss.round().toString();
 
   /// Temps restant estimé sur l'itinéraire : la distance qui reste (la page)
   /// divisée par la vitesse moyenne en roulant (l'enregistreur). `null` sans
