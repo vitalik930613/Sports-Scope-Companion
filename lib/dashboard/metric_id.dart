@@ -26,6 +26,7 @@ import '../ui/formats.dart';
 enum MetricId {
   duration('duration', 'durée', Icons.timer_outlined),
   movingTime('moving_time', 'Durée en mouvement', Icons.directions_bike),
+  pauseTime('pause_time', 'Durée pause', Icons.pause_circle_outline),
   distance('distance', 'distance', Icons.straighten),
   speed('speed', 'km/h', Icons.speed),
   speedAvg('speed_avg', 'Vitesse moyenne', Icons.speed),
@@ -41,6 +42,7 @@ enum MetricId {
   powerMax('power_max', 'W max', Icons.bolt),
   cadence('cadence', 'tr/min', Icons.autorenew),
   cadenceAvg('cadence_avg', 'tr/min moy', Icons.autorenew),
+  cadenceMax('cadence_max', 'tr/min max', Icons.autorenew),
   ascent('ascent', 'D+', Icons.trending_up),
   altitude('altitude', 'm', Icons.terrain),
   grade('grade', '% pente', Icons.north_east),
@@ -152,6 +154,15 @@ enum MetricId {
         ),
       MetricId.movingTime =>
         MetricReading(active ? formatDurationHm(stats.movingTime) : null),
+      // Le complément de la durée en mouvement : arrêts aux feux, ravito,
+      // discussion sur le bas-côté. Les deux viennent de la même horloge —
+      // `recorded` ne tourne pas non plus pendant une pause manuelle — donc la
+      // soustraction ne peut pas passer sous zéro.
+      MetricId.pauseTime => MetricReading(
+          active
+              ? formatDurationHm(sources.recorder.recorded - stats.movingTime)
+              : null,
+        ),
       // Sans GPS (home-trainer), la distance n'a pas de source : un « 0 m » se
       // lirait comme « je n'ai pas bougé », alors que la question ne se pose
       // même pas. Le tiret dit la bonne chose — on ne mesure pas ça ici.
@@ -207,6 +218,7 @@ enum MetricId {
       MetricId.cadence =>
         MetricReading(sources.hub.latestCadence.value?.round().toString()),
       MetricId.cadenceAvg => MetricReading(stats.avgCadence?.toString()),
+      MetricId.cadenceMax => MetricReading(stats.maxCadence?.toString()),
       // Le dénivelé n'a de sens qu'une fois la sortie lancée : c'est un cumul,
       // et un cumul avant le départ vaut « rien », pas « zéro mètre ».
       MetricId.ascent => MetricReading(
