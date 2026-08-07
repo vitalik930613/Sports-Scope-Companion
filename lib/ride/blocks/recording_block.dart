@@ -37,13 +37,13 @@ class RecordingControl extends StatelessWidget {
       listenable: recorder,
       builder: (context, _) => switch (recorder.state) {
         RecorderState.idle => _StartRecordingButton(
-            recorder: recorder,
-            compact: compact,
-          ),
+          recorder: recorder,
+          compact: compact,
+        ),
         RecorderState.recording => _PauseButton(
-            recorder: recorder,
-            compact: compact,
-          ),
+          recorder: recorder,
+          compact: compact,
+        ),
         // La pause **garde sa bande orange même en compact**, et c'est le
         // seul mode qui ne se réduit pas : c'est la seule façon de perdre la
         // fin d'une sortie sans s'en apercevoir, donc la seule chose de
@@ -84,7 +84,8 @@ class _StartRecordingButtonState extends State<_StartRecordingButton> {
       messenger.showSnackBar(SnackBar(content: Text(e.message)));
     } catch (e) {
       messenger.showSnackBar(
-          SnackBar(content: Text('Enregistrement impossible : $e')));
+        SnackBar(content: Text('Enregistrement impossible : $e')),
+      );
     } finally {
       if (mounted) setState(() => _starting = false);
     }
@@ -104,7 +105,9 @@ class _StartRecordingButtonState extends State<_StartRecordingButton> {
     // position, ce qui peut durer plusieurs secondes sous les arbres. Sans GPS
     // (profil home-trainer), l'attente n'existe pas et le libellé ne paraît
     // jamais.
-    final label = _starting ? 'Recherche du GPS…' : 'Démarrer l\'enregistrement';
+    final label = _starting
+        ? 'Recherche du GPS…'
+        : 'Démarrer l\'enregistrement';
 
     if (widget.compact) {
       return _CompactButton(
@@ -114,19 +117,17 @@ class _StartRecordingButtonState extends State<_StartRecordingButton> {
       );
     }
 
-    return ScaleToFit(
-      child: SizedBox(
-        width: _fullWidth,
-        child: FilledButton.icon(
-          // Haut : le doigt vise mal sur une route bosselée, et cette page se
-          // consulte à l'arrêt ou au feu rouge.
-          style: FilledButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-          ),
-          onPressed: _starting ? null : _start,
-          icon: icon,
-          label: Text(label, style: const TextStyle(fontSize: 16)),
+    return _stretchToFit(
+      naturalWidth: _fullWidth,
+      child: FilledButton.icon(
+        // Haut : le doigt vise mal sur une route bosselée, et cette page se
+        // consulte à l'arrêt ou au feu rouge.
+        style: FilledButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 16),
         ),
+        onPressed: _starting ? null : _start,
+        icon: icon,
+        label: Text(label, style: const TextStyle(fontSize: 16)),
       ),
     );
   }
@@ -134,10 +135,29 @@ class _StartRecordingButtonState extends State<_StartRecordingButton> {
 
 /// La largeur à laquelle le bouton large se construit avant mise à l'échelle —
 /// ce qu'il faut à « Démarrer l'enregistrement » pour tenir sur une ligne.
-/// Fixe et non celle de la case : [ScaleToFit] la ramène à la case réelle, et
-/// une case trop étroite pour ça reçoit le bouton réduit plutôt qu'un libellé
-/// tronqué.
+/// Plancher et non largeur fixe : sur une case plus large (une ligne de
+/// grille pleine largeur), [_stretchToFit] l'étire jusqu'à la case réelle au
+/// lieu de le laisser centré, minuscule, au milieu du vide.
 const _fullWidth = 200.0;
+
+/// Étire [child] jusqu'à la largeur offerte quand elle dépasse
+/// [naturalWidth], au lieu de le laisser centré par [ScaleToFit] au milieu
+/// d'une case trop généreuse pour sa taille naturelle. En dessous de
+/// [naturalWidth], le comportement ne change pas : [ScaleToFit] réduit
+/// toujours le bouton en entier plutôt que de tronquer son libellé.
+Widget _stretchToFit({required double naturalWidth, required Widget child}) {
+  return LayoutBuilder(
+    builder: (context, constraints) {
+      final width =
+          constraints.hasBoundedWidth && constraints.maxWidth > naturalWidth
+          ? constraints.maxWidth
+          : naturalWidth;
+      return ScaleToFit(
+        child: SizedBox(width: width, child: child),
+      );
+    },
+  );
+}
 
 /// Suspendre l'enregistrement : discret, et sans confirmation.
 ///
@@ -161,19 +181,17 @@ class _PauseButton extends StatelessWidget {
       );
     }
 
-    return ScaleToFit(
-      child: SizedBox(
-        width: _fullWidth,
-        child: OutlinedButton.icon(
-          style: OutlinedButton.styleFrom(
-            foregroundColor: Colors.white70,
-            side: const BorderSide(color: Colors.white24),
-            padding: const EdgeInsets.symmetric(vertical: 14),
-          ),
-          onPressed: recorder.pause,
-          icon: const Icon(Icons.pause),
-          label: const Text('Mettre en pause', style: TextStyle(fontSize: 15)),
+    return _stretchToFit(
+      naturalWidth: _fullWidth,
+      child: OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.white70,
+          side: const BorderSide(color: Colors.white24),
+          padding: const EdgeInsets.symmetric(vertical: 14),
         ),
+        onPressed: recorder.pause,
+        icon: const Icon(Icons.pause),
+        label: const Text('Mettre en pause', style: TextStyle(fontSize: 15)),
       ),
     );
   }
@@ -191,64 +209,64 @@ class _ResumeBanner extends StatelessWidget {
   final RideRecorder recorder;
 
   /// La largeur à laquelle la bande se construit avant mise à l'échelle.
-  /// Fixe et non celle de la case : [ScaleToFit] la ramène à la case réelle,
-  /// et la phrase d'explication reste toujours écrite, réduite plutôt que
-  /// retirée.
+  /// Plancher et non largeur fixe : [_stretchToFit] l'étire jusqu'à la case
+  /// réelle quand elle est plus large — c'est ce qui fait « l'aplat orange
+  /// sur toute la largeur » du commentaire de classe — et sous ce plancher,
+  /// [ScaleToFit] réduit la bande, la phrase d'explication restant toujours
+  /// écrite plutôt que retirée.
   static const _naturalWidth = 260.0;
 
   @override
   Widget build(BuildContext context) {
     const metrics = BlockMetrics.natural;
 
-    return ScaleToFit(
-      child: SizedBox(
-        width: _naturalWidth,
-        child: Material(
-          color: const Color(0xFFB35300),
+    return _stretchToFit(
+      naturalWidth: _naturalWidth,
+      child: Material(
+        color: const Color(0xFFB35300),
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: recorder.resume,
           borderRadius: BorderRadius.circular(12),
-          child: InkWell(
-            onTap: recorder.resume,
-            borderRadius: BorderRadius.circular(12),
-            child: Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: metrics.padding,
-                vertical: metrics.padding - 2,
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.pause_circle, color: Colors.white),
-                  SizedBox(width: metrics.gap),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Enregistrement en pause',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: metrics.lineSize,
-                            fontWeight: FontWeight.w600,
-                          ),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: metrics.padding,
+              vertical: metrics.padding - 2,
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.pause_circle, color: Colors.white),
+                SizedBox(width: metrics.gap),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Enregistrement en pause',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: metrics.lineSize,
+                          fontWeight: FontWeight.w600,
                         ),
-                        Text(
-                          'Rien n\'est écrit — la trace reprend où elle s\'est arrêtée.',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: metrics.titleSize - 1,
-                          ),
+                      ),
+                      Text(
+                        'Rien n\'est écrit — la trace reprend où elle s\'est arrêtée.',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: metrics.titleSize - 1,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  SizedBox(width: metrics.gap),
-                  const Icon(Icons.play_arrow, color: Colors.white),
-                ],
-              ),
+                ),
+                SizedBox(width: metrics.gap),
+                const Icon(Icons.play_arrow, color: Colors.white),
+              ],
             ),
           ),
         ),

@@ -140,10 +140,10 @@ enum MetricId {
       // enregistrement elles n'existent pas, et un zéro ferait croire à un
       // compteur remis à zéro plutôt qu'à une sortie non lancée.
       MetricId.duration => MetricReading(
-          active ? formatDurationHms(sources.recorder.recorded) : null,
+          active ? formatDurationHm(sources.recorder.recorded) : null,
         ),
       MetricId.movingTime =>
-        MetricReading(active ? formatDurationHms(stats.movingTime) : null),
+        MetricReading(active ? formatDurationHm(stats.movingTime) : null),
       // Sans GPS (home-trainer), la distance n'a pas de source : un « 0 m » se
       // lirait comme « je n'ai pas bougé », alors que la question ne se pose
       // même pas. Le tiret dit la bonne chose — on ne mesure pas ça ici.
@@ -288,7 +288,7 @@ enum MetricId {
     if (speedMps == null || speedMps <= 0) return null;
 
     final etaSeconds = nav.remainingM / speedMps;
-    return formatDurationHms(Duration(seconds: etaSeconds.round()));
+    return formatDurationHm(Duration(seconds: etaSeconds.round()));
   }
 
   /// Le braquet en positions — `2 × 7` — et non en dents.

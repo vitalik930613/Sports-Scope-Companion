@@ -27,19 +27,17 @@ String formatDistanceKm(double metres) {
   return '${km.toStringAsFixed(decimals).replaceAll('.', ',')} km';
 }
 
-/// `04:12:34`, heures toujours écrites. Pour les mesures de temps du tableau
-/// de bord (durée, temps en mouvement, temps restant) : leur largeur ne doit
-/// pas sauter d'un chiffre au passage de la première heure, ce que
+/// `04:12`, heures toujours écrites. Pour les mesures de temps du tableau de
+/// bord (durée, temps en mouvement, temps restant) : leur largeur ne doit pas
+/// sauter d'un chiffre au passage de la première heure, ce que
 /// [formatDuration] ferait en ajoutant les heures d'un coup.
-String formatDurationHms(Duration duration) {
+String formatDurationHm(Duration duration) {
   final seconds = duration.inSeconds.abs();
   final hours = seconds ~/ 3600;
   final minutes = (seconds % 3600) ~/ 60;
-  final rest = seconds % 60;
   final hh = hours.toString().padLeft(2, '0');
   final mm = minutes.toString().padLeft(2, '0');
-  final ss = rest.toString().padLeft(2, '0');
-  return '$hh:$mm:$ss';
+  return '$hh:$mm';
 }
 
 /// Distance en kilomètres, virgule française. En dessous de 100 m on reste en
