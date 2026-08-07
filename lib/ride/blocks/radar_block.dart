@@ -50,9 +50,21 @@ class RadarBlockView extends StatelessWidget {
         RadarMode.gauge => _gauge(view, vertical: false),
         RadarMode.gaugeVertical => _gauge(view, vertical: true),
         RadarMode.distance => _distance(view),
+        RadarMode.count => _count(view),
+        RadarMode.icons => _icons(view),
       },
     );
   }
+
+  /// Le texte qui remplace tout affichage quand il n'y a rien à compter :
+  /// `absent` et `clear` ne se distinguent jamais d'un chiffre, sous peine de
+  /// se lire « 0 » — un compte à zéro se lirait comme une route dégagée, ce
+  /// qu'un radar débranché n'a pas le droit de dire.
+  (String, Color)? _emptyState(RadarSeverity severity) => switch (severity) {
+        RadarSeverity.clear => ('Voie libre', _clear),
+        RadarSeverity.absent => ('Pas de radar', Colors.white38),
+        RadarSeverity.approaching || RadarSeverity.close => null,
+      };
 
   Widget _distance(RadarView view) {
     final (label, color) = switch (view.severity) {
@@ -100,6 +112,78 @@ class RadarBlockView extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Le compte, pour qui veut savoir combien de véhicules remontent plutôt
+  /// qu'à quelle distance est le premier : une icône, et le nombre en gros à
+  /// côté. Contrairement à [_distance], le compte s'écrit même à un seul
+  /// véhicule — ici c'est le nombre qui est la donnée du composant, pas un
+  /// rappel de l'icône.
+  Widget _count(RadarView view) {
+    final empty = _emptyState(view.severity);
+    if (empty != null) return _emptyText(empty);
+
+    final color = view.severity == RadarSeverity.close ? _close : _approaching;
+    return BlockSurface(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.directions_car, size: 44, color: color),
+          Text(
+            ' ×${view.count}',
+            style: TextStyle(
+              color: color,
+              fontSize: 44,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Une icône par véhicule suivi, sans chiffre : le compte se lit d'un coup
+  /// d'œil plutôt qu'en déchiffrant un nombre. Une seule couleur pour toute la
+  /// rangée, celle du véhicule le plus proche — même convention que
+  /// [RadarSideGauge], qui peint ses marques d'un seul bloc plutôt qu'une par
+  /// véhicule : deux affichages du même capteur ne doivent pas raconter deux
+  /// histoires.
+  Widget _icons(RadarView view) {
+    final empty = _emptyState(view.severity);
+    if (empty != null) return _emptyText(empty);
+
+    final color = view.severity == RadarSeverity.close ? _close : _approaching;
+    return BlockSurface(
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          for (var i = 0; i < view.count; i++)
+            Icon(Icons.directions_car, size: 40, color: color),
+        ],
+      ),
+    );
+  }
+
+  /// Le texte partagé par [_count] et [_icons] quand il n'y a rien à
+  /// compter : `absent` et `clear` ne s'écrivent jamais en chiffre, un compte
+  /// à zéro se lirait comme une route dégagée — ce qu'un radar débranché n'a
+  /// pas le droit de dire.
+  Widget _emptyText((String, Color) state) {
+    final (label, color) = state;
+    return BlockSurface(
+      child: Text(
+        label,
+        maxLines: 1,
+        style: TextStyle(
+          color: color,
+          fontSize: 44,
+          fontWeight: FontWeight.w700,
+          height: 1.1,
+        ),
       ),
     );
   }

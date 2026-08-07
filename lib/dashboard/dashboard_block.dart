@@ -315,6 +315,14 @@ enum RadarMode with BlockMode {
   /// Les mètres du véhicule le plus proche, en gros.
   distance('distance'),
 
+  /// Le compte des véhicules suivis : une icône, et le nombre à côté. Pour qui
+  /// veut savoir combien remontent, pas à quelle distance est le premier.
+  count('count'),
+
+  /// Une icône par véhicule suivi — le compte redit sans chiffre, à l'endroit
+  /// où l'on préfère compter d'un coup d'œil que lire un nombre.
+  icons('icons'),
+
   /// La jauge de position, comme dans les gouttières de la carte, mais
   /// **couchée** : la proximité va vers la droite. C'est le sens d'une cellule
   /// large, celle qu'on obtient en fusionnant une ligne de la grille.
