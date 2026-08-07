@@ -7,6 +7,7 @@ import '../../recording/ride_lap.dart';
 import '../blocks/averages_block.dart';
 import '../blocks/lap_summary_block.dart';
 import '../blocks/zones_block.dart';
+import '../widgets/dashboard_grid.dart';
 
 /// Le corps d'une page de tours : liste déroulante, puis les composants du
 /// tour choisi.
@@ -17,10 +18,20 @@ import '../blocks/zones_block.dart';
 /// Une occurrence par page : deux pages de tours, sur la même série ou non,
 /// gardent chacune son propre choix.
 class LapListBody extends StatefulWidget {
-  const LapListBody({super.key, required this.spec, required this.sources});
+  const LapListBody({
+    super.key,
+    required this.spec,
+    required this.sources,
+    this.onGridMeasured,
+  });
 
   final LapListPageSpec spec;
   final MetricSources sources;
+
+  /// Passé tel quel à [DashboardGrid] quand [LapListPageSpec.layout] est une
+  /// [LapGridLayout] : même contrat que la grille de mesures, la taille
+  /// mesurée ne dépend pas de ce que la grille contient.
+  final ValueChanged<Size>? onGridMeasured;
 
   @override
   State<LapListBody> createState() => _LapListBodyState();
@@ -58,23 +69,36 @@ class _LapListBodyState extends State<LapListBody> {
           children: [
             _selector(laps, selected),
             const SizedBox(height: 12),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.only(bottom: 24),
-                children: [
-                  for (final block in widget.spec.blocks)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _block(block, lap),
-                    ),
-                ],
-              ),
-            ),
+            Expanded(child: _body(lap)),
           ],
         );
       },
     );
   }
+
+  /// Le contenu sous le sélecteur : une liste défilante ([LapBlocksLayout],
+  /// le cas d'avant ce chantier) ou une grille qui tient tout entière
+  /// ([LapGridLayout]) — même choix, et pour la même raison, qu'entre
+  /// [ListPageSpec] et [GridPageSpec] sur une page de mesures.
+  Widget _body(RideLap lap) => switch (widget.spec.layout) {
+        final LapBlocksLayout list => ListView(
+            padding: const EdgeInsets.only(bottom: 24),
+            children: [
+              for (final block in list.blocks)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _block(block, lap),
+                ),
+            ],
+          ),
+        final LapGridLayout grid => DashboardGrid(
+            rows: grid.rows,
+            cols: grid.cols,
+            cells: grid.cells,
+            cellBuilder: (block) => _block(block, lap),
+            onMeasured: widget.onGridMeasured,
+          ),
+      };
 
   Widget _selector(List<RideLap> laps, int selected) {
     return DropdownButtonHideUnderline(
