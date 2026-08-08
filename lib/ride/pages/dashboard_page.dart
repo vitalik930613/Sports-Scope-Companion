@@ -7,6 +7,7 @@ import '../../dashboard/ride_preset.dart';
 import '../blocks/averages_block.dart';
 import '../blocks/change_route_block.dart';
 import '../blocks/clear_route_block.dart';
+import '../blocks/climb_list_block.dart';
 import '../blocks/mark_lap_block.dart';
 import '../blocks/metric_view.dart';
 import '../blocks/nav_state_block.dart';
@@ -258,6 +259,11 @@ class DashboardPage extends StatelessWidget {
             recorder: sources.recorder,
             riderProfile: sources.riderProfile,
             mode: budget.mode,
+          ),
+        final ClimbListBlock climbs => ClimbListCard(
+            routeClimbs: sources.routeClimbs,
+            nav: sources.nav,
+            mode: climbs.mode,
           ),
         EmptyBlock() => const SizedBox.shrink(),
       };

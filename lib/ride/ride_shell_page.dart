@@ -32,6 +32,7 @@ import 'radar_alert_sound.dart';
 import 'radar_severity.dart';
 import 'radar_wake_policy.dart';
 import 'ride_pages.dart';
+import 'route_climbs.dart';
 import 'screen_policy.dart';
 import 'turn_proximity.dart';
 import 'widgets/climb_badge.dart';
@@ -154,6 +155,11 @@ class _RideShellPageState extends State<RideShellPage>
   /// climb_profile.dart). Sans carte, personne ne l'alimente ni ne l'écoute —
   /// même sort que [_nav].
   final _climbProfile = ClimbProfileNotifier();
+
+  /// La liste des cols du tracé en cours, poussée une fois par tracé (voir
+  /// route_climbs.dart). Sans carte, personne ne l'alimente ni ne l'écoute —
+  /// même sort que [_nav] et [_climbProfile].
+  final _routeClimbs = RouteClimbsNotifier();
 
   /// La pastille de col est-elle dépliée en graphique ? Un simple booléen
   /// possédé par la coquille suffit ici — pas de politique séparée comme
@@ -347,6 +353,7 @@ class _RideShellPageState extends State<RideShellPage>
       // Sans carte, aucune page ne publiera d'état : les mesures qui en
       // dépendent s'abstiennent au lieu d'attendre pour toujours.
       nav: _preset.hasMap ? _nav : null,
+      routeClimbs: _preset.hasMap ? _routeClimbs : null,
     );
 
     // Deux déclencheurs pour une seule décision : le pont pour les fronts, le
@@ -762,6 +769,9 @@ class _RideShellPageState extends State<RideShellPage>
   /// `climb_profile` : le profil gradué du col en cours, poussé une seule
   /// fois par col (voir climb_profile.dart) — le `nav.climb` scalaire, lui,
   /// arrive chaque seconde.
+  /// `route_climbs` : la liste ordonnée des cols du tracé entier, poussée une
+  /// fois par tracé (voir route_climbs.dart) — pas par col, contrairement à
+  /// `climb_profile`.
   /// `rider_profile` : les seuils du cycliste, relayés depuis le site.
   /// `training_budget` : ce qu'il reste à faire aujourd'hui, et le plafond que la
   /// fatigue autorise — calculés par le site, qui seul a l'historique.
@@ -794,6 +804,8 @@ class _RideShellPageState extends State<RideShellPage>
         }
       case 'climb_profile':
         _climbProfile.accept(message);
+      case 'route_climbs':
+        _routeClimbs.accept(message);
       case 'offline':
         _offline.accept(message);
         _maybeAutoDownloadOffline();
@@ -856,6 +868,7 @@ class _RideShellPageState extends State<RideShellPage>
     _web?.dispose();
     _nav.dispose();
     _climbProfile.dispose();
+    _routeClimbs.dispose();
     _climbExpanded.dispose();
     _offline.dispose();
     _pages.dispose();

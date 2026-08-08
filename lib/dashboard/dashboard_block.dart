@@ -58,6 +58,8 @@ sealed class DashboardBlock {
       'training_budget' => TrainingBudgetBlock(
           mode: _modeOf(raw['mode'], TrainingBudgetMode.values),
         ),
+      'climb_list' =>
+        ClimbListBlock(mode: _modeOf(raw['mode'], ClimbListMode.values)),
       'empty' => const EmptyBlock(),
       _ => null,
     };
@@ -548,6 +550,39 @@ enum TrainingBudgetMode with BlockMode {
   week('week');
 
   const TrainingBudgetMode(this.key);
+
+  @override
+  final String key;
+}
+
+/// La liste des cols du tracé, avec un repère « en cours / prochain ».
+///
+/// Vient de la page comme [NavStateBlock] et [TrainingBudgetBlock], pas d'un
+/// capteur — donc absent sans carte dans le profil, comme eux (voir
+/// `route_climbs.dart` : sans carte, personne n'alimente la liste).
+class ClimbListBlock extends DashboardBlock {
+  const ClimbListBlock({this.mode = ClimbListMode.full});
+
+  final ClimbListMode mode;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ClimbListBlock && other.mode == mode;
+
+  @override
+  int get hashCode => mode.hashCode;
+}
+
+enum ClimbListMode with BlockMode {
+  /// La liste entière, une ligne par col — ce qu'on lit à l'arrêt ou sur une
+  /// page qui défile. Mode par défaut, donc en tête.
+  full('full'),
+
+  /// Une seule ligne : le col en cours, ou le prochain à venir. Pour la case
+  /// de grille qui n'a la place que d'une phrase.
+  compact('compact');
+
+  const ClimbListMode(this.key);
 
   @override
   final String key;

@@ -8,6 +8,7 @@ import '../drivetrain.dart';
 import '../recording/ride_recorder.dart';
 import '../recording/ride_stats.dart';
 import '../ride/nav_state.dart';
+import '../ride/route_climbs.dart';
 import '../training/ride_load.dart';
 import '../training/training_budget_store.dart';
 import '../ui/formats.dart';
@@ -427,6 +428,7 @@ class MetricSources {
     required this.trainingBudget,
     this.drivetrain = Drivetrain.road,
     this.nav,
+    this.routeClimbs,
   });
 
   final SensorHub hub;
@@ -450,6 +452,10 @@ class MetricSources {
   /// carte** : il n'y a alors pas de page pour le dire, et les mesures qui en
   /// dépendent s'abstiennent au lieu de deviner.
   final ValueListenable<NavState?>? nav;
+
+  /// La liste des cols du tracé en cours, poussée par la page. **Nulle dans un
+  /// profil sans carte**, même raison que [nav] — voir [ClimbListBlock].
+  final ValueListenable<RouteClimbs?>? routeClimbs;
 }
 
 /// Une mesure prête à peindre : son texte, et la zone qui la colore.
