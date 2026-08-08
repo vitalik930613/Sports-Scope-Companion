@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../../account/rider_profile.dart';
+import '../../account/rider_profile_store.dart';
 import '../../dashboard/block_density.dart';
 import '../../dashboard/dashboard_block.dart';
 import '../../recording/ride_recorder.dart';
 import '../../recording/ride_stats.dart';
+import '../../ui/zone_colors.dart';
 import 'block_card.dart';
 
 /// Les moyennes de la sortie : cardio, puissance, cadence, vitesse.
@@ -28,6 +31,7 @@ class AveragesCard extends StatelessWidget {
   const AveragesCard({
     super.key,
     required this.recorder,
+    required this.riderProfile,
     this.mode = AveragesMode.cards,
     this.statsOverride,
   });
@@ -35,19 +39,19 @@ class AveragesCard extends StatelessWidget {
   final RideRecorder recorder;
   final AveragesMode mode;
 
+  /// Les seuils du cycliste : c'est d'eux que sortent les zones qui colorent
+  /// le cardio et la puissance ci-dessous — même source que le bandeau et
+  /// [ZonesCard], jamais une zone calculée sur un seuil par défaut.
+  final RiderProfileStore riderProfile;
+
   /// Cible d'autres agrégats que ceux de la sortie entière — ceux d'un tour,
   /// par exemple (`RideLap.stats`). `recorder` reste nécessaire même alors :
   /// c'est encore lui qui dit si la sortie est active.
   final RideStats? statsOverride;
 
-  /// La largeur à laquelle les quatre cartes se construisent avant mise à
-  /// l'échelle. Fixe et non celle de la case — [ScaleToFit] la ramène à la
-  /// case réelle.
-  static const _naturalWidth = 280.0;
-
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-        listenable: recorder,
+        listenable: Listenable.merge([recorder, riderProfile]),
         builder: (context, _) => _paint(),
       );
 
@@ -60,16 +64,25 @@ class AveragesCard extends StatelessWidget {
     }
 
     final stats = statsOverride ?? recorder.stats;
+    final profile = riderProfile.profile;
 
     final cards = [
       _Stat('Cardio', 'bpm', _or(stats.avgHeartRate), _or(stats.minHeartRate),
-          _or(stats.maxHeartRate)),
+          _or(stats.maxHeartRate),
+          icon: Icons.favorite,
+          avgBackground: _zoneBg(profile.hrZoneFor, stats.avgHeartRate),
+          minBackground: _zoneBg(profile.hrZoneFor, stats.minHeartRate),
+          maxBackground: _zoneBg(profile.hrZoneFor, stats.maxHeartRate)),
       _Stat('Puissance', 'W', _or(stats.avgPower), _or(stats.minPower),
-          _or(stats.maxPower)),
+          _or(stats.maxPower),
+          icon: Icons.bolt,
+          avgBackground: _zoneBg(profile.powerZoneFor, stats.avgPower),
+          minBackground: _zoneBg(profile.powerZoneFor, stats.minPower),
+          maxBackground: _zoneBg(profile.powerZoneFor, stats.maxPower)),
       _Stat('Cadence', 'tr/min', _or(stats.avgCadence), _or(stats.minCadence),
-          _or(stats.maxCadence)),
+          _or(stats.maxCadence), icon: Icons.autorenew),
       _Stat('Vitesse', 'km/h', _kmh(stats.avgSpeedMps), _kmh(stats.minSpeedMps),
-          _kmh(stats.maxSpeedMps)),
+          _kmh(stats.maxSpeedMps), icon: Icons.speed),
     ];
 
     if (mode == AveragesMode.list) {
@@ -81,21 +94,40 @@ class AveragesCard extends StatelessWidget {
       );
     }
 
-    // `ScaleToFit` et non `BlockSurface` : les quatre cartes ont déjà chacune
-    // leur propre fond, la grille elle-même n'en a pas besoin d'un
-    // supplémentaire — seulement de la mise à l'échelle qui la fait tenir.
-    return ScaleToFit(
-      child: SizedBox(
-        width: _naturalWidth,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _row(cards[0], cards[1]),
-            SizedBox(height: BlockMetrics.natural.gap),
-            _row(cards[2], cards[3]),
-          ],
-        ),
-      ),
+    // Pas de `SizedBox` de largeur fixe ni de `ScaleToFit` global ici : les
+    // deux `Row` ci-dessous, avec leurs `Expanded`, remplissent d'elles-mêmes
+    // toute la largeur que leur donne la case (liste ou grille, les deux la
+    // bornent déjà). Une mise à l'échelle unique sur les quatre cartes à la
+    // fois — l'ancienne façon — les rétrécissait *ensemble* dès que la
+    // hauteur de la case manquait, même quand sa largeur suffisait large-
+    // ment ; c'était le bug (la grille laissait des bandes vides sur les
+    // côtés que la liste ne montrait pas).
+    //
+    // Seule la hauteur diffère entre les deux mises en page : bornée par la
+    // case en grille (`DashboardGrid`), jamais en liste (`ListView`). En
+    // grille, chaque ligne prend sa moitié via `Expanded` plutôt que d'être
+    // mise à l'échelle avec l'autre — c'est alors chaque `StatCard`, par son
+    // propre `ScaleToFit` (dans `BlockSurface`), qui réduit son texte si son
+    // quart de case est trop bas. Une réduction confinée à la carte
+    // concernée plutôt qu'une seule réduction globale sur les quatre.
+    final gap = SizedBox(height: BlockMetrics.natural.gap);
+    return LayoutBuilder(
+      builder: (context, constraints) => constraints.hasBoundedHeight
+          ? Column(
+              children: [
+                Expanded(child: _row(cards[0], cards[1])),
+                gap,
+                Expanded(child: _row(cards[2], cards[3])),
+              ],
+            )
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _row(cards[0], cards[1]),
+                gap,
+                _row(cards[2], cards[3]),
+              ],
+            ),
     );
   }
 
@@ -110,6 +142,14 @@ class AveragesCard extends StatelessWidget {
           Expanded(child: right.card()),
         ],
       );
+
+  /// La couleur de la zone d'un chiffre — même table que le bandeau et
+  /// [ZonesCard] (`z1` bleu … `z5` rouge, `z6`/`z7` violets pour la
+  /// puissance) : `null` sans seuil connu (le site n'a rien envoyé) ou pour
+  /// une valeur sous la première zone, auquel cas la ligne garde le texte
+  /// blanc uni plutôt qu'une couleur inventée.
+  static Color? _zoneBg(TrainingZone? Function(num) zoneFor, num? value) =>
+      value == null ? null : zoneColorOf(zoneFor(value)?.key);
 
   static String _or(num? value) => value?.toString() ?? '—';
 
@@ -127,20 +167,29 @@ class AveragesCard extends StatelessWidget {
 /// montrer des chiffres différents de la même sortie.
 @immutable
 class _Stat {
-  const _Stat(this.name, this.unit, this.avg, this.min, this.max);
+  const _Stat(this.name, this.unit, this.avg, this.min, this.max,
+      {required this.icon,
+      this.avgBackground,
+      this.minBackground,
+      this.maxBackground});
 
   final String name;
   final String unit;
   final String avg;
   final String min;
   final String max;
+  final IconData icon;
+  final Color? avgBackground;
+  final Color? minBackground;
+  final Color? maxBackground;
 
   Widget card() => StatCard(
         title: '$name ($unit)',
+        icon: icon,
         rows: [
-          StatRow('Moyen', avg),
-          StatRow('Min', min),
-          StatRow('Max', max),
+          StatRow('Moyen', avg, background: avgBackground),
+          StatRow('Min', min, background: minBackground),
+          StatRow('Max', max, background: maxBackground),
         ],
       );
 

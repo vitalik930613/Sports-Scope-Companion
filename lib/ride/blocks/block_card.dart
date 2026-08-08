@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../dashboard/block_density.dart';
+import '../../ui/zone_colors.dart';
 
 /// La largeur à laquelle une carte de texte (phrases ou lignes à deux
 /// colonnes) se construit avant mise à l'échelle — ce qu'il faut pour que les
@@ -72,10 +73,15 @@ class BlockCard extends StatelessWidget {
 /// Une ligne de [StatCard] : ce qu'on mesure à gauche, ce que ça vaut à droite.
 @immutable
 class StatRow {
-  const StatRow(this.label, this.value);
+  const StatRow(this.label, this.value, {this.background});
 
   final String label;
   final String value;
+
+  /// La couleur de la zone dans laquelle tombe cette valeur (`zoneColorOf`),
+  /// `null` sans seuil connu ou pour une mesure qui n'a pas de zone (cadence,
+  /// vitesse) — la ligne garde alors le texte blanc uni.
+  final Color? background;
 }
 
 /// La carte des moyennes : un titre, puis des lignes en **deux colonnes**.
@@ -88,10 +94,20 @@ class StatRow {
 /// L'unité est dans le titre et pas sur chaque ligne : elle vaut pour les
 /// trois, et la colonne des valeurs tient alors dans une demi-case.
 class StatCard extends StatelessWidget {
-  const StatCard({super.key, required this.title, required this.rows});
+  const StatCard({
+    super.key,
+    required this.title,
+    required this.rows,
+    this.icon,
+  });
 
   final String title;
   final List<StatRow> rows;
+
+  /// Devant le titre : dit quelle mesure on regarde avant même de lire le nom
+  /// — le même cœur, le même éclair que partout ailleurs dans l'appli
+  /// (`ui/sensor_icons.dart`, `MetricId`).
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) => BlockSurface(child: _content());
@@ -104,22 +120,35 @@ class StatCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            title.toUpperCase(),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: metrics.titleSize,
-            ),
+          Row(
+            children: [
+              if (icon != null) ...[
+                Icon(icon, size: metrics.titleSize + 2, color: Colors.white70),
+                SizedBox(width: metrics.gap / 2),
+              ],
+              Expanded(
+                child: Text(
+                  title.toUpperCase(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: metrics.titleSize,
+                  ),
+                ),
+              ),
+            ],
           ),
           SizedBox(height: metrics.gap),
           for (final row in rows)
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
+              // Pas de `baseline` ici : le fond de zone met la valeur dans un
+              // `Container` (pour son rembourrage et son coin arrondi), qui
+              // n'a pas de ligne de base à offrir — un Row en `baseline` la
+              // recalerait sur son bord haut plutôt que sur le texte du
+              // libellé.
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
                 children: [
                   Expanded(
                     child: Text(
@@ -133,18 +162,41 @@ class StatCard extends StatelessWidget {
                     ),
                   ),
                   SizedBox(width: metrics.gap),
-                  Text(
-                    row.value,
-                    maxLines: 1,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: metrics.lineSize,
-                    ),
-                  ),
+                  _value(row, metrics),
                 ],
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  /// La valeur d'une ligne, en pastille de la couleur de zone quand elle en a
+  /// une — le même traitement que le bandeau et le mode `zone` de
+  /// [MetricView] : la couleur se lit avant le chiffre.
+  static Widget _value(StatRow row, BlockMetrics metrics) {
+    final background = row.background;
+    if (background == null) {
+      return Text(
+        row.value,
+        maxLines: 1,
+        style: TextStyle(color: Colors.white, fontSize: metrics.lineSize),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        row.value,
+        maxLines: 1,
+        style: TextStyle(
+          color: foregroundOf(background),
+          fontWeight: FontWeight.w600,
+          fontSize: metrics.lineSize,
+        ),
       ),
     );
   }

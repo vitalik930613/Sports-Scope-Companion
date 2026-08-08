@@ -215,8 +215,11 @@ class DashboardPage extends StatelessWidget {
             riderProfile: sources.riderProfile,
             mode: zones.mode,
           ),
-        final AveragesBlock averages =>
-          AveragesCard(recorder: sources.recorder, mode: averages.mode),
+        final AveragesBlock averages => AveragesCard(
+            recorder: sources.recorder,
+            riderProfile: sources.riderProfile,
+            mode: averages.mode,
+          ),
         final RecordingBlock recording =>
           RecordingControl(recorder: sources.recorder, mode: recording.mode),
         final MarkLapBlock markLap => MarkLapControl(

@@ -59,10 +59,13 @@ class MarkLapControl extends StatelessWidget {
         return ScaleToFit(
           child: SizedBox(
             width: _naturalWidth,
-            child: OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.white70,
-                side: const BorderSide(color: Colors.white24),
+            // `FilledButton` et non `OutlinedButton` (contrairement à la
+            // pause) : marquer un tour est un geste positif, pas une pause
+            // qu'on hésite à prendre — il porte l'aplat de la même couleur
+            // que « Démarrer l'enregistrement », sans quoi il se fond dans le
+            // noir de la coquille derrière lui.
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 14),
               ),
               onPressed: onPressed,

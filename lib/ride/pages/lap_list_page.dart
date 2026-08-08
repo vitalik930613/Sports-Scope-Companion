@@ -162,6 +162,7 @@ class _LapListBodyState extends State<LapListBody> {
         ),
       final LapAveragesBlock averages => AveragesCard(
           recorder: widget.sources.recorder,
+          riderProfile: widget.sources.riderProfile,
           mode: averages.mode,
           statsOverride: lap.stats,
         ),
