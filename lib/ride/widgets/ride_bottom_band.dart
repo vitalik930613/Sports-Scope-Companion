@@ -136,6 +136,7 @@ class _RideBottomBandState extends State<RideBottomBand> {
           value: reading.value,
           label: metric.unit,
           zoneKey: reading.zoneKey,
+          background: reading.background,
           altBackground: _alternateBackgrounds[index % 2],
         );
       },
@@ -168,6 +169,7 @@ class _BandMetric extends StatelessWidget {
     required this.value,
     required this.label,
     this.zoneKey,
+    this.background,
     this.altBackground,
   });
 
@@ -178,13 +180,18 @@ class _BandMetric extends StatelessWidget {
   /// laisser sur le fond du bandeau.
   final String? zoneKey;
 
+  /// Couleur de fond directe (la pente, sur sa tranche de difficulté), quand
+  /// la mesure ne se range pas en zone d'entraînement. Même priorité que
+  /// [MetricView] : elle l'emporte sur l'alternance noir/anthracite.
+  final Color? background;
+
   /// Le noir ou l'anthracite de l'alternance, quand la case ne porte pas de
   /// zone — c'est elle qui recule dès qu'une zone donne une vraie couleur.
   final Color? altBackground;
 
   @override
   Widget build(BuildContext context) {
-    final zoneColor = zoneColorOf(zoneKey);
+    final zoneColor = background ?? zoneColorOf(zoneKey);
     final foreground = zoneColor == null ? Colors.white : foregroundOf(zoneColor);
 
     final content = Column(

@@ -70,7 +70,7 @@ class MetricView extends StatelessWidget {
 
   /// Le chiffre, sa couleur de zone en fond.
   Widget _big(MetricReading reading) {
-    final background = zoneColorOf(reading.zoneKey);
+    final background = reading.background ?? zoneColorOf(reading.zoneKey);
     final ink = background == null ? Colors.white : foregroundOf(background);
 
     return BlockSurface(
@@ -97,7 +97,7 @@ class MetricView extends StatelessWidget {
   /// Icône, valeur, unité — la mise en forme de `MetricTile`, pour les cellules
   /// où l'on tient plusieurs mesures.
   Widget _compact(MetricReading reading) {
-    final background = zoneColorOf(reading.zoneKey);
+    final background = reading.background ?? zoneColorOf(reading.zoneKey);
     final ink = background == null ? Colors.white : foregroundOf(background);
 
     return BlockSurface(
@@ -136,7 +136,7 @@ class MetricView extends StatelessWidget {
   /// mêmes couleurs de zone et affichent la même forme « Z3 ») au même endroit
   /// que le nom qui le confirme, avant qu'on descende lire le chiffre lui-même.
   Widget _zone(MetricReading reading) {
-    final background = zoneColorOf(reading.zoneKey);
+    final background = reading.background ?? zoneColorOf(reading.zoneKey);
     final ink = background == null ? Colors.white : foregroundOf(background);
     final titleColor =
         background == null ? Colors.white70 : ink.withValues(alpha: 0.85);

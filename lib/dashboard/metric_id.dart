@@ -12,6 +12,7 @@ import '../ride/route_climbs.dart';
 import '../training/ride_load.dart';
 import '../training/training_budget_store.dart';
 import '../ui/formats.dart';
+import '../ui/grade_colors.dart';
 
 /// Le catalogue des mesures affichables, et **le vocabulaire partagé avec le
 /// site** : une clé d'ici est une clé du document de réglages.
@@ -241,13 +242,11 @@ enum MetricId {
       // La pente vient de l'enregistreur et pas du dernier point : c'est un
       // rapport entre deux endroits du parcours, elle n'existe pas avant le
       // départ ni sur un rouleau, où l'on ne se déplace pas.
-      MetricId.grade => MetricReading(active ? _grade(stats) : null),
+      MetricId.grade => _gradeReading(active ? stats.gradePercent : null),
       // Mêmes bornes que la pente instantanée : hors sortie, ou sur un
       // rouleau sans distance parcourue, la fenêtre ne s'est jamais remplie.
-      MetricId.gradeAvg =>
-        MetricReading(active ? _roundedGrade(stats.avgGrade) : null),
-      MetricId.gradeMax =>
-        MetricReading(active ? _roundedGrade(stats.maxGrade) : null),
+      MetricId.gradeAvg => _gradeReading(active ? stats.avgGrade : null),
+      MetricId.gradeMax => _gradeReading(active ? stats.maxGrade : null),
       MetricId.calories => MetricReading(stats.calories?.toString()),
       MetricId.caloriesPerHour => MetricReading(_caloriesPerHour(stats)),
       MetricId.tss => MetricReading(_tss(stats, profile)),
@@ -291,9 +290,16 @@ enum MetricId {
   /// près (cf. [RideStats.defaultGradeWindowM]), et une décimale qui danse
   /// pendant qu'on la lit afficherait une précision qu'on n'a pas. Le signe, lui,
   /// reste — c'est la seule chose qui distingue un mur d'un plongeon.
-  static String? _grade(RideStats stats) => _roundedGrade(stats.gradePercent);
-
   static String? _roundedGrade(double? value) => value?.round().toString();
+
+  /// La pente (instantanée, moyenne ou maximum), sa case peinte de la couleur
+  /// de sa tranche de difficulté — même table que le profil des cols
+  /// (`gradeColorOf`) : on doit reconnaître un mur avant de déchiffrer le
+  /// chiffre, comme sur le profil altimétrique.
+  static MetricReading _gradeReading(double? value) => MetricReading(
+        _roundedGrade(value),
+        background: value == null ? null : gradeColorOf(value),
+      );
 
   static String? _remaining(MetricSources sources) {
     final nav = sources.nav?.value;
@@ -461,7 +467,7 @@ class MetricSources {
 /// Une mesure prête à peindre : son texte, et la zone qui la colore.
 @immutable
 class MetricReading {
-  const MetricReading(this.value, {this.zoneKey});
+  const MetricReading(this.value, {this.zoneKey, this.background});
 
   /// `null` = pas de mesure. Le rendu écrit alors `—`, jamais `0`.
   final String? value;
@@ -470,12 +476,19 @@ class MetricReading {
   /// Une couleur inventée serait pire qu'une couleur absente.
   final String? zoneKey;
 
+  /// Couleur de fond directe, pour les mesures qui ne se rangent pas en zones
+  /// d'entraînement — la pente, dont la couleur vient de sa tranche de
+  /// difficulté ([gradeColorOf]) et non des seuils du cycliste.
+  /// Mutuellement exclusif avec [zoneKey] : aucune mesure n'a besoin des deux.
+  final Color? background;
+
   @override
   bool operator ==(Object other) =>
       other is MetricReading &&
       other.value == value &&
-      other.zoneKey == zoneKey;
+      other.zoneKey == zoneKey &&
+      other.background == background;
 
   @override
-  int get hashCode => Object.hash(value, zoneKey);
+  int get hashCode => Object.hash(value, zoneKey, background);
 }
