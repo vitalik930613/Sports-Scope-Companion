@@ -49,7 +49,10 @@ class DashboardActionButton extends StatelessWidget {
       );
     }
 
-    return ScaleToFit(
+    // `BlockSurface` et non `ScaleToFit` seul : sans le fond anthracite des
+    // cartes de mesure, ce bouton flottait seul sur le noir de la coquille et
+    // détonnait à côté des cartes voisines dans la grille ou la liste.
+    return BlockSurface(
       child: SizedBox(
         width: _fullWidth,
         child: FilledButton.icon(

@@ -104,28 +104,43 @@ class _LapListBodyState extends State<LapListBody> {
           ),
       };
 
+  /// Le contrôle fermé : le fond anthracite des cartes, et un tap ouvre le
+  /// choix en plein écran plutôt qu'un menu qui se referme au moindre cahot
+  /// avant qu'on ait pu viser la bonne ligne — voir [_LapPickerPage].
   Widget _selector(List<RideLap> laps, int selected) {
-    return DropdownButtonHideUnderline(
-      child: DropdownButton<int>(
-        value: selected,
-        dropdownColor: const Color(0xFF1F2226),
-        style: const TextStyle(color: Colors.white),
-        iconEnabledColor: Colors.white70,
-        isExpanded: true,
-        items: [
-          for (var i = 0; i < laps.length; i++)
-            DropdownMenuItem(
-              value: i,
-              child: Text(
-                i == laps.length - 1
-                    ? 'Tour ${i + 1} (en cours)'
-                    : 'Tour ${i + 1}',
+    return Material(
+      color: const Color(0xFF1F2226),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _pickLap(laps.length, selected),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _lapLabel(laps.length, selected),
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                ),
               ),
-            ),
-        ],
-        onChanged: (index) => setState(() => _selectedIndex = index),
+              const Icon(Icons.arrow_drop_down, color: Colors.white70),
+            ],
+          ),
+        ),
       ),
     );
+  }
+
+  Future<void> _pickLap(int lapCount, int selected) async {
+    final picked = await Navigator.of(context).push<int>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => _LapPickerPage(lapCount: lapCount, selected: selected),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _selectedIndex = picked);
   }
 
   /// `switch` **non exhaustif** — délibérément, contrairement à celui de
@@ -178,5 +193,76 @@ class _LapListBodyState extends State<LapListBody> {
         ),
       _ => const SizedBox.shrink(),
     };
+  }
+}
+
+/// Le libellé d'un tour : « en cours » pour le dernier, seul encore ouvert.
+/// Partagé entre le contrôle fermé et la page de choix, pour qu'ils ne
+/// disent jamais deux choses différentes du même tour.
+String _lapLabel(int lapCount, int index) =>
+    index == lapCount - 1 ? 'Tour ${index + 1} (en cours)' : 'Tour ${index + 1}';
+
+/// Le choix d'un tour en plein écran.
+///
+/// Un menu déroulant classique se referme au premier tressaut du guidon avant
+/// qu'on ait pu viser la bonne ligne, et ses lignes sont trop serrées pour un
+/// doigt qui vise mal sur une route bosselée. Ici chaque tour occupe toute la
+/// largeur de l'écran : une seule cible possible, impossible à manquer.
+class _LapPickerPage extends StatelessWidget {
+  const _LapPickerPage({required this.lapCount, required this.selected});
+
+  final int lapCount;
+  final int selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: const Text('Choisir un tour'),
+      ),
+      body: ListView.builder(
+        padding: const EdgeInsets.all(12),
+        // Du dernier tour au premier : c'est celui qu'on vient de rouler
+        // qu'on cherche le plus souvent, autant l'avoir sous le pouce sans
+        // faire défiler toute la sortie.
+        itemCount: lapCount,
+        itemBuilder: (context, i) => _tile(context, lapCount - 1 - i),
+      ),
+    );
+  }
+
+  Widget _tile(BuildContext context, int index) {
+    final isSelected = index == selected;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: isSelected ? const Color(0xFF2E7D32) : const Color(0xFF1F2226),
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => Navigator.of(context).pop(index),
+          child: Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _lapLabel(lapCount, index),
+                    style: const TextStyle(color: Colors.white, fontSize: 18),
+                  ),
+                ),
+                if (isSelected)
+                  const Icon(Icons.check, color: Colors.white),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

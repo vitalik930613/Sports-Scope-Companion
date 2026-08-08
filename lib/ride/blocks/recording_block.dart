@@ -117,7 +117,7 @@ class _StartRecordingButtonState extends State<_StartRecordingButton> {
       );
     }
 
-    return _stretchToFit(
+    return _cardButton(
       naturalWidth: _fullWidth,
       child: FilledButton.icon(
         // Haut : le doigt vise mal sur une route bosselée, et cette page se
@@ -159,6 +159,24 @@ Widget _stretchToFit({required double naturalWidth, required Widget child}) {
   );
 }
 
+/// [_stretchToFit], avec en plus le fond anthracite des cartes de mesure —
+/// sans lui, le bouton étiré flottait seul sur le noir de la coquille et
+/// détonnait à côté des cartes voisines. `_ResumeBanner` ne s'en sert pas :
+/// son aplat orange est déjà un fond, et délibérément pas celui-ci.
+Widget _cardButton({required double naturalWidth, required Widget child}) {
+  return _stretchToFit(
+    naturalWidth: naturalWidth,
+    child: Container(
+      padding: EdgeInsets.all(BlockMetrics.natural.padding),
+      decoration: BoxDecoration(
+        color: BlockCard.background,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: child,
+    ),
+  );
+}
+
 /// Suspendre l'enregistrement : discret, et sans confirmation.
 ///
 /// Discret parce qu'on ne le cherche qu'en connaissance de cause — un café, une
@@ -181,7 +199,7 @@ class _PauseButton extends StatelessWidget {
       );
     }
 
-    return _stretchToFit(
+    return _cardButton(
       naturalWidth: _fullWidth,
       child: OutlinedButton.icon(
         style: OutlinedButton.styleFrom(

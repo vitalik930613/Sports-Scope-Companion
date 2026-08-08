@@ -56,7 +56,10 @@ class MarkLapControl extends StatelessWidget {
           );
         }
 
-        return ScaleToFit(
+        // `BlockSurface` et non `ScaleToFit` seul : le fond anthracite des
+        // cartes de mesure, sinon ce bouton flotte seul sur le noir de la
+        // coquille et détonne à côté des cartes voisines.
+        return BlockSurface(
           child: SizedBox(
             width: _naturalWidth,
             // `FilledButton` et non `OutlinedButton` (contrairement à la

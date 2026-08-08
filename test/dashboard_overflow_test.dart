@@ -30,7 +30,7 @@ import 'package:sports_scope_companion/training/training_budget_store.dart';
 /// donne `gridRectFor` — plus aucun élément n'est retiré selon la taille de la
 /// case, seulement mis à l'échelle.
 ///
-/// Ces tests montent donc les pires grilles composables (jusqu'à 6 × 6, le
+/// Ces tests montent donc les pires grilles composables (jusqu'à 12 × 12, le
 /// plafond de [GridPageSpec.maxSide]) sur un téléphone ordinaire, avec dans les
 /// cases les composants les plus encombrants : la répartition en sept zones, les
 /// moyennes en trois cartes, le bouton d'enregistrement, l'état de navigation.
@@ -194,7 +194,7 @@ void main() {
         MetricBlock(metric: MetricId.speed),
       ];
 
-  for (final side in [2, 3, 4, 6]) {
+  for (final side in [2, 3, 4, 6, 12]) {
     testWidgets('une grille de $side × $side ne déborde d\'aucune case',
         (tester) async {
       await riding(tester);

@@ -336,7 +336,7 @@ class GridPageSpec extends RidePageSpec {
 
   /// Au-delà, les cases deviennent trop petites pour porter un chiffre lisible
   /// en roulant — c'est la même raison qui borne le bandeau à quatre cases.
-  static const maxSide = 6;
+  static const maxSide = 12;
 
   static GridPageSpec? parse(
     Map<dynamic, dynamic> raw, {
