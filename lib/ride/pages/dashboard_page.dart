@@ -7,6 +7,7 @@ import '../../dashboard/ride_preset.dart';
 import '../blocks/averages_block.dart';
 import '../blocks/change_route_block.dart';
 import '../blocks/clear_route_block.dart';
+import '../blocks/climb_list_block.dart';
 import '../blocks/mark_lap_block.dart';
 import '../blocks/metric_view.dart';
 import '../blocks/nav_state_block.dart';
@@ -46,6 +47,8 @@ class DashboardPage extends StatelessWidget {
     this.offlineMap,
     this.onDownloadOffline,
     this.onCalibratePower,
+    this.debugClimbActive = false,
+    this.onSimulateClimb,
     this.onLeaveRide,
     this.onGridMeasured,
   });
@@ -106,6 +109,22 @@ class DashboardPage extends StatelessWidget {
   /// capteur connecté sait le faire — le menu ne montre pas une commande qui
   /// n'aurait que « non » à répondre.
   final VoidCallback? onCalibratePower;
+
+  /// Un col simulé est-il actuellement affiché par-dessus la sortie ?
+  ///
+  /// Change le libellé et l'icône de la commande, à la manière de « Carte hors
+  /// ligne » avec son propre état — sans ça, une commande qui reste toujours
+  /// « Simuler un col » ferait croire qu'elle démarre une nouvelle simulation à
+  /// chaque tap plutôt que d'arrêter celle en cours.
+  final bool debugClimbActive;
+
+  /// Basculer le col de démonstration (voir climb_debug_data.dart), affiché
+  /// par la coquille par-dessus la carte, le bandeau et le radar réels — pour
+  /// juger la pastille et le graphique gradué dans une vraie sortie, sans
+  /// attendre de grimper un col. Nulle raison de le cacher en usage normal :
+  /// c'est le même genre de banc d'essai que la calibration de puissance, pas
+  /// un réglage caché derrière un flag de build.
+  final VoidCallback? onSimulateClimb;
 
   /// Rentrer : fermer la sortie et retrouver l'accueil.
   ///
@@ -241,6 +260,11 @@ class DashboardPage extends StatelessWidget {
             riderProfile: sources.riderProfile,
             mode: budget.mode,
           ),
+        final ClimbListBlock climbs => ClimbListCard(
+            routeClimbs: sources.routeClimbs,
+            nav: sources.nav,
+            mode: climbs.mode,
+          ),
         EmptyBlock() => const SizedBox.shrink(),
       };
 
@@ -287,6 +311,7 @@ class DashboardPage extends StatelessWidget {
             onClearRoute != null ||
             onDownloadOffline != null ||
             onCalibratePower != null ||
+            onSimulateClimb != null ||
             onLeaveRide != null)
           _actionsMenu(),
       ],
@@ -396,6 +421,19 @@ class DashboardPage extends StatelessWidget {
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.bolt),
                 title: Text('Calibrer la puissance'),
+              ),
+            ),
+          if (onSimulateClimb case final simulate?)
+            PopupMenuItem(
+              value: simulate,
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  debugClimbActive ? Icons.layers_clear : Icons.landscape,
+                ),
+                title: Text(
+                  debugClimbActive ? 'Arrêter le col simulé' : 'Simuler un col',
+                ),
               ),
             ),
           // En dernier, après un séparateur : les autres commandes restent dans

@@ -2,7 +2,8 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-/// Fabrique les trois tonalités d'alerte radar dans `assets/sounds/`.
+/// Fabrique les tonalités d'alerte dans `assets/sounds/` : celles du radar
+/// arrière, et celle du filet natif de virages (`native_turn_alerts.dart`).
 ///
 /// Les sons sont *générés* et non téléchargés, pour trois raisons : ils pèsent
 /// quelques kilo-octets, ils n'ont aucune licence à traîner, et surtout ils
@@ -21,6 +22,12 @@ import 'dart:typed_data';
 /// - **dégagé** : deux notes *descendantes*. Une descente ne s'entend jamais
 ///   comme une alerte ; c'est ce qui la rend impossible à confondre avec les
 ///   deux autres, même mal entendue dans le vent.
+/// - **virage** (filet natif) : quatre bips identiques, plus aigus et à plein
+///   gain — c'est la seule alerte de l'appli qui ne peut compter sur aucun
+///   rattrapage visuel (l'écran est verrouillé quand elle sonne), elle doit
+///   donc percer le vent mieux que les autres. Pas de mélodie à apprendre,
+///   juste le même signal répété pour qu'on le reconnaisse même à moitié
+///   entendu sous un casque.
 ///
 /// Chaque note porte une deuxième harmonique : une sinusoïde pure est propre en
 /// intérieur et disparaît à 30 km/h. Et chaque note a ses fondus d'attaque et
@@ -41,6 +48,16 @@ void main(List<String> args) {
   _write(directory, 'radar_clear.wav', [
     const _Note(hz: 880, ms: 80, gain: 0.6),
     const _Note(hz: 587, ms: 110, gain: 0.6),
+  ]);
+
+  _write(directory, 'turn_alert.wav', [
+    const _Note(hz: 1600, ms: 150, gain: 1),
+    const _Note.silence(ms: 100),
+    const _Note(hz: 1600, ms: 150, gain: 1),
+    const _Note.silence(ms: 100),
+    const _Note(hz: 1600, ms: 150, gain: 1),
+    const _Note.silence(ms: 100),
+    const _Note(hz: 1600, ms: 150, gain: 1),
   ]);
 }
 

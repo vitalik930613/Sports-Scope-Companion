@@ -170,6 +170,13 @@ class RideStats {
   int? maxPower;
   double? maxSpeedMps;
 
+  /// La pente la plus raide vue depuis le départ — signée, donc c'est bien un
+  /// mur qu'on cherche ici et jamais un plongeon (cf. [gradePercent]).
+  /// Échantillonnée sur les mêmes lectures que [avgGrade] : une valeur qui n'a
+  /// pas assez de recul pour être fiable (cf. [_gradeSpanM]) ne compte pour
+  /// aucune des deux.
+  double? maxGrade;
+
   /// Les minima, sur **exactement la même population que les moyennes** : tout
   /// point qui porte la mesure, zéros compris. C'est ce qui les rend lisibles
   /// ensemble — un minimum calculé sur les seuls points « en action » ne serait
@@ -195,6 +202,8 @@ class RideStats {
   int _powerCount = 0;
   double _speedSum = 0;
   int _speedCount = 0;
+  double _gradeSum = 0;
+  int _gradeCount = 0;
 
   // Le travail mécanique, cumulé point par point : la seule grandeur d'ici qui
   // dépende de la *durée* d'un point et pas seulement de sa valeur.
@@ -245,6 +254,11 @@ class RideStats {
   int? get avgPower => _powerCount > 0 ? (_powerSum / _powerCount).round() : null;
 
   double? get avgSpeedMps => _speedCount > 0 ? _speedSum / _speedCount : null;
+
+  /// La pente moyenne depuis le départ, signée — une sortie qui boucle tend
+  /// donc vers 0 malgré le relief parcouru, même moyenne « par échantillon »
+  /// que les autres mesures d'ici plutôt qu'un ratio D+ / distance.
+  double? get avgGrade => _gradeCount > 0 ? _gradeSum / _gradeCount : null;
 
   /// Puissance normalisée, `null` tant que la fenêtre n'est pas pleine : sur
   /// moins de 30 s la valeur n'aurait aucun sens, et un chiffre faux vaut moins
@@ -353,6 +367,13 @@ class RideStats {
     if (altitude != null) {
       _addAltitude(altitude, point.at, moving);
       _addGrade(altitude, point.at, point.distanceM);
+
+      final grade = gradePercent;
+      if (grade != null) {
+        _gradeSum += grade;
+        _gradeCount++;
+        maxGrade = maxGrade == null || grade > maxGrade! ? grade : maxGrade;
+      }
     }
 
     final heartRate = point.heartRate;
@@ -518,6 +539,7 @@ class RideStats {
     hasCadence = hasPower = hasSpeed = false;
     maxHeartRate = maxCadence = maxPower = null;
     maxSpeedMps = null;
+    maxGrade = null;
     minHeartRate = minCadence = minPower = null;
     minSpeedMps = null;
     _hrSum = _hrCount = 0;
@@ -526,6 +548,8 @@ class RideStats {
     _powerSum = _powerCount = 0;
     _speedSum = 0;
     _speedCount = 0;
+    _gradeSum = 0;
+    _gradeCount = 0;
     _kilojoules = 0;
     _altitudeReference = null;
     _referenceAt = null;

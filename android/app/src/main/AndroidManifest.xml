@@ -42,6 +42,11 @@
          invisible — le témoin « enregistrement en cours » disparaîtrait. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Vibration forte du filet natif de virages (native_turn_alerts.dart) :
+         permission « normale », accordée à l'installation, mais qu'il faut
+         déclarer pour parler au `Vibrator` directement. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <application
         android:label="Sports Scope Companion"
         android:name="${applicationName}"
