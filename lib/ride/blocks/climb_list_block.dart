@@ -83,10 +83,11 @@ class ClimbListCard extends StatelessWidget {
 
     final String line;
     if (current != null) {
-      line = 'En cours : ${_figures(current)}';
+      line = 'En cours : ${_named(current)}${_figures(current)}';
     } else if (next != null && traveledM != null) {
       line = 'Prochain dans '
-          '${formatDistanceKm(next.startDistM - traveledM)} : ${_figures(next)}';
+          '${formatDistanceKm(next.startDistM - traveledM)} : '
+          '${_named(next)}${_figures(next)}';
     } else {
       final n = list.climbs.length;
       line = '$n col${n > 1 ? 's' : ''} sur ce tracé';
@@ -144,6 +145,11 @@ class ClimbListCard extends StatelessWidget {
     );
   }
 
+  // Préfixe le nom du col donné à la main, vide sinon : un col jamais nommé
+  // retombe sur la seule ligne de chiffres, comme avant ce champ.
+  static String _named(RouteClimb climb) =>
+      climb.name == null ? '' : '${climb.name} · ';
+
   static String _figures(RouteClimb climb) =>
       '${formatDistanceKm(climb.lengthM)} · ${climb.gainM.round()} m D+ · '
       '${climb.avgGrade.round()} % moy';
@@ -194,7 +200,7 @@ class _ClimbRow extends StatelessWidget {
                   children: [
                     Flexible(
                       child: Text(
-                        'Col $index'
+                        '${climb.name ?? 'Col $index'}'
                         '${climb.category == null ? '' : ' · Cat. ${climb.category}'}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,

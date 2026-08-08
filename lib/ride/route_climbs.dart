@@ -18,6 +18,7 @@ class RouteClimb {
     required this.lengthM,
     required this.avgGrade,
     this.category,
+    this.name,
   });
 
   /// Clé de dédoublonnage : l'index de départ du col côté site — même
@@ -32,6 +33,10 @@ class RouteClimb {
   final double lengthM;
   final double avgGrade;
   final String? category;
+
+  /// Nom donné à la main côté site (`routes.climb_names`), absent si le col
+  /// n'a jamais été renommé — l'appli garde alors « Col N » à l'affichage.
+  final String? name;
 
   double get endDistM => startDistM + lengthM;
 
@@ -56,6 +61,7 @@ class RouteClimb {
       lengthM: lengthM,
       avgGrade: avgGrade,
       category: raw['category'] is String ? raw['category'] as String : null,
+      name: raw['name'] is String ? raw['name'] as String : null,
     );
   }
 }
