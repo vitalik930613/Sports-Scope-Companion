@@ -1,5 +1,14 @@
 import 'package:flutter/foundation.dart';
 
+/// Nom de la série de tours que la coquille marque toute seule, sur les
+/// fronts de [NavClimb] (montant et descendant — voir
+/// `RideShellPage._onPageMessage`, cas `'nav'`) : un profil qui pose une page
+/// ou un bouton de tours sur cette série voit un tour s'ouvrir au début et à
+/// la fin de chaque col, sans geste du cycliste. Convention partagée avec
+/// l'éditeur du site (`companionSettings.ts`), qui la propose à ce titre — un
+/// nom différent des deux côtés ferait un bouton muet.
+const climbLapSeries = 'cols';
+
 /// Un point du profil d'un col : distance depuis le départ du col, altitude.
 @immutable
 class ClimbProfilePoint {

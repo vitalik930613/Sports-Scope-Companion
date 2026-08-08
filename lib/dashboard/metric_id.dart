@@ -47,6 +47,8 @@ enum MetricId {
   ascent('ascent', 'D+', Icons.trending_up),
   altitude('altitude', 'm', Icons.terrain),
   grade('grade', '% pente', Icons.north_east),
+  gradeAvg('grade_avg', '% pente moy', Icons.north_east),
+  gradeMax('grade_max', '% pente max', Icons.north_east),
   calories('calories', 'kcal', Icons.local_fire_department),
   caloriesPerHour('calories_per_hour', 'kcal/h', Icons.local_fire_department),
   tss('tss', 'TSS', Icons.bar_chart),
@@ -239,6 +241,12 @@ enum MetricId {
       // rapport entre deux endroits du parcours, elle n'existe pas avant le
       // départ ni sur un rouleau, où l'on ne se déplace pas.
       MetricId.grade => MetricReading(active ? _grade(stats) : null),
+      // Mêmes bornes que la pente instantanée : hors sortie, ou sur un
+      // rouleau sans distance parcourue, la fenêtre ne s'est jamais remplie.
+      MetricId.gradeAvg =>
+        MetricReading(active ? _roundedGrade(stats.avgGrade) : null),
+      MetricId.gradeMax =>
+        MetricReading(active ? _roundedGrade(stats.maxGrade) : null),
       MetricId.calories => MetricReading(stats.calories?.toString()),
       MetricId.caloriesPerHour => MetricReading(_caloriesPerHour(stats)),
       MetricId.tss => MetricReading(_tss(stats, profile)),
@@ -282,9 +290,9 @@ enum MetricId {
   /// près (cf. [RideStats.defaultGradeWindowM]), et une décimale qui danse
   /// pendant qu'on la lit afficherait une précision qu'on n'a pas. Le signe, lui,
   /// reste — c'est la seule chose qui distingue un mur d'un plongeon.
-  static String? _grade(RideStats stats) {
-    return stats.gradePercent?.round().toString();
-  }
+  static String? _grade(RideStats stats) => _roundedGrade(stats.gradePercent);
+
+  static String? _roundedGrade(double? value) => value?.round().toString();
 
   static String? _remaining(MetricSources sources) {
     final nav = sources.nav?.value;

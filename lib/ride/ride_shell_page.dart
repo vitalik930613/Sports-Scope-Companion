@@ -781,7 +781,14 @@ class _RideShellPageState extends State<RideShellPage>
         // climb_profile.dart).
         final hadClimb = _nav.value?.climb != null;
         _nav.accept(message);
-        if (hadClimb && _nav.value?.climb == null) {
+        final hasClimb = _nav.value?.climb != null;
+        if (hadClimb != hasClimb) {
+          // Isole la montée dans son propre tour de la série `cols` — sans
+          // effet si aucune page ou bouton du profil ne la déclare
+          // (`RideRecorder.markLap`, no-op sur une série inconnue).
+          widget.recorder.markLap(climbLapSeries);
+        }
+        if (hadClimb && !hasClimb) {
           _climbProfile.reset();
           _climbExpanded.value = false;
         }
