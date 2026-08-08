@@ -107,9 +107,16 @@ class _LapListBodyState extends State<LapListBody> {
   /// Le contrôle fermé : le fond anthracite des cartes, et un tap ouvre le
   /// choix en plein écran plutôt qu'un menu qui se referme au moindre cahot
   /// avant qu'on ait pu viser la bonne ligne — voir [_LapPickerPage].
-  Widget _selector(List<RideLap> laps, int selected) {
+  Widget _selector(
+    List<RideLap> laps,
+    int selected, {
+    Color? color,
+    Color? textColor,
+  }) {
+    final ink = textColor ?? Colors.white;
+
     return Material(
-      color: const Color(0xFF1F2226),
+      color: color ?? const Color(0xFF1F2226),
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
@@ -121,10 +128,10 @@ class _LapListBodyState extends State<LapListBody> {
               Expanded(
                 child: Text(
                   _lapLabel(laps.length, selected),
-                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                  style: TextStyle(color: ink, fontSize: 16),
                 ),
               ),
-              const Icon(Icons.arrow_drop_down, color: Colors.white70),
+              Icon(Icons.arrow_drop_down, color: ink.withValues(alpha: 0.7)),
             ],
           ),
         ),
@@ -164,7 +171,9 @@ class _LapListBodyState extends State<LapListBody> {
   }) {
     // Seul `LapSelectorBlock` a besoin de la liste entière : les autres ne
     // lisent que le tour déjà choisi.
-    if (block is LapSelectorBlock) return _selector(laps, selected);
+    if (block is LapSelectorBlock) {
+      return _selector(laps, selected, color: block.color, textColor: block.textColor);
+    }
 
     final lap = laps[selected];
     return switch (block) {
@@ -174,22 +183,30 @@ class _LapListBodyState extends State<LapListBody> {
           riderProfile: widget.sources.riderProfile,
           mode: zones.mode,
           statsOverride: lap.stats,
+          color: zones.color,
+          textColor: zones.textColor,
         ),
       final LapAveragesBlock averages => AveragesCard(
           recorder: widget.sources.recorder,
           riderProfile: widget.sources.riderProfile,
           mode: averages.mode,
           statsOverride: lap.stats,
+          color: averages.color,
+          textColor: averages.textColor,
         ),
       final LapSummaryBlock summary => LapSummaryCard(
           lap: lap,
           riderProfile: widget.sources.riderProfile,
           mode: summary.mode,
+          color: summary.color,
+          textColor: summary.textColor,
         ),
       final MarkLapBlock markLap => MarkLapControl(
           recorder: widget.sources.recorder,
           series: markLap.series,
           mode: markLap.mode,
+          color: markLap.color,
+          textColor: markLap.textColor,
         ),
       _ => const SizedBox.shrink(),
     };

@@ -208,6 +208,8 @@ class DashboardPage extends StatelessWidget {
             format: metric.format,
             min: metric.min,
             max: metric.max,
+            color: metric.color,
+            textColor: metric.textColor,
             // Le tap des watts ouvre la calibration : c'est là qu'on *constate*
             // une puissance qui dérive, et non dans un menu deux pages plus loin.
             onTap: _isPower(metric.metric) ? onCalibratePower : null,
@@ -217,18 +219,28 @@ class DashboardPage extends StatelessWidget {
             recorder: sources.recorder,
             riderProfile: sources.riderProfile,
             mode: zones.mode,
+            color: zones.color,
+            textColor: zones.textColor,
           ),
         final AveragesBlock averages => AveragesCard(
             recorder: sources.recorder,
             riderProfile: sources.riderProfile,
             mode: averages.mode,
+            color: averages.color,
+            textColor: averages.textColor,
           ),
-        final RecordingBlock recording =>
-          RecordingControl(recorder: sources.recorder, mode: recording.mode),
+        final RecordingBlock recording => RecordingControl(
+            recorder: sources.recorder,
+            mode: recording.mode,
+            color: recording.color,
+            textColor: recording.textColor,
+          ),
         final MarkLapBlock markLap => MarkLapControl(
             recorder: sources.recorder,
             series: markLap.series,
             mode: markLap.mode,
+            color: markLap.color,
+            textColor: markLap.textColor,
           ),
         // Ces quatre-là n'ont de sens que sur une LapListPageSpec, qui les
         // rend elle-même avec le tour choisi (`LapListBody._block`) — ici, sur
@@ -244,32 +256,49 @@ class DashboardPage extends StatelessWidget {
         final ChangeRouteBlock changeRoute => ChangeRouteControl(
             onChooseRoute: onChooseRoute,
             mode: changeRoute.mode,
+            color: changeRoute.color,
+            textColor: changeRoute.textColor,
           ),
         final ClearRouteBlock clearRoute => ClearRouteControl(
             onClearRoute: onClearRoute,
             nav: sources.nav,
             mode: clearRoute.mode,
+            color: clearRoute.color,
+            textColor: clearRoute.textColor,
           ),
         final RouteBlock route => RouteControl(
             onChooseRoute: onChooseRoute,
             onClearRoute: onClearRoute,
             nav: sources.nav,
             mode: route.mode,
+            color: route.color,
+            textColor: route.textColor,
           ),
-        final NavStateBlock nav =>
-          NavStateCard(nav: sources.nav, mode: nav.mode),
-        final RadarBlock radarBlock =>
-          RadarBlockView(radar: radar, mode: radarBlock.mode),
+        final NavStateBlock nav => NavStateCard(
+            nav: sources.nav,
+            mode: nav.mode,
+            color: nav.color,
+            textColor: nav.textColor,
+          ),
+        final RadarBlock radarBlock => RadarBlockView(
+            radar: radar,
+            mode: radarBlock.mode,
+            color: radarBlock.color,
+          ),
         final TrainingBudgetBlock budget => TrainingBudgetCard(
             budgets: sources.trainingBudget,
             recorder: sources.recorder,
             riderProfile: sources.riderProfile,
             mode: budget.mode,
+            color: budget.color,
+            textColor: budget.textColor,
           ),
         final ClimbListBlock climbs => ClimbListCard(
             routeClimbs: sources.routeClimbs,
             nav: sources.nav,
             mode: climbs.mode,
+            color: climbs.color,
+            textColor: climbs.textColor,
           ),
         EmptyBlock() => const SizedBox.shrink(),
       };

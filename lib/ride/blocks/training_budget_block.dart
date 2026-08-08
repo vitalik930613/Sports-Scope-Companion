@@ -39,6 +39,8 @@ class TrainingBudgetCard extends StatelessWidget {
     required this.riderProfile,
     this.mode = TrainingBudgetMode.day,
     this.now,
+    this.color,
+    this.textColor,
   });
 
   final TrainingBudgetStore budgets;
@@ -53,6 +55,12 @@ class TrainingBudgetCard extends StatelessWidget {
   /// Le jour courant, pour dater le budget. Injectable pour les tests : un
   /// composant qui lit l'horloge ne se teste que le bon jour.
   final DateTime? now;
+
+  /// Fond/texte réglés dans l'éditeur — voir [DashboardBlock.color]/
+  /// [DashboardBlock.textColor]. Ne remplacent jamais les couleurs de la
+  /// barre, des pastilles de fraîcheur/risque : ce sont des données.
+  final Color? color;
+  final Color? textColor;
 
   static const _title = 'Budget de charge';
 
@@ -70,11 +78,13 @@ class TrainingBudgetCard extends StatelessWidget {
         // budget, c'est le site qu'il faut atteindre — pas un capteur à
         // connecter. La phrase nomme donc ce qu'on attend et d'où ça vient.
         if (budget == null) {
-          return const BlockCard(
+          return BlockCard(
             title: _title,
-            lines: [
+            lines: const [
               'Le budget arrive avec la page de navigation, une fois connecté au site.',
             ],
+            color: color,
+            textColor: textColor,
           );
         }
 
@@ -94,7 +104,10 @@ class TrainingBudgetCard extends StatelessWidget {
             final width = constraints.hasBoundedWidth
                 ? constraints.maxWidth - BlockMetrics.natural.padding * 2
                 : _naturalWidth;
-            return BlockSurface(child: _content(budget, today, width));
+            return BlockSurface(
+              background: color,
+              child: _content(budget, today, width),
+            );
           },
         );
       },
@@ -127,6 +140,7 @@ class TrainingBudgetCard extends StatelessWidget {
         : _dayView(budget);
 
     const metrics = BlockMetrics.natural;
+    final ink = textColor ?? Colors.white;
 
     return SizedBox(
       width: width,
@@ -139,7 +153,7 @@ class TrainingBudgetCard extends StatelessWidget {
               FaIcon(
                 FontAwesomeIcons.weightHanging,
                 size: metrics.titleSize * 0.85,
-                color: Colors.white70,
+                color: ink.withValues(alpha: 0.7),
               ),
               SizedBox(width: metrics.gap * 0.6),
               Expanded(
@@ -148,7 +162,7 @@ class TrainingBudgetCard extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: Colors.white70,
+                    color: ink.withValues(alpha: 0.7),
                     fontSize: metrics.titleSize,
                   ),
                 ),
@@ -172,7 +186,7 @@ class TrainingBudgetCard extends StatelessWidget {
                     view.figure,
                     maxLines: 1,
                     style: TextStyle(
-                      color: Colors.white,
+                      color: ink,
                       fontSize: metrics.budgetFigureSize,
                       fontWeight: FontWeight.w500,
                     ),
@@ -184,7 +198,7 @@ class TrainingBudgetCard extends StatelessWidget {
                 view.aside,
                 maxLines: 1,
                 style: TextStyle(
-                  color: Colors.white60,
+                  color: ink.withValues(alpha: 0.6),
                   fontSize: metrics.unitSize,
                 ),
               ),

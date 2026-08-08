@@ -24,10 +24,19 @@ class RecordingControl extends StatelessWidget {
     super.key,
     required this.recorder,
     this.mode = RecordingMode.full,
+    this.color,
+    this.textColor,
   });
 
   final RideRecorder recorder;
   final RecordingMode mode;
+
+  /// Fond/texte réglés dans l'éditeur — voir [DashboardBlock.color]/
+  /// [DashboardBlock.textColor]. N'atteignent jamais [_ResumeBanner] : son
+  /// aplat orange est un état d'alerte (« vous perdez la fin de la sortie
+  /// sans vous en apercevoir »), pas la surface d'un composant qu'on choisit.
+  final Color? color;
+  final Color? textColor;
 
   @override
   Widget build(BuildContext context) {
@@ -39,10 +48,14 @@ class RecordingControl extends StatelessWidget {
         RecorderState.idle => _StartRecordingButton(
           recorder: recorder,
           compact: compact,
+          color: color,
+          textColor: textColor,
         ),
         RecorderState.recording => _PauseButton(
           recorder: recorder,
           compact: compact,
+          color: color,
+          textColor: textColor,
         ),
         // La pause **garde sa bande orange même en compact**, et c'est le
         // seul mode qui ne se réduit pas : c'est la seule façon de perdre la
@@ -61,10 +74,17 @@ class RecordingControl extends StatelessWidget {
 /// position, et sans ce verrou un pouce impatient sur une piste cyclable en
 /// lancerait trois.
 class _StartRecordingButton extends StatefulWidget {
-  const _StartRecordingButton({required this.recorder, this.compact = false});
+  const _StartRecordingButton({
+    required this.recorder,
+    this.compact = false,
+    this.color,
+    this.textColor,
+  });
 
   final RideRecorder recorder;
   final bool compact;
+  final Color? color;
+  final Color? textColor;
 
   @override
   State<_StartRecordingButton> createState() => _StartRecordingButtonState();
@@ -114,16 +134,20 @@ class _StartRecordingButtonState extends State<_StartRecordingButton> {
         onPressed: _starting ? null : _start,
         icon: icon,
         tooltip: label,
+        color: widget.color,
       );
     }
 
     return _cardButton(
       naturalWidth: _fullWidth,
+      color: widget.color,
       child: FilledButton.icon(
         // Haut : le doigt vise mal sur une route bosselée, et cette page se
         // consulte à l'arrêt ou au feu rouge.
         style: FilledButton.styleFrom(
           padding: const EdgeInsets.symmetric(vertical: 16),
+          backgroundColor: widget.color,
+          foregroundColor: widget.textColor,
         ),
         onPressed: _starting ? null : _start,
         icon: icon,
@@ -163,13 +187,17 @@ Widget _stretchToFit({required double naturalWidth, required Widget child}) {
 /// sans lui, le bouton étiré flottait seul sur le noir de la coquille et
 /// détonnait à côté des cartes voisines. `_ResumeBanner` ne s'en sert pas :
 /// son aplat orange est déjà un fond, et délibérément pas celui-ci.
-Widget _cardButton({required double naturalWidth, required Widget child}) {
+Widget _cardButton({
+  required double naturalWidth,
+  Color? color,
+  required Widget child,
+}) {
   return _stretchToFit(
     naturalWidth: naturalWidth,
     child: Container(
       padding: EdgeInsets.all(BlockMetrics.natural.padding),
       decoration: BoxDecoration(
-        color: BlockCard.background,
+        color: color ?? BlockCard.background,
         borderRadius: BorderRadius.circular(12),
       ),
       child: child,
@@ -184,26 +212,35 @@ Widget _cardButton({required double naturalWidth, required Widget child}) {
 /// rien. Sans confirmation parce qu'une pause ne coûte rien : elle se défait
 /// d'un tap, et le bandeau du bas fige son chronomètre, ce qui se voit.
 class _PauseButton extends StatelessWidget {
-  const _PauseButton({required this.recorder, this.compact = false});
+  const _PauseButton({
+    required this.recorder,
+    this.compact = false,
+    this.color,
+    this.textColor,
+  });
 
   final RideRecorder recorder;
   final bool compact;
+  final Color? color;
+  final Color? textColor;
 
   @override
   Widget build(BuildContext context) {
     if (compact) {
       return _CompactButton(
         onPressed: recorder.pause,
-        icon: const Icon(Icons.pause, color: Colors.white70),
+        icon: Icon(Icons.pause, color: textColor ?? Colors.white70),
         tooltip: 'Mettre en pause',
+        color: color,
       );
     }
 
     return _cardButton(
       naturalWidth: _fullWidth,
+      color: color,
       child: OutlinedButton.icon(
         style: OutlinedButton.styleFrom(
-          foregroundColor: Colors.white70,
+          foregroundColor: textColor ?? Colors.white70,
           side: const BorderSide(color: Colors.white24),
           padding: const EdgeInsets.symmetric(vertical: 14),
         ),
@@ -301,18 +338,20 @@ class _CompactButton extends StatelessWidget {
     required this.onPressed,
     required this.icon,
     required this.tooltip,
+    this.color,
   });
 
   final VoidCallback? onPressed;
   final Widget icon;
   final String tooltip;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
     return Tooltip(
       message: tooltip,
       child: Material(
-        color: const Color(0xFF1F2226),
+        color: color ?? const Color(0xFF1F2226),
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           onTap: onPressed,

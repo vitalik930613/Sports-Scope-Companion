@@ -20,6 +20,8 @@ class RouteControl extends StatelessWidget {
     required this.onClearRoute,
     this.nav,
     this.mode = RouteMode.full,
+    this.color,
+    this.textColor,
   });
 
   /// Nul dans un profil sans carte : il n'y a alors aucune page à qui
@@ -34,6 +36,11 @@ class RouteControl extends StatelessWidget {
 
   final RouteMode mode;
 
+  /// Fond/texte réglés dans l'éditeur — voir [DashboardBlock.color]/
+  /// [DashboardBlock.textColor].
+  final Color? color;
+  final Color? textColor;
+
   @override
   Widget build(BuildContext context) {
     final compact = mode == RouteMode.compact;
@@ -45,6 +52,8 @@ class RouteControl extends StatelessWidget {
         label: 'Choisir un itinéraire',
         compact: compact,
         onPressed: onChooseRoute,
+        color: color,
+        textColor: textColor,
       );
     }
 
@@ -56,12 +65,16 @@ class RouteControl extends StatelessWidget {
               label: 'Retirer l\'itinéraire',
               compact: compact,
               onPressed: onClearRoute,
+              color: color,
+              textColor: textColor,
             )
           : DashboardActionButton(
               icon: Icons.route,
               label: 'Choisir un itinéraire',
               compact: compact,
               onPressed: onChooseRoute,
+              color: color,
+              textColor: textColor,
             ),
     );
   }

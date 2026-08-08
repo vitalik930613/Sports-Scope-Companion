@@ -14,6 +14,8 @@ class ChangeRouteControl extends StatelessWidget {
     super.key,
     required this.onChooseRoute,
     this.mode = ChangeRouteMode.full,
+    this.color,
+    this.textColor,
   });
 
   /// Nul dans un profil sans carte : il n'y a alors aucune page à qui
@@ -21,11 +23,18 @@ class ChangeRouteControl extends StatelessWidget {
   final VoidCallback? onChooseRoute;
   final ChangeRouteMode mode;
 
+  /// Fond/texte réglés dans l'éditeur — voir [DashboardBlock.color]/
+  /// [DashboardBlock.textColor].
+  final Color? color;
+  final Color? textColor;
+
   @override
   Widget build(BuildContext context) => DashboardActionButton(
         icon: Icons.route,
         label: 'Changer d\'itinéraire',
         compact: mode == ChangeRouteMode.compact,
         onPressed: onChooseRoute,
+        color: color,
+        textColor: textColor,
       );
 }

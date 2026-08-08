@@ -19,6 +19,8 @@ class ClearRouteControl extends StatelessWidget {
     required this.onClearRoute,
     this.nav,
     this.mode = ClearRouteMode.full,
+    this.color,
+    this.textColor,
   });
 
   /// Nul dans un profil sans carte.
@@ -29,6 +31,11 @@ class ClearRouteControl extends StatelessWidget {
   final ValueListenable<NavState?>? nav;
 
   final ClearRouteMode mode;
+
+  /// Fond/texte réglés dans l'éditeur — voir [DashboardBlock.color]/
+  /// [DashboardBlock.textColor].
+  final Color? color;
+  final Color? textColor;
 
   @override
   Widget build(BuildContext context) {
@@ -41,6 +48,8 @@ class ClearRouteControl extends StatelessWidget {
         label: 'Retirer l\'itinéraire',
         compact: compact,
         onPressed: null,
+        color: color,
+        textColor: textColor,
       );
     }
 
@@ -51,6 +60,8 @@ class ClearRouteControl extends StatelessWidget {
         label: 'Retirer l\'itinéraire',
         compact: compact,
         onPressed: state?.onRoute == true ? onClearRoute : null,
+        color: color,
+        textColor: textColor,
       ),
     );
   }

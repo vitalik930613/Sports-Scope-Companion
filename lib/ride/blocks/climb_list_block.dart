@@ -22,11 +22,19 @@ class ClimbListCard extends StatelessWidget {
     required this.routeClimbs,
     required this.nav,
     this.mode = ClimbListMode.full,
+    this.color,
+    this.textColor,
   });
 
   final ValueListenable<RouteClimbs?>? routeClimbs;
   final ValueListenable<NavState?>? nav;
   final ClimbListMode mode;
+
+  /// Fond/texte réglés dans l'éditeur — voir [DashboardBlock.color]/
+  /// [DashboardBlock.textColor]. Ne remplacent jamais la couleur de pente du
+  /// repère de chaque col ([gradeColorOf]) : c'est une donnée.
+  final Color? color;
+  final Color? textColor;
 
   static const _title = 'Cols du tracé';
   static const _naturalWidth = 240.0;
@@ -35,9 +43,11 @@ class ClimbListCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final routeClimbs = this.routeClimbs;
     if (routeClimbs == null) {
-      return const BlockCard(
+      return BlockCard(
         title: _title,
-        lines: ['Ce profil roule sans carte.'],
+        lines: const ['Ce profil roule sans carte.'],
+        color: color,
+        textColor: textColor,
       );
     }
 
@@ -47,15 +57,19 @@ class ClimbListCard extends StatelessWidget {
       builder: (context, _) {
         final list = routeClimbs.value;
         if (list == null) {
-          return const BlockCard(
+          return BlockCard(
             title: _title,
-            lines: ['Aucun tracé reçu de la page.'],
+            lines: const ['Aucun tracé reçu de la page.'],
+            color: color,
+            textColor: textColor,
           );
         }
         if (list.climbs.isEmpty) {
-          return const BlockCard(
+          return BlockCard(
             title: _title,
-            lines: ['Ce tracé ne compte aucun col.'],
+            lines: const ['Ce tracé ne compte aucun col.'],
+            color: color,
+            textColor: textColor,
           );
         }
 
@@ -93,7 +107,7 @@ class ClimbListCard extends StatelessWidget {
       line = '$n col${n > 1 ? 's' : ''} sur ce tracé';
     }
 
-    return BlockCard(title: _title, lines: [line]);
+    return BlockCard(title: _title, lines: [line], color: color, textColor: textColor);
   }
 
   Widget _full(RouteClimbs list, double? traveledM) {
@@ -103,12 +117,15 @@ class ClimbListCard extends StatelessWidget {
     final nextIndex = statuses.indexOf(ClimbStatus.upcoming);
 
     const metrics = BlockMetrics.natural;
+    final ink = textColor ?? Colors.white;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.hasBoundedWidth
             ? constraints.maxWidth - metrics.padding * 2
             : _naturalWidth;
         return BlockSurface(
+          background: color,
           child: SizedBox(
             width: width,
             child: Column(
@@ -120,7 +137,7 @@ class ClimbListCard extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: Colors.white70,
+                    color: ink.withValues(alpha: 0.7),
                     fontSize: metrics.titleSize,
                   ),
                 ),
@@ -135,6 +152,7 @@ class ClimbListCard extends StatelessWidget {
                       climb: list.climbs[i],
                       status: statuses[i],
                       isNext: i == nextIndex,
+                      baseInk: ink,
                     ),
                   ),
               ],
@@ -163,12 +181,16 @@ class _ClimbRow extends StatelessWidget {
     required this.climb,
     required this.status,
     required this.isNext,
+    this.baseInk = Colors.white,
   });
 
   final int index;
   final RouteClimb climb;
   final ClimbStatus status;
   final bool isNext;
+
+  /// Le texte réglé dans l'éditeur, ou blanc — voir [ClimbListCard.textColor].
+  final Color baseInk;
 
   @override
   Widget build(BuildContext context) {
@@ -205,7 +227,7 @@ class _ClimbRow extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: Colors.white,
+                          color: baseInk,
                           fontWeight: FontWeight.w600,
                           fontSize: metrics.lineSize,
                         ),
@@ -224,7 +246,7 @@ class _ClimbRow extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: Colors.white60,
+                    color: baseInk.withValues(alpha: 0.6),
                     fontSize: metrics.unitSize,
                   ),
                 ),

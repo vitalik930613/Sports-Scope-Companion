@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart' show Color;
 
 import 'metric_id.dart';
 
@@ -22,44 +23,96 @@ import 'metric_id.dart';
 /// résultat possible.
 @immutable
 sealed class DashboardBlock {
-  const DashboardBlock();
+  const DashboardBlock({this.color, this.textColor});
+
+  /// Couleur de fond de la carte, réglée dans l'éditeur — vaut pour n'importe
+  /// quel genre de composant, contrairement à [MetricBlock.metric] par
+  /// exemple qui est propre à un genre. `null` : la carte garde son fond
+  /// habituel (couleur de zone si la mesure en porte une, gris des cartes
+  /// sinon) — voir [BlockSurface] (`block_card.dart`).
+  final Color? color;
+
+  /// Couleur du texte principal de la carte. `null` : calculée pour rester
+  /// lisible sur le fond réel de la carte ([color] s'il est réglé, sinon la
+  /// couleur de zone), jamais blanc fixe — voir `foregroundOf`
+  /// (`ui/zone_colors.dart`). Ne remplace jamais une couleur *sémantique*
+  /// (palier de zone, tranche de pente, état radar, budget de charge) : ce
+  /// sont des données, pas la surface du texte.
+  final Color? textColor;
 
   /// `null` quand l'entrée ne décrit aucun composant connu.
   static DashboardBlock? parse(Object? raw) {
     if (raw is! Map) return null;
 
+    final color = _colorOf(raw, 'color');
+    final textColor = _colorOf(raw, 'text_color');
+
     return switch (raw['kind']) {
       'metric' => MetricBlock.parse(raw),
       'zones' => ZonesBlock.parse(raw),
-      'averages' =>
-        AveragesBlock(mode: _modeOf(raw['mode'], AveragesMode.values)),
+      'averages' => AveragesBlock(
+          mode: _modeOf(raw['mode'], AveragesMode.values),
+          color: color,
+          textColor: textColor,
+        ),
       'lap_zones' => LapZonesBlock.parse(raw),
-      'lap_averages' =>
-        LapAveragesBlock(mode: _modeOf(raw['mode'], AveragesMode.values)),
+      'lap_averages' => LapAveragesBlock(
+          mode: _modeOf(raw['mode'], AveragesMode.values),
+          color: color,
+          textColor: textColor,
+        ),
       'lap_summary' => LapSummaryBlock(
           mode: _modeOf(raw['mode'], LapSummaryMode.values),
+          color: color,
+          textColor: textColor,
         ),
-      'lap_selector' => const LapSelectorBlock(),
+      'lap_selector' => LapSelectorBlock(color: color, textColor: textColor),
       'mark_lap' => MarkLapBlock(
           series: raw['series'] is String ? raw['series'] as String : 'default',
           mode: _modeOf(raw['mode'], MarkLapMode.values),
+          color: color,
+          textColor: textColor,
         ),
-      'recording' =>
-        RecordingBlock(mode: _modeOf(raw['mode'], RecordingMode.values)),
+      'recording' => RecordingBlock(
+          mode: _modeOf(raw['mode'], RecordingMode.values),
+          color: color,
+          textColor: textColor,
+        ),
       'change_route' => ChangeRouteBlock(
           mode: _modeOf(raw['mode'], ChangeRouteMode.values),
+          color: color,
+          textColor: textColor,
         ),
-      'clear_route' =>
-        ClearRouteBlock(mode: _modeOf(raw['mode'], ClearRouteMode.values)),
-      'route' => RouteBlock(mode: _modeOf(raw['mode'], RouteMode.values)),
-      'nav_state' =>
-        NavStateBlock(mode: _modeOf(raw['mode'], NavStateMode.values)),
-      'radar' => RadarBlock(mode: _modeOf(raw['mode'], RadarMode.values)),
+      'clear_route' => ClearRouteBlock(
+          mode: _modeOf(raw['mode'], ClearRouteMode.values),
+          color: color,
+          textColor: textColor,
+        ),
+      'route' => RouteBlock(
+          mode: _modeOf(raw['mode'], RouteMode.values),
+          color: color,
+          textColor: textColor,
+        ),
+      'nav_state' => NavStateBlock(
+          mode: _modeOf(raw['mode'], NavStateMode.values),
+          color: color,
+          textColor: textColor,
+        ),
+      'radar' => RadarBlock(
+          mode: _modeOf(raw['mode'], RadarMode.values),
+          color: color,
+          textColor: textColor,
+        ),
       'training_budget' => TrainingBudgetBlock(
           mode: _modeOf(raw['mode'], TrainingBudgetMode.values),
+          color: color,
+          textColor: textColor,
         ),
-      'climb_list' =>
-        ClimbListBlock(mode: _modeOf(raw['mode'], ClimbListMode.values)),
+      'climb_list' => ClimbListBlock(
+          mode: _modeOf(raw['mode'], ClimbListMode.values),
+          color: color,
+          textColor: textColor,
+        ),
       'empty' => const EmptyBlock(),
       _ => null,
     };
@@ -74,6 +127,21 @@ sealed class DashboardBlock {
       }
     }
     return modes.first;
+  }
+
+  /// La couleur écrite par le site sous [key] (`"color"`/`"text_color"`),
+  /// `#rrggbb` uniquement — même format que `sanitize_hex_color` côté site
+  /// (`companion_settings.rb`), qui garantit déjà cette forme, mais l'appli
+  /// ne lui fait pas confiance pour autant (cf. tête de fichier : rien ici ne
+  /// lève). `null` sur tout le reste, plutôt qu'une couleur devinée.
+  static Color? _colorOf(Map<dynamic, dynamic> raw, String key) {
+    final value = raw[key];
+    if (value is! String) return null;
+
+    final match = RegExp(r'^#([0-9a-fA-F]{6})$').firstMatch(value);
+    if (match == null) return null;
+
+    return Color(0xFF000000 | int.parse(match.group(1)!, radix: 16));
   }
 }
 
@@ -91,6 +159,8 @@ class MetricBlock extends DashboardBlock {
     this.format = DurationFormat.hm,
     this.min,
     this.max,
+    super.color,
+    super.textColor,
   });
 
   final MetricId metric;
@@ -128,6 +198,8 @@ class MetricBlock extends DashboardBlock {
       format: DashboardBlock._modeOf(raw['format'], DurationFormat.values),
       min: hasRange ? rawMin : null,
       max: hasRange ? rawMax : null,
+      color: DashboardBlock._colorOf(raw, 'color'),
+      textColor: DashboardBlock._colorOf(raw, 'text_color'),
     );
   }
 
@@ -138,10 +210,13 @@ class MetricBlock extends DashboardBlock {
       other.mode == mode &&
       other.format == format &&
       other.min == min &&
-      other.max == max;
+      other.max == max &&
+      other.color == color &&
+      other.textColor == textColor;
 
   @override
-  int get hashCode => Object.hash(metric, mode, format, min, max);
+  int get hashCode =>
+      Object.hash(metric, mode, format, min, max, color, textColor);
 }
 
 double? _toDouble(Object? raw) => raw is num ? raw.toDouble() : null;
@@ -193,7 +268,12 @@ enum DurationFormat with BlockMode {
 
 /// Le temps passé par zone depuis le départ, cardio ou puissance.
 class ZonesBlock extends DashboardBlock {
-  const ZonesBlock({required this.source, this.mode = ZonesMode.bar});
+  const ZonesBlock({
+    required this.source,
+    this.mode = ZonesMode.bar,
+    super.color,
+    super.textColor,
+  });
 
   final ZonesSource source;
   final ZonesMode mode;
@@ -206,14 +286,20 @@ class ZonesBlock extends DashboardBlock {
           _ => ZonesSource.hr,
         },
         mode: DashboardBlock._modeOf(raw['mode'], ZonesMode.values),
+        color: DashboardBlock._colorOf(raw, 'color'),
+        textColor: DashboardBlock._colorOf(raw, 'text_color'),
       );
 
   @override
   bool operator ==(Object other) =>
-      other is ZonesBlock && other.source == source && other.mode == mode;
+      other is ZonesBlock &&
+      other.source == source &&
+      other.mode == mode &&
+      other.color == color &&
+      other.textColor == textColor;
 
   @override
-  int get hashCode => Object.hash(source, mode);
+  int get hashCode => Object.hash(source, mode, color, textColor);
 }
 
 enum ZonesSource { hr, power }
@@ -243,7 +329,12 @@ enum ZonesMode with BlockMode {
 /// une page qui porte un tour sélectionné ([LapListPageSpec.series]), là où
 /// [ZonesBlock] peut se poser n'importe où.
 class LapZonesBlock extends DashboardBlock {
-  const LapZonesBlock({required this.source, this.mode = ZonesMode.bar});
+  const LapZonesBlock({
+    required this.source,
+    this.mode = ZonesMode.bar,
+    super.color,
+    super.textColor,
+  });
 
   final ZonesSource source;
   final ZonesMode mode;
@@ -254,28 +345,41 @@ class LapZonesBlock extends DashboardBlock {
           _ => ZonesSource.hr,
         },
         mode: DashboardBlock._modeOf(raw['mode'], ZonesMode.values),
+        color: DashboardBlock._colorOf(raw, 'color'),
+        textColor: DashboardBlock._colorOf(raw, 'text_color'),
       );
 
   @override
   bool operator ==(Object other) =>
-      other is LapZonesBlock && other.source == source && other.mode == mode;
+      other is LapZonesBlock &&
+      other.source == source &&
+      other.mode == mode &&
+      other.color == color &&
+      other.textColor == textColor;
 
   @override
-  int get hashCode => Object.hash(source, mode);
+  int get hashCode => Object.hash(source, mode, color, textColor);
 }
 
 /// Les moyennes de la sortie : cardio, puissance, cadence, D+, calories.
 class AveragesBlock extends DashboardBlock {
-  const AveragesBlock({this.mode = AveragesMode.cards});
+  const AveragesBlock({
+    this.mode = AveragesMode.cards,
+    super.color,
+    super.textColor,
+  });
 
   final AveragesMode mode;
 
   @override
   bool operator ==(Object other) =>
-      other is AveragesBlock && other.mode == mode;
+      other is AveragesBlock &&
+      other.mode == mode &&
+      other.color == color &&
+      other.textColor == textColor;
 
   @override
-  int get hashCode => mode.hashCode;
+  int get hashCode => Object.hash(mode, color, textColor);
 }
 
 enum AveragesMode with BlockMode {
@@ -292,16 +396,23 @@ enum AveragesMode with BlockMode {
 /// Même remarque que [LapZonesBlock] : une classe à part parce qu'elle n'a de
 /// sens que sur une page de tours.
 class LapAveragesBlock extends DashboardBlock {
-  const LapAveragesBlock({this.mode = AveragesMode.cards});
+  const LapAveragesBlock({
+    this.mode = AveragesMode.cards,
+    super.color,
+    super.textColor,
+  });
 
   final AveragesMode mode;
 
   @override
   bool operator ==(Object other) =>
-      other is LapAveragesBlock && other.mode == mode;
+      other is LapAveragesBlock &&
+      other.mode == mode &&
+      other.color == color &&
+      other.textColor == textColor;
 
   @override
-  int get hashCode => mode.hashCode;
+  int get hashCode => Object.hash(mode, color, textColor);
 }
 
 /// Le bilan du tour sélectionné : durée, distance, D+, calories, TSS — ce
@@ -309,16 +420,23 @@ class LapAveragesBlock extends DashboardBlock {
 /// suit `rideTss` (`training/ride_load.dart`), déjà générique sur n'importe
 /// quelle `RideStats`, donc valable tel quel sur celle d'un tour.
 class LapSummaryBlock extends DashboardBlock {
-  const LapSummaryBlock({this.mode = LapSummaryMode.cards});
+  const LapSummaryBlock({
+    this.mode = LapSummaryMode.cards,
+    super.color,
+    super.textColor,
+  });
 
   final LapSummaryMode mode;
 
   @override
   bool operator ==(Object other) =>
-      other is LapSummaryBlock && other.mode == mode;
+      other is LapSummaryBlock &&
+      other.mode == mode &&
+      other.color == color &&
+      other.textColor == textColor;
 
   @override
-  int get hashCode => mode.hashCode;
+  int get hashCode => Object.hash(mode, color, textColor);
 }
 
 enum LapSummaryMode with BlockMode {
@@ -347,27 +465,37 @@ enum LapSummaryMode with BlockMode {
 /// qu'un choix explicite n'existe (`_selectedIndex ?? laps.length - 1`, cf.
 /// `LapListBody`).
 class LapSelectorBlock extends DashboardBlock {
-  const LapSelectorBlock();
+  const LapSelectorBlock({super.color, super.textColor});
 
   @override
-  bool operator ==(Object other) => other is LapSelectorBlock;
+  bool operator ==(Object other) =>
+      other is LapSelectorBlock &&
+      other.color == color &&
+      other.textColor == textColor;
 
   @override
-  int get hashCode => 0;
+  int get hashCode => Object.hash(color, textColor);
 }
 
 /// Démarrer, suspendre, reprendre l'enregistrement.
 class RecordingBlock extends DashboardBlock {
-  const RecordingBlock({this.mode = RecordingMode.full});
+  const RecordingBlock({
+    this.mode = RecordingMode.full,
+    super.color,
+    super.textColor,
+  });
 
   final RecordingMode mode;
 
   @override
   bool operator ==(Object other) =>
-      other is RecordingBlock && other.mode == mode;
+      other is RecordingBlock &&
+      other.mode == mode &&
+      other.color == color &&
+      other.textColor == textColor;
 
   @override
-  int get hashCode => mode.hashCode;
+  int get hashCode => Object.hash(mode, color, textColor);
 }
 
 enum RecordingMode with BlockMode {
@@ -393,17 +521,26 @@ enum RecordingMode with BlockMode {
 /// seule série que l'export `.fit` sait porter, le format n'ayant qu'une
 /// hiérarchie de tours.
 class MarkLapBlock extends DashboardBlock {
-  const MarkLapBlock({this.series = 'default', this.mode = MarkLapMode.full});
+  const MarkLapBlock({
+    this.series = 'default',
+    this.mode = MarkLapMode.full,
+    super.color,
+    super.textColor,
+  });
 
   final String series;
   final MarkLapMode mode;
 
   @override
   bool operator ==(Object other) =>
-      other is MarkLapBlock && other.series == series && other.mode == mode;
+      other is MarkLapBlock &&
+      other.series == series &&
+      other.mode == mode &&
+      other.color == color &&
+      other.textColor == textColor;
 
   @override
-  int get hashCode => Object.hash(series, mode);
+  int get hashCode => Object.hash(series, mode, color, textColor);
 }
 
 enum MarkLapMode with BlockMode {
@@ -425,16 +562,23 @@ enum MarkLapMode with BlockMode {
 /// (`DashboardPage._actionsMenu`), posé directement sur une page plutôt que
 /// rangé dans un menu qu'on n'ouvre presque jamais.
 class ChangeRouteBlock extends DashboardBlock {
-  const ChangeRouteBlock({this.mode = ChangeRouteMode.full});
+  const ChangeRouteBlock({
+    this.mode = ChangeRouteMode.full,
+    super.color,
+    super.textColor,
+  });
 
   final ChangeRouteMode mode;
 
   @override
   bool operator ==(Object other) =>
-      other is ChangeRouteBlock && other.mode == mode;
+      other is ChangeRouteBlock &&
+      other.mode == mode &&
+      other.color == color &&
+      other.textColor == textColor;
 
   @override
-  int get hashCode => mode.hashCode;
+  int get hashCode => Object.hash(mode, color, textColor);
 }
 
 enum ChangeRouteMode with BlockMode {
@@ -457,16 +601,23 @@ enum ChangeRouteMode with BlockMode {
 /// exprès sur sa page, et le faire disparaître ferait chercher une case vide
 /// plutôt qu'un bouton grisé qui explique pourquoi il ne répond pas.
 class ClearRouteBlock extends DashboardBlock {
-  const ClearRouteBlock({this.mode = ClearRouteMode.full});
+  const ClearRouteBlock({
+    this.mode = ClearRouteMode.full,
+    super.color,
+    super.textColor,
+  });
 
   final ClearRouteMode mode;
 
   @override
   bool operator ==(Object other) =>
-      other is ClearRouteBlock && other.mode == mode;
+      other is ClearRouteBlock &&
+      other.mode == mode &&
+      other.color == color &&
+      other.textColor == textColor;
 
   @override
-  int get hashCode => mode.hashCode;
+  int get hashCode => Object.hash(mode, color, textColor);
 }
 
 enum ClearRouteMode with BlockMode {
@@ -491,15 +642,23 @@ enum ClearRouteMode with BlockMode {
 /// bouton propose déjà le geste qui en pose un plutôt que de se griser sans
 /// rien pouvoir faire.
 class RouteBlock extends DashboardBlock {
-  const RouteBlock({this.mode = RouteMode.full});
+  const RouteBlock({
+    this.mode = RouteMode.full,
+    super.color,
+    super.textColor,
+  });
 
   final RouteMode mode;
 
   @override
-  bool operator ==(Object other) => other is RouteBlock && other.mode == mode;
+  bool operator ==(Object other) =>
+      other is RouteBlock &&
+      other.mode == mode &&
+      other.color == color &&
+      other.textColor == textColor;
 
   @override
-  int get hashCode => mode.hashCode;
+  int get hashCode => Object.hash(mode, color, textColor);
 }
 
 enum RouteMode with BlockMode {
@@ -515,16 +674,23 @@ enum RouteMode with BlockMode {
 /// Ce que la page web raconte d'elle-même. Sans carte dans le profil, il n'y a
 /// pas de page pour le dire : le bloc affiche alors qu'il n'attend rien.
 class NavStateBlock extends DashboardBlock {
-  const NavStateBlock({this.mode = NavStateMode.full});
+  const NavStateBlock({
+    this.mode = NavStateMode.full,
+    super.color,
+    super.textColor,
+  });
 
   final NavStateMode mode;
 
   @override
   bool operator ==(Object other) =>
-      other is NavStateBlock && other.mode == mode;
+      other is NavStateBlock &&
+      other.mode == mode &&
+      other.color == color &&
+      other.textColor == textColor;
 
   @override
-  int get hashCode => mode.hashCode;
+  int get hashCode => Object.hash(mode, color, textColor);
 }
 
 enum NavStateMode with BlockMode {
@@ -540,15 +706,23 @@ enum NavStateMode with BlockMode {
 /// Le radar arrière. Ni « voie libre » ni tiret quand il est absent : pas de
 /// radar n'est pas une route dégagée, et le bloc le dit.
 class RadarBlock extends DashboardBlock {
-  const RadarBlock({this.mode = RadarMode.distance});
+  const RadarBlock({
+    this.mode = RadarMode.distance,
+    super.color,
+    super.textColor,
+  });
 
   final RadarMode mode;
 
   @override
-  bool operator ==(Object other) => other is RadarBlock && other.mode == mode;
+  bool operator ==(Object other) =>
+      other is RadarBlock &&
+      other.mode == mode &&
+      other.color == color &&
+      other.textColor == textColor;
 
   @override
-  int get hashCode => mode.hashCode;
+  int get hashCode => Object.hash(mode, color, textColor);
 }
 
 enum RadarMode with BlockMode {
@@ -586,16 +760,23 @@ enum RadarMode with BlockMode {
 /// navigation. Un profil sans carte n'en recevra donc jamais : il n'y a pas de
 /// WebView pour la porter, et le composant le dit au lieu d'afficher des zéros.
 class TrainingBudgetBlock extends DashboardBlock {
-  const TrainingBudgetBlock({this.mode = TrainingBudgetMode.day});
+  const TrainingBudgetBlock({
+    this.mode = TrainingBudgetMode.day,
+    super.color,
+    super.textColor,
+  });
 
   final TrainingBudgetMode mode;
 
   @override
   bool operator ==(Object other) =>
-      other is TrainingBudgetBlock && other.mode == mode;
+      other is TrainingBudgetBlock &&
+      other.mode == mode &&
+      other.color == color &&
+      other.textColor == textColor;
 
   @override
-  int get hashCode => mode.hashCode;
+  int get hashCode => Object.hash(mode, color, textColor);
 }
 
 enum TrainingBudgetMode with BlockMode {
@@ -621,16 +802,23 @@ enum TrainingBudgetMode with BlockMode {
 /// capteur — donc absent sans carte dans le profil, comme eux (voir
 /// `route_climbs.dart` : sans carte, personne n'alimente la liste).
 class ClimbListBlock extends DashboardBlock {
-  const ClimbListBlock({this.mode = ClimbListMode.full});
+  const ClimbListBlock({
+    this.mode = ClimbListMode.full,
+    super.color,
+    super.textColor,
+  });
 
   final ClimbListMode mode;
 
   @override
   bool operator ==(Object other) =>
-      other is ClimbListBlock && other.mode == mode;
+      other is ClimbListBlock &&
+      other.mode == mode &&
+      other.color == color &&
+      other.textColor == textColor;
 
   @override
-  int get hashCode => mode.hashCode;
+  int get hashCode => Object.hash(mode, color, textColor);
 }
 
 enum ClimbListMode with BlockMode {

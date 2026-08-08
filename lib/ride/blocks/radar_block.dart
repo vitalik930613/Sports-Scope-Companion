@@ -21,6 +21,7 @@ class RadarBlockView extends StatelessWidget {
     super.key,
     required this.radar,
     this.mode = RadarMode.distance,
+    this.color,
   });
 
   /// Nul quand le profil a coupé le radar : le bloc le dit alors, plutôt que
@@ -28,6 +29,13 @@ class RadarBlockView extends StatelessWidget {
   final ValueListenable<RadarView>? radar;
 
   final RadarMode mode;
+
+  /// Fond réglé dans l'éditeur — voir [DashboardBlock.color]. Pas de
+  /// [DashboardBlock.textColor] ici : les couleurs de ce bloc (rouge proche,
+  /// orange qui approche, vert voie libre, gris sans radar) sont l'état du
+  /// radar lui-même, pas la surface du texte — les remplacer effacerait
+  /// justement ce que le composant sert à montrer.
+  final Color? color;
 
   static const _close = Color(0xFFEF5350);
   static const _approaching = Color(0xFFFFA726);
@@ -37,9 +45,10 @@ class RadarBlockView extends StatelessWidget {
   Widget build(BuildContext context) {
     final radar = this.radar;
     if (radar == null) {
-      return const BlockCard(
+      return BlockCard(
         title: 'Radar',
-        lines: ['Coupé par ce profil.'],
+        lines: const ['Coupé par ce profil.'],
+        color: color,
       );
     }
 
@@ -66,7 +75,7 @@ class RadarBlockView extends StatelessWidget {
       };
 
   Widget _distance(RadarView view) {
-    final (label, color) = switch (view.severity) {
+    final (label, severityColor) = switch (view.severity) {
       RadarSeverity.close => ('${view.nearestM} m', _close),
       RadarSeverity.approaching => ('${view.nearestM} m', _approaching),
       RadarSeverity.clear => ('Voie libre', _clear),
@@ -74,6 +83,7 @@ class RadarBlockView extends StatelessWidget {
     };
 
     return BlockSurface(
+      background: color,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -86,7 +96,7 @@ class RadarBlockView extends StatelessWidget {
                 Icon(
                   Icons.directions_car,
                   size: BlockMetrics.natural.iconSize + 2,
-                  color: color,
+                  color: severityColor,
                 ),
                 // Le compte n'est écrit que s'il y a de quoi compter : « ×1 »
                 // sous une seule voiture ferait chercher la deuxième.
@@ -94,7 +104,7 @@ class RadarBlockView extends StatelessWidget {
                   Text(
                     ' ×${view.count}',
                     style: TextStyle(
-                      color: color,
+                      color: severityColor,
                       fontSize: BlockMetrics.natural.iconSize,
                     ),
                   ),
@@ -104,7 +114,7 @@ class RadarBlockView extends StatelessWidget {
             label,
             maxLines: 1,
             style: TextStyle(
-              color: color,
+              color: severityColor,
               fontSize: 44,
               fontWeight: FontWeight.w700,
               height: 1.1,
@@ -140,16 +150,18 @@ class RadarBlockView extends StatelessWidget {
     final empty = _emptyState(view.severity);
     if (empty != null) return _emptyText(empty);
 
-    final color = view.severity == RadarSeverity.close ? _close : _approaching;
+    final severityColor =
+        view.severity == RadarSeverity.close ? _close : _approaching;
     return BlockSurface(
+      background: color,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.directions_car, size: 44, color: color),
+          Icon(Icons.directions_car, size: 44, color: severityColor),
           Text(
             ' ×${view.count}',
             style: TextStyle(
-              color: color,
+              color: severityColor,
               fontSize: 44,
               fontWeight: FontWeight.w700,
             ),
@@ -166,15 +178,17 @@ class RadarBlockView extends StatelessWidget {
     final empty = _emptyState(view.severity);
     if (empty != null) return _emptyText(empty);
 
-    final color = view.severity == RadarSeverity.close ? _close : _approaching;
+    final severityColor =
+        view.severity == RadarSeverity.close ? _close : _approaching;
     return BlockSurface(
+      background: color,
       child: Wrap(
         alignment: WrapAlignment.center,
         spacing: 6,
         runSpacing: 6,
         children: [
           for (var i = 0; i < view.count; i++)
-            Icon(Icons.directions_car, size: 40, color: color),
+            Icon(Icons.directions_car, size: 40, color: severityColor),
         ],
       ),
     );
@@ -184,13 +198,14 @@ class RadarBlockView extends StatelessWidget {
   /// mise en forme sert au chiffre normal comme au texte de repli, pour que
   /// les trois passent de l'un à l'autre sans changer de taille ni de poids.
   Widget _emptyText((String, Color) state) {
-    final (label, color) = state;
+    final (label, stateColor) = state;
     return BlockSurface(
+      background: color,
       child: Text(
         label,
         maxLines: 1,
         style: TextStyle(
-          color: color,
+          color: stateColor,
           fontSize: 44,
           fontWeight: FontWeight.w700,
           height: 1.1,
@@ -205,13 +220,14 @@ class RadarBlockView extends StatelessWidget {
   /// rouge qui est proche — plus le vert et le gris des états sans alerte,
   /// via [_emptyState].
   Widget _gauge(RadarView view) {
-    final color = _emptyState(view.severity)?.$2 ??
+    final severityColor = _emptyState(view.severity)?.$2 ??
         (view.severity == RadarSeverity.close ? _close : _approaching);
 
     return BlockSurface(
+      background: color,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: color,
+          color: severityColor,
           borderRadius: BorderRadius.circular(8),
         ),
         child: const SizedBox.square(dimension: 64),

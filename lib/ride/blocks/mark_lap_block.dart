@@ -19,6 +19,8 @@ class MarkLapControl extends StatelessWidget {
     required this.recorder,
     required this.series,
     this.mode = MarkLapMode.full,
+    this.color,
+    this.textColor,
   });
 
   final RideRecorder recorder;
@@ -28,6 +30,11 @@ class MarkLapControl extends StatelessWidget {
   final String series;
 
   final MarkLapMode mode;
+
+  /// Fond/texte réglés dans l'éditeur — voir [DashboardBlock.color]/
+  /// [DashboardBlock.textColor].
+  final Color? color;
+  final Color? textColor;
 
   static const _naturalWidth = 200.0;
 
@@ -43,13 +50,16 @@ class MarkLapControl extends StatelessWidget {
           return Tooltip(
             message: 'Marquer un tour',
             child: Material(
-              color: const Color(0xFF1F2226),
+              color: color ?? const Color(0xFF1F2226),
               borderRadius: BorderRadius.circular(12),
               child: InkWell(
                 onTap: onPressed,
                 borderRadius: BorderRadius.circular(12),
-                child: const Center(
-                  child: Icon(Icons.flag_outlined, color: Colors.white70),
+                child: Center(
+                  child: Icon(
+                    Icons.flag_outlined,
+                    color: textColor ?? Colors.white70,
+                  ),
                 ),
               ),
             ),
@@ -60,6 +70,7 @@ class MarkLapControl extends StatelessWidget {
         // cartes de mesure, sinon ce bouton flotte seul sur le noir de la
         // coquille et détonne à côté des cartes voisines.
         return BlockSurface(
+          background: color,
           child: SizedBox(
             width: _naturalWidth,
             // `FilledButton` et non `OutlinedButton` (contrairement à la
@@ -70,6 +81,8 @@ class MarkLapControl extends StatelessWidget {
             child: FilledButton.icon(
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 14),
+                backgroundColor: color,
+                foregroundColor: textColor,
               ),
               onPressed: onPressed,
               icon: const Icon(Icons.flag_outlined),

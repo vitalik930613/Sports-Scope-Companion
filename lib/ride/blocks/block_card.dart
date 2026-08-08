@@ -23,20 +23,38 @@ const _naturalCardWidth = 220.0;
 /// décide de ce qu'il y a à dire, pas la case qui décide de ce qu'elle
 /// garde. [BlockSurface] réduit l'ensemble s'il ne tient pas.
 class BlockCard extends StatelessWidget {
-  const BlockCard({super.key, required this.title, required this.lines});
+  const BlockCard({
+    super.key,
+    required this.title,
+    required this.lines,
+    this.color,
+    this.textColor,
+  });
 
   final String title;
   final List<String> lines;
+
+  /// Fond de la carte, réglé dans l'éditeur — voir [DashboardBlock.color].
+  /// `null` : le fond habituel ([background]).
+  final Color? color;
+
+  /// Texte de la carte, réglé dans l'éditeur — voir [DashboardBlock.textColor].
+  /// `null` : blanc sur le fond habituel, ou calculé pour rester lisible sur
+  /// [color] quand il est réglé sans texte choisi.
+  final Color? textColor;
 
   /// Le fond des cartes, partagé avec [ZoneBreakdown] : c'est ce qui les fait
   /// lire comme des éléments d'une même page.
   static const background = Color(0xFF1F2226);
 
   @override
-  Widget build(BuildContext context) => BlockSurface(child: _content());
+  Widget build(BuildContext context) =>
+      BlockSurface(background: color, child: _content());
 
   Widget _content() {
     const metrics = BlockMetrics.natural;
+    final ink = textColor ?? (color == null ? Colors.white : foregroundOf(color!));
+
     return SizedBox(
       width: _naturalCardWidth,
       child: Column(
@@ -48,7 +66,7 @@ class BlockCard extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: Colors.white70,
+              color: ink.withValues(alpha: 0.7),
               fontSize: metrics.titleSize,
             ),
           ),
@@ -59,7 +77,7 @@ class BlockCard extends StatelessWidget {
               child: Text(
                 line,
                 style: TextStyle(
-                  color: Colors.white,
+                  color: ink,
                   fontSize: metrics.lineSize,
                 ),
               ),
@@ -99,6 +117,8 @@ class StatCard extends StatelessWidget {
     required this.title,
     required this.rows,
     this.icon,
+    this.color,
+    this.textColor,
   });
 
   final String title;
@@ -109,11 +129,23 @@ class StatCard extends StatelessWidget {
   /// (`ui/sensor_icons.dart`, `MetricId`).
   final IconData? icon;
 
+  /// Fond de la carte, réglé dans l'éditeur — voir [DashboardBlock.color].
+  final Color? color;
+
+  /// Texte de la carte, réglé dans l'éditeur — voir [DashboardBlock.textColor].
+  /// N'affecte jamais [StatRow.background] : la pastille de zone reste une
+  /// donnée, pas la surface du texte.
+  final Color? textColor;
+
   @override
-  Widget build(BuildContext context) => BlockSurface(child: _content());
+  Widget build(BuildContext context) =>
+      BlockSurface(background: color, child: _content());
 
   Widget _content() {
     const metrics = BlockMetrics.natural;
+    final ink = textColor ?? (color == null ? Colors.white : foregroundOf(color!));
+    final dimInk = ink.withValues(alpha: 0.7);
+
     return SizedBox(
       width: _naturalCardWidth,
       child: Column(
@@ -123,7 +155,7 @@ class StatCard extends StatelessWidget {
           Row(
             children: [
               if (icon != null) ...[
-                Icon(icon, size: metrics.titleSize + 2, color: Colors.white70),
+                Icon(icon, size: metrics.titleSize + 2, color: dimInk),
                 SizedBox(width: metrics.gap / 2),
               ],
               Expanded(
@@ -132,7 +164,7 @@ class StatCard extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: Colors.white70,
+                    color: dimInk,
                     fontSize: metrics.titleSize,
                   ),
                 ),
@@ -156,13 +188,13 @@ class StatCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: Colors.white70,
+                        color: dimInk,
                         fontSize: metrics.lineSize,
                       ),
                     ),
                   ),
                   SizedBox(width: metrics.gap),
-                  _value(row, metrics),
+                  _value(row, metrics, ink),
                 ],
               ),
             ),
@@ -173,14 +205,17 @@ class StatCard extends StatelessWidget {
 
   /// La valeur d'une ligne, en pastille de la couleur de zone quand elle en a
   /// une — le même traitement que le bandeau et le mode `zone` de
-  /// [MetricView] : la couleur se lit avant le chiffre.
-  static Widget _value(StatRow row, BlockMetrics metrics) {
+  /// [MetricView] : la couleur se lit avant le chiffre. [ink] est le texte de
+  /// la carte (réglé ou calculé), utilisé seulement hors pastille — la
+  /// pastille garde son propre contraste ([foregroundOf]), sémantique et non
+  /// personnalisable.
+  static Widget _value(StatRow row, BlockMetrics metrics, Color ink) {
     final background = row.background;
     if (background == null) {
       return Text(
         row.value,
         maxLines: 1,
-        style: TextStyle(color: Colors.white, fontSize: metrics.lineSize),
+        style: TextStyle(color: ink, fontSize: metrics.lineSize),
       );
     }
     return Container(

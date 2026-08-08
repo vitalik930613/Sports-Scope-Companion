@@ -24,11 +24,18 @@ class LapSummaryCard extends StatelessWidget {
     required this.lap,
     required this.riderProfile,
     this.mode = LapSummaryMode.cards,
+    this.color,
+    this.textColor,
   });
 
   final RideLap? lap;
   final RiderProfileStore riderProfile;
   final LapSummaryMode mode;
+
+  /// Fond/texte réglés dans l'éditeur — voir [DashboardBlock.color]/
+  /// [DashboardBlock.textColor].
+  final Color? color;
+  final Color? textColor;
 
   static const _title = 'Bilan du tour';
 
@@ -36,7 +43,12 @@ class LapSummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final lap = this.lap;
     if (lap == null) {
-      return const BlockCard(title: _title, lines: ['Pas encore de tour.']);
+      return BlockCard(
+        title: _title,
+        lines: const ['Pas encore de tour.'],
+        color: color,
+        textColor: textColor,
+      );
     }
 
     return ListenableBuilder(
@@ -58,10 +70,12 @@ class LapSummaryCard extends StatelessWidget {
           return BlockCard(
             title: _title,
             lines: [for (final row in rows) '${row.label} ${row.value}'],
+            color: color,
+            textColor: textColor,
           );
         }
 
-        return StatCard(title: _title, rows: rows);
+        return StatCard(title: _title, rows: rows, color: color, textColor: textColor);
       },
     );
   }

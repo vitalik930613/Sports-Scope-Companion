@@ -34,6 +34,8 @@ class AveragesCard extends StatelessWidget {
     required this.riderProfile,
     this.mode = AveragesMode.cards,
     this.statsOverride,
+    this.color,
+    this.textColor,
   });
 
   final RideRecorder recorder;
@@ -49,6 +51,12 @@ class AveragesCard extends StatelessWidget {
   /// c'est encore lui qui dit si la sortie est active.
   final RideStats? statsOverride;
 
+  /// Fond/texte réglés dans l'éditeur — voir [DashboardBlock.color]/
+  /// [DashboardBlock.textColor]. Ne remplacent jamais les couleurs de zone
+  /// des chiffres (`_zoneBg`) : ce sont des données.
+  final Color? color;
+  final Color? textColor;
+
   @override
   Widget build(BuildContext context) => ListenableBuilder(
         listenable: Listenable.merge([recorder, riderProfile]),
@@ -57,9 +65,11 @@ class AveragesCard extends StatelessWidget {
 
   Widget _paint() {
     if (!recorder.isActive) {
-      return const BlockCard(
+      return BlockCard(
         title: 'Sortie non lancée',
-        lines: ['Les moyennes se remplissent dès le départ.'],
+        lines: const ['Les moyennes se remplissent dès le départ.'],
+        color: color,
+        textColor: textColor,
       );
     }
 
@@ -91,6 +101,8 @@ class AveragesCard extends StatelessWidget {
       return BlockCard(
         title: 'Moyennes',
         lines: [for (final card in cards) card.line],
+        color: color,
+        textColor: textColor,
       );
     }
 
@@ -115,17 +127,17 @@ class AveragesCard extends StatelessWidget {
       builder: (context, constraints) => constraints.hasBoundedHeight
           ? Column(
               children: [
-                Expanded(child: _row(cards[0], cards[1])),
+                Expanded(child: _row(cards[0], cards[1], color, textColor)),
                 gap,
-                Expanded(child: _row(cards[2], cards[3])),
+                Expanded(child: _row(cards[2], cards[3], color, textColor)),
               ],
             )
           : Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _row(cards[0], cards[1]),
+                _row(cards[0], cards[1], color, textColor),
                 gap,
-                _row(cards[2], cards[3]),
+                _row(cards[2], cards[3], color, textColor),
               ],
             ),
     );
@@ -134,12 +146,12 @@ class AveragesCard extends StatelessWidget {
   /// Deux cartes côte à côte. Les deux ont désormais toujours la même forme —
   /// un titre, trois lignes — donc pas besoin de mesurer laquelle est la plus
   /// haute pour aligner l'autre dessus.
-  static Widget _row(_Stat left, _Stat right) => Row(
+  static Widget _row(_Stat left, _Stat right, Color? color, Color? textColor) => Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(child: left.card()),
+          Expanded(child: left.card(color: color, textColor: textColor)),
           SizedBox(width: BlockMetrics.natural.gap),
-          Expanded(child: right.card()),
+          Expanded(child: right.card(color: color, textColor: textColor)),
         ],
       );
 
@@ -183,7 +195,7 @@ class _Stat {
   final Color? minBackground;
   final Color? maxBackground;
 
-  Widget card() => StatCard(
+  Widget card({Color? color, Color? textColor}) => StatCard(
         title: '$name ($unit)',
         icon: icon,
         rows: [
@@ -191,6 +203,8 @@ class _Stat {
           StatRow('Min', min, background: minBackground),
           StatRow('Max', max, background: maxBackground),
         ],
+        color: color,
+        textColor: textColor,
       );
 
   String get line => '$name $avg $unit ($min – $max)';

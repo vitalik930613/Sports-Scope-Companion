@@ -15,12 +15,23 @@ class DashboardActionButton extends StatelessWidget {
     required this.label,
     required this.compact,
     required this.onPressed,
+    this.color,
+    this.textColor,
   });
 
   final IconData icon;
   final String label;
   final bool compact;
   final VoidCallback? onPressed;
+
+  /// Fond réglé dans l'éditeur — voir [DashboardBlock.color]. `null` : le
+  /// gris des cartes en compact, le vert-bleu du thème en plein.
+  final Color? color;
+
+  /// Texte/icône réglés dans l'éditeur — voir [DashboardBlock.textColor].
+  /// N'affecte jamais l'état désactivé (`Colors.white24`), qui reste un état
+  /// et non une couleur de composant.
+  final Color? textColor;
 
   /// La largeur à laquelle le bouton large se construit avant mise à
   /// l'échelle. Fixe et non celle de la case : [ScaleToFit] la ramène à la
@@ -33,7 +44,7 @@ class DashboardActionButton extends StatelessWidget {
       return Tooltip(
         message: label,
         child: Material(
-          color: const Color(0xFF1F2226),
+          color: color ?? const Color(0xFF1F2226),
           borderRadius: BorderRadius.circular(12),
           child: InkWell(
             onTap: onPressed,
@@ -41,7 +52,7 @@ class DashboardActionButton extends StatelessWidget {
             child: Center(
               child: Icon(
                 icon,
-                color: onPressed == null ? Colors.white24 : Colors.white70,
+                color: onPressed == null ? Colors.white24 : (textColor ?? Colors.white70),
               ),
             ),
           ),
@@ -53,12 +64,15 @@ class DashboardActionButton extends StatelessWidget {
     // cartes de mesure, ce bouton flottait seul sur le noir de la coquille et
     // détonnait à côté des cartes voisines dans la grille ou la liste.
     return BlockSurface(
+      background: color,
       child: SizedBox(
         width: _fullWidth,
         child: FilledButton.icon(
           // Haut : le doigt vise mal sur une route bosselée.
           style: FilledButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 16),
+            backgroundColor: color,
+            foregroundColor: textColor,
           ),
           onPressed: onPressed,
           icon: Icon(icon),

@@ -32,6 +32,8 @@ class ZonesCard extends StatelessWidget {
     required this.riderProfile,
     this.mode = ZonesMode.bar,
     this.statsOverride,
+    this.color,
+    this.textColor,
   });
 
   final ZonesSource source;
@@ -45,6 +47,12 @@ class ZonesCard extends StatelessWidget {
   /// moment (`hub.latestHeartRate`/`latestPower`), une notion ride-large qui
   /// n'a pas de sens « par tour ».
   final RideStats? statsOverride;
+
+  /// Fond/texte réglés dans l'éditeur — voir [DashboardBlock.color]/
+  /// [DashboardBlock.textColor]. Ne remplacent jamais les couleurs de zone
+  /// (barre, pastilles, aplat de la ligne courante) : ce sont des données.
+  final Color? color;
+  final Color? textColor;
 
   @override
   Widget build(BuildContext context) {
@@ -73,6 +81,8 @@ class ZonesCard extends StatelessWidget {
                   ? 'Le temps par zone cardio se remplit dès le départ.'
                   : 'Le temps par zone de puissance se remplit dès le départ.',
             ],
+            color: color,
+            textColor: textColor,
           );
         }
 
@@ -104,6 +114,8 @@ class ZonesCard extends StatelessWidget {
                     ? 'Pas encore de cardio mesuré.'
                     : 'Pas encore de puissance mesurée.',
             ],
+            color: color,
+            textColor: textColor,
           );
         }
 
@@ -125,6 +137,8 @@ class ZonesCard extends StatelessWidget {
               current: current,
               currentIcon: hr ? Icons.favorite : Icons.bolt,
               mode: mode,
+              color: color,
+              textColor: textColor,
             );
           },
         );
@@ -151,7 +165,14 @@ class ZoneBreakdown extends StatelessWidget {
     required this.currentIcon,
     this.current,
     this.mode = ZonesMode.bar,
+    this.color,
+    this.textColor,
   });
+
+  /// Fond/texte réglés dans l'éditeur — voir [DashboardBlock.color]/
+  /// [DashboardBlock.textColor]. Ne remplacent jamais les couleurs de zone.
+  final Color? color;
+  final Color? textColor;
 
   final String title;
 
@@ -196,8 +217,10 @@ class ZoneBreakdown extends StatelessWidget {
     // la page).
     final withBar = mode != ZonesMode.legend;
     final withLegend = mode != ZonesMode.barOnly;
+    final ink = textColor ?? Colors.white;
 
     return BlockSurface(
+      background: color,
       child: SizedBox(
         width: _naturalWidth,
         child: Column(
@@ -209,7 +232,7 @@ class ZoneBreakdown extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.white70,
+                color: ink.withValues(alpha: 0.7),
                 fontSize: BlockMetrics.natural.titleSize,
               ),
             ),
@@ -249,6 +272,7 @@ class ZoneBreakdown extends StatelessWidget {
                     share: share,
                     current: share.key == current,
                     currentIcon: currentIcon,
+                    baseInk: ink,
                   ),
                 ),
             ],
@@ -264,6 +288,7 @@ class _ZoneLine extends StatelessWidget {
     required this.share,
     required this.currentIcon,
     this.current = false,
+    this.baseInk = Colors.white,
   });
 
   final ZoneShare share;
@@ -272,6 +297,12 @@ class _ZoneLine extends StatelessWidget {
   final bool current;
 
   final IconData currentIcon;
+
+  /// Le texte réglé dans l'éditeur, ou blanc — voir [ZoneBreakdown.textColor].
+  /// N'a d'effet que sur une ligne qui n'est pas la ligne courante : celle-ci
+  /// reste sur [foregroundOf], sémantique (elle est peinte sur l'aplat de sa
+  /// zone, pas sur le fond de la carte).
+  final Color baseInk;
 
   @override
   Widget build(BuildContext context) {
@@ -283,10 +314,10 @@ class _ZoneLine extends StatelessWidget {
     // illisible.
     final ink = current
         ? foregroundOf(color)
-        : (empty ? Colors.white38 : Colors.white);
+        : (empty ? baseInk.withValues(alpha: 0.38) : baseInk);
     final faded = current
         ? ink.withValues(alpha: 0.8)
-        : (empty ? Colors.white38 : Colors.white70);
+        : (empty ? baseInk.withValues(alpha: 0.38) : baseInk.withValues(alpha: 0.7));
 
     // Le rembourrage est le même sur toutes les lignes, peintes ou non : la
     // zone courante change en roulant, et une ligne qui s'élargirait au passage

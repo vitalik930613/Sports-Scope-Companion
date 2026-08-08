@@ -19,18 +19,27 @@ class NavStateCard extends StatelessWidget {
     super.key,
     required this.nav,
     this.mode = NavStateMode.full,
+    this.color,
+    this.textColor,
   });
 
   final ValueListenable<NavState?>? nav;
   final NavStateMode mode;
 
+  /// Fond/texte réglés dans l'éditeur — voir [DashboardBlock.color]/
+  /// [DashboardBlock.textColor].
+  final Color? color;
+  final Color? textColor;
+
   @override
   Widget build(BuildContext context) {
     final nav = this.nav;
     if (nav == null) {
-      return const BlockCard(
+      return BlockCard(
         title: 'Navigation',
-        lines: ['Ce profil roule sans carte.'],
+        lines: const ['Ce profil roule sans carte.'],
+        color: color,
+        textColor: textColor,
       );
     }
 
@@ -38,9 +47,11 @@ class NavStateCard extends StatelessWidget {
       valueListenable: nav,
       builder: (context, state, _) {
         if (state == null) {
-          return const BlockCard(
+          return BlockCard(
             title: 'Navigation',
-            lines: ['Aucun état reçu de la page.'],
+            lines: const ['Aucun état reçu de la page.'],
+            color: color,
+            textColor: textColor,
           );
         }
 
@@ -63,6 +74,8 @@ class NavStateCard extends StatelessWidget {
               else
                 '${(state.remainingM / 1000).toStringAsFixed(1)} km restants',
             ],
+            color: color,
+            textColor: textColor,
           );
         }
 
@@ -81,6 +94,8 @@ class NavStateCard extends StatelessWidget {
             if (state.arrived) 'Arrivé',
             if (stale) 'État périmé',
           ],
+          color: color,
+          textColor: textColor,
         );
       },
     );

@@ -32,6 +32,8 @@ class MetricView extends StatelessWidget {
     this.format = DurationFormat.hm,
     this.min,
     this.max,
+    this.color,
+    this.textColor,
     this.onTap,
   });
 
@@ -47,6 +49,16 @@ class MetricView extends StatelessWidget {
   /// d'entraînement.
   final double? min;
   final double? max;
+
+  /// Fond réglé dans l'éditeur — voir [DashboardBlock.color]. Prioritaire sur
+  /// [MetricReading.background]/la couleur de zone : c'est le seul moyen de
+  /// choisir un fond différent de celui, sémantique, que la mesure porte
+  /// déjà.
+  final Color? color;
+
+  /// Texte réglé dans l'éditeur — voir [DashboardBlock.textColor].
+  /// Prioritaire sur le calcul habituel ([foregroundOf] du fond réel).
+  final Color? textColor;
 
   /// Un tap sur la mesure. Sert aux watts, qui ouvrent la calibration du capteur
   /// de puissance : c'est là qu'on *constate* une puissance qui dérive, et non
@@ -84,8 +96,8 @@ class MetricView extends StatelessWidget {
 
   /// Le chiffre, sa couleur de zone en fond.
   Widget _big(MetricReading reading) {
-    final background = reading.background ?? zoneColorOf(reading.zoneKey);
-    final ink = background == null ? Colors.white : foregroundOf(background);
+    final background = color ?? reading.background ?? zoneColorOf(reading.zoneKey);
+    final ink = textColor ?? (background == null ? Colors.white : foregroundOf(background));
 
     return BlockSurface(
       background: background,
@@ -111,8 +123,8 @@ class MetricView extends StatelessWidget {
   /// Icône, valeur, unité — la mise en forme de `MetricTile`, pour les cellules
   /// où l'on tient plusieurs mesures.
   Widget _compact(MetricReading reading) {
-    final background = reading.background ?? zoneColorOf(reading.zoneKey);
-    final ink = background == null ? Colors.white : foregroundOf(background);
+    final background = color ?? reading.background ?? zoneColorOf(reading.zoneKey);
+    final ink = textColor ?? (background == null ? Colors.white : foregroundOf(background));
 
     return BlockSurface(
       background: background,
@@ -150,8 +162,8 @@ class MetricView extends StatelessWidget {
   /// mêmes couleurs de zone et affichent la même forme « Z3 ») au même endroit
   /// que le nom qui le confirme, avant qu'on descende lire le chiffre lui-même.
   Widget _zone(MetricReading reading) {
-    final background = reading.background ?? zoneColorOf(reading.zoneKey);
-    final ink = background == null ? Colors.white : foregroundOf(background);
+    final background = color ?? reading.background ?? zoneColorOf(reading.zoneKey);
+    final ink = textColor ?? (background == null ? Colors.white : foregroundOf(background));
     final titleColor =
         background == null ? Colors.white70 : ink.withValues(alpha: 0.85);
 
@@ -280,18 +292,23 @@ class MetricView extends StatelessWidget {
     // taille naturelle, indépendante de la case, et `stretch` sous une
     // largeur non bornée lèverait — c'est `ScaleToFit` qui ramène ensuite
     // cette largeur à celle de la case réelle.
+    final ink = textColor ?? Colors.white;
+
     return BlockSurface(
+      background: color,
       child: SizedBox(
         width: 220,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _value(reading, Colors.white, size: 48),
+            _value(reading, ink, size: 48),
             SizedBox(height: BlockMetrics.natural.gap),
             // Une case par palier plutôt qu'un remplissage continu : un
             // dégradé laisserait croire à une progression linéaire que les
-            // zones n'ont pas — et la plage libre garde le même dessin.
+            // zones n'ont pas — et la plage libre garde le même dessin. Les
+            // couleurs des paliers restent sémantiques (zone, ou accent de la
+            // jauge libre) : [textColor] ne les remplace jamais.
             Row(
               children: [
                 for (var i = 0; i < segments; i++) ...[
@@ -315,7 +332,7 @@ class MetricView extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: Colors.white54,
+                color: ink.withValues(alpha: 0.54),
                 fontSize: BlockMetrics.natural.unitSize - 2,
               ),
             ),
@@ -378,15 +395,17 @@ class MetricView extends StatelessWidget {
       builder: (context, outerConstraints) {
         final width = _measuredWidth(outerConstraints);
         final barHeight = BlockMetrics.natural.barHeight;
+        final ink = textColor ?? Colors.white;
 
         return BlockSurface(
+          background: color,
           child: SizedBox(
             width: width,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _value(reading, Colors.white, size: 48),
+                _value(reading, ink, size: 48),
                 SizedBox(height: BlockMetrics.natural.gap),
                 SizedBox(
                   height: barHeight,
@@ -422,7 +441,7 @@ class MetricView extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: Colors.white54,
+                    color: ink.withValues(alpha: 0.54),
                     fontSize: BlockMetrics.natural.unitSize - 2,
                   ),
                 ),
