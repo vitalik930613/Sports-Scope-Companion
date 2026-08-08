@@ -160,7 +160,14 @@ enum MetricMode with BlockMode {
   gauge('gauge'),
 
   /// L'aplat de la zone du moment, avec la mesure dessus.
-  zone('zone');
+  zone('zone'),
+
+  /// Un curseur en position continue sur une plage qui n'est **pas** réglée
+  /// dans l'éditeur : le min et le max observés depuis le départ de la sortie
+  /// (cadence, cardio, puissance, vitesse, pente), ou la progression vers
+  /// l'itinéraire chargé (distance, durée). Contrairement à [gauge], la plage
+  /// n'existe qu'en roulant — voir [MetricId.liveRangeOf].
+  dynamicGauge('dynamic_gauge');
 
   const MetricMode(this.key);
 

@@ -109,6 +109,70 @@ enum MetricId {
         _ => const [],
       };
 
+  /// La plage de [MetricMode.dynamicGauge] : `null` tant qu'elle n'a pas
+  /// encore de sens plutôt que d'en inventer une — mêmes gardes que [read].
+  ///
+  /// Deux natures de plage, selon la mesure :
+  /// - cadence / cardio / puissance / vitesse / pente : le min et le max
+  ///   observés depuis le départ ([RideStats]) — une plage qui s'élargit en
+  ///   roulant, pas un réglage de l'éditeur.
+  /// - distance / durée : la progression sur l'itinéraire suivi, de 0 au
+  ///   total (parcouru/écoulé + ce que [NavState] dit encore restant) — ces
+  ///   deux mesures sont des cumuls, un min/max « observé » n'y voudrait rien
+  ///   dire (le min vaudrait toujours 0, le max toujours la valeur du moment).
+  (double, double)? liveRangeOf(MetricSources sources) {
+    final stats = sources.recorder.stats;
+    return switch (this) {
+      MetricId.cadence =>
+        _bounds(stats.minCadence?.toDouble(), stats.maxCadence?.toDouble()),
+      MetricId.heartRate =>
+        _bounds(stats.minHeartRate?.toDouble(), stats.maxHeartRate?.toDouble()),
+      MetricId.power => _bounds(stats.minPower?.toDouble(), stats.maxPower?.toDouble()),
+      // km/h, comme MetricReading.numericValue de `speed` (cf. `_speedReading`).
+      MetricId.speed => _bounds(
+          stats.minSpeedMps == null ? null : stats.minSpeedMps! * 3.6,
+          stats.maxSpeedMps == null ? null : stats.maxSpeedMps! * 3.6,
+        ),
+      MetricId.grade => _bounds(stats.minGrade, stats.maxGrade),
+      MetricId.distance => _routeDistanceRange(sources),
+      MetricId.duration => _routeDurationRange(sources),
+      _ => null,
+    };
+  }
+
+  static (double, double)? _bounds(double? min, double? max) =>
+      min == null || max == null || min >= max ? null : (min, max);
+
+  /// 0 → distance totale de l'itinéraire suivi, déduite sans rien demander de
+  /// plus à la page web : ce qui a été parcouru ([RideRecorder.distanceM]) plus
+  /// ce qu'elle dit encore restant ([NavState.remainingM]) — pas besoin d'un
+  /// total publié séparément.
+  static (double, double)? _routeDistanceRange(MetricSources sources) {
+    final nav = sources.nav?.value;
+    if (nav == null || !nav.onRoute || nav.isStale(DateTime.now())) return null;
+    if (!sources.recorder.gpsEnabled) return null;
+    final totalM = sources.recorder.distanceM + nav.remainingM;
+    if (totalM <= 0) return null;
+    return (0, totalM / 1000);
+  }
+
+  /// 0 → durée totale estimée de l'itinéraire suivi : le temps déjà écoulé
+  /// plus le même calcul que [_eta] pour ce qu'il en reste. Comme [routeEta],
+  /// cette borne haute se redéfinit à chaque tick avec l'allure — ce n'est pas
+  /// un total figé au départ.
+  static (double, double)? _routeDurationRange(MetricSources sources) {
+    final nav = sources.nav?.value;
+    if (nav == null || !nav.onRoute || nav.isStale(DateTime.now())) return null;
+    final stats = sources.recorder.stats;
+    final speedMps = _movingAvgSpeedMps(stats);
+    if (speedMps == null || speedMps <= 0) return null;
+    final elapsedS = sources.recorder.recorded.inMilliseconds / 1000;
+    final remainingS = nav.remainingM / speedMps;
+    final totalS = elapsedS + remainingS;
+    if (totalS <= 0) return null;
+    return (0, totalS);
+  }
+
   /// De quoi cette mesure dépend, pour n'être reconstruite que quand il le
   /// faut. Une seule liste par mesure, à côté de sa lecture : deux endroits
   /// finiraient par se contredire, et le symptôme serait une case figée que
@@ -142,6 +206,10 @@ enum MetricId {
       // Le temps restant croise la distance qui reste (la page) et la vitesse
       // moyenne en roulant (l'enregistreur) : il lui faut suivre les deux.
       MetricId.routeEta => [sources.recorder, if (nav != null) nav],
+      // Le chiffre ne dépend que de l'enregistreur, mais la plage de la jauge
+      // dynamique (parcouru → total de l'itinéraire) suit aussi la page :
+      // c'est elle qui publie ce qu'il en reste ([liveRangeOf]).
+      MetricId.distance || MetricId.duration => [sources.recorder, if (nav != null) nav],
       _ => [sources.recorder],
     };
   }

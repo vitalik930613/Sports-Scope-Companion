@@ -177,6 +177,11 @@ class RideStats {
   /// aucune des deux.
   double? maxGrade;
 
+  /// Le pendant bas de [maxGrade], même échantillonnage — signée aussi : c'est
+  /// la plongée la plus marquée vue depuis le départ, pas une pente proche de
+  /// zéro.
+  double? minGrade;
+
   /// Les minima, sur **exactement la même population que les moyennes** : tout
   /// point qui porte la mesure, zéros compris. C'est ce qui les rend lisibles
   /// ensemble — un minimum calculé sur les seuls points « en action » ne serait
@@ -373,6 +378,7 @@ class RideStats {
         _gradeSum += grade;
         _gradeCount++;
         maxGrade = maxGrade == null || grade > maxGrade! ? grade : maxGrade;
+        minGrade = minGrade == null || grade < minGrade! ? grade : minGrade;
       }
     }
 
@@ -540,6 +546,7 @@ class RideStats {
     maxHeartRate = maxCadence = maxPower = null;
     maxSpeedMps = null;
     maxGrade = null;
+    minGrade = null;
     minHeartRate = minCadence = minPower = null;
     minSpeedMps = null;
     _hrSum = _hrCount = 0;

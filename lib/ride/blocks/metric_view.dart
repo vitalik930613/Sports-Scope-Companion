@@ -79,6 +79,7 @@ class MetricView extends StatelessWidget {
         MetricMode.compact => _compact(reading),
         MetricMode.zone => _zone(reading),
         MetricMode.gauge => _gauge(reading),
+        MetricMode.dynamicGauge => _dynamicGauge(reading),
       };
 
   /// Le chiffre, sa couleur de zone en fond.
@@ -321,6 +322,115 @@ class MetricView extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  /// Le remplissage d'une jauge dynamique : même couleur que la jauge à
+  /// plage libre, pour rester le même langage visuel — « on y est » sans
+  /// teinte propre à une tranche.
+  static const _dynamicGaugeColor = Color(0xFF26A69A);
+
+  /// La jauge dynamique : le pendant de [_gauge] pour une plage qui ne se
+  /// règle pas dans l'éditeur mais se lit dans la sortie en cours — voir
+  /// [MetricId.liveRangeOf]. Sans plage exploitable, ou sans chiffre à y
+  /// placer, on retombe sur le chiffre plein cadre plutôt que de dessiner un
+  /// curseur dont on aurait inventé la position.
+  Widget _dynamicGauge(MetricReading reading) {
+    final range = metric.liveRangeOf(sources);
+    final value = reading.numericValue;
+    if (range == null || value == null) return _big(reading);
+
+    final (min, max) = range;
+    final fraction = ((value - min) / (max - min)).clamp(0.0, 1.0);
+    return _dynamicGaugeCard(reading, fraction: fraction);
+  }
+
+  /// La largeur à laquelle la carte se construit avant mise à l'échelle,
+  /// quand aucune contrainte réelle n'est disponible — cas resté théorique en
+  /// pratique (cf. [_measuredWidth]).
+  static const _dynamicGaugeNaturalWidth = 220.0;
+
+  /// La largeur réelle de la case, mesurée **avant** [BlockSurface] : son
+  /// `FittedBox` (posé par [ScaleToFit]) mesure son enfant avec des
+  /// contraintes non bornées — c'est ainsi qu'il calcule son facteur
+  /// d'échelle — donc un `LayoutBuilder` posé plus bas, à l'intérieur de la
+  /// carte, ne voit jamais la largeur réelle de la case en grille. Sans ce
+  /// rattrapage, la carte se construirait toujours à
+  /// [_dynamicGaugeNaturalWidth], quelle que soit la largeur de la case, et
+  /// la piste resterait plus étroite que la case chaque fois que celle-ci est
+  /// plus large — exactement le rattrapage déjà fait pour le budget de charge
+  /// ([TrainingBudgetBlock]), ici parce qu'une piste bénéficie de toute la
+  /// largeur disponible, contrairement au chiffre plein cadre.
+  double _measuredWidth(BoxConstraints constraints) => constraints.hasBoundedWidth
+      ? constraints.maxWidth - BlockMetrics.natural.padding * 2
+      : _dynamicGaugeNaturalWidth;
+
+  /// Le chiffre, une piste continue, l'unité — même carte que [_gaugeCard]
+  /// mais un remplissage jusqu'à la position réelle plutôt que des paliers :
+  /// la plage d'une jauge dynamique est une vraie progression (une position
+  /// dans la sortie, ou vers l'arrivée), pas des seuils entre lesquels un
+  /// dégradé mentirait comme pour les zones. Plus épaisse que [_gaugeCard]
+  /// aussi ([BlockMetrics.natural.barHeight], la même que la barre de zones)
+  /// — c'est elle qui porte l'information ici, pas des paliers à côté d'un
+  /// chiffre déjà lisible seul.
+  Widget _dynamicGaugeCard(MetricReading reading, {required double fraction}) {
+    return LayoutBuilder(
+      builder: (context, outerConstraints) {
+        final width = _measuredWidth(outerConstraints);
+        final barHeight = BlockMetrics.natural.barHeight;
+
+        return BlockSurface(
+          child: SizedBox(
+            width: width,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _value(reading, Colors.white, size: 48),
+                SizedBox(height: BlockMetrics.natural.gap),
+                SizedBox(
+                  height: barHeight,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final trackWidth = constraints.maxWidth;
+                      return ClipRRect(
+                        borderRadius: BorderRadius.circular(barHeight / 2),
+                        child: Stack(
+                          children: [
+                            const Positioned.fill(child: ColoredBox(color: Colors.white12)),
+                            Positioned.fill(
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  SizedBox(
+                                    width: trackWidth * fraction,
+                                    child: const ColoredBox(color: _dynamicGaugeColor),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  metric.unit.toUpperCase(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white54,
+                    fontSize: BlockMetrics.natural.unitSize - 2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
