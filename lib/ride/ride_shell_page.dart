@@ -244,6 +244,10 @@ class _RideShellPageState extends State<RideShellPage>
   /// n'a pas encore répondu.
   NativeTurnAlerts? _nativeTurns;
 
+  /// Le bip du filet natif — voir `native_turn_alerts.dart`. Chargé d'avance
+  /// dans [_loadNativeTurnAlerts], en même temps que les virages.
+  final _nativeTurnSound = NativeTurnAlertSound();
+
   /// L'horloge du retour automatique. Le front d'une alerte arrive par le pont,
   /// mais « rendre la page une fois le calme revenu » n'est piloté que par le
   /// temps qui passe.
@@ -330,6 +334,7 @@ class _RideShellPageState extends State<RideShellPage>
         onPageFinished: _onPageFinished,
       );
       _webView = NavigationWebView(controller: _web!);
+      unawaited(_nativeTurnSound.warmUp());
       unawaited(_loadNativeTurnAlerts(widget.target));
     }
 
@@ -470,11 +475,12 @@ class _RideShellPageState extends State<RideShellPage>
     _nativeTurns = NativeTurnAlerts(hints);
   }
 
-  /// Vibre pour un virage que la page ne peut plus annoncer elle-même.
+  /// Vibre et sonne pour un virage que la page ne peut plus annoncer
+  /// elle-même.
   ///
   /// Même garde que [TurnProximity] : tant que le pont est frais, c'est la
-  /// page qui alerte (bandeau, son, vibration) — vibrer en plus ferait
-  /// double emploi à chaque virage d'une sortie parfaitement normale.
+  /// page qui alerte (bandeau, son, vibration) — vibrer et sonner en plus
+  /// ferait double emploi à chaque virage d'une sortie parfaitement normale.
   void _checkNativeTurnAlert() {
     final turns = _nativeTurns;
     if (turns == null || turns.isDone) return;
@@ -482,9 +488,8 @@ class _RideShellPageState extends State<RideShellPage>
     if (state != null && !state.isStale(DateTime.now())) return;
 
     if (turns.update(widget.recorder.lastFix)) {
-      HapticFeedback.heavyImpact();
-      Future.delayed(const Duration(milliseconds: 220), HapticFeedback.heavyImpact);
-      Future.delayed(const Duration(milliseconds: 440), HapticFeedback.heavyImpact);
+      unawaited(nativeTurnAlertBuzz());
+      _nativeTurnSound.play();
     }
   }
 
@@ -831,6 +836,7 @@ class _RideShellPageState extends State<RideShellPage>
     _radar.dispose();
     _mutedRadar.dispose();
     _radarSound.dispose();
+    unawaited(_nativeTurnSound.dispose());
     // Filet de sécurité : quitter la navigation en veille (bouton retour, page
     // qui plante) ne doit pas laisser l'appareil à 1 % de luminosité.
     _screen.restore();

@@ -54,6 +54,13 @@ dependencies:
   # charge) : mêmes glyphes que ceux déjà utilisés côté site (`fa-solid`).
   font_awesome_flutter: ^11.0.0
 
+  # Vibration du filet natif de virages (native_turn_alerts.dart) : les
+  # constantes `HapticFeedback` de Flutter passent par le retour haptique de la
+  # vue (`performHapticFeedback`), pensé pour un tap d'interface, pas pour
+  # alerter au poignet en plein vent — mesuré trop faible sur route. Ce paquet
+  # parle directement au `Vibrator` Android et donne accès à l'amplitude.
+  vibration: ^3.2.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
