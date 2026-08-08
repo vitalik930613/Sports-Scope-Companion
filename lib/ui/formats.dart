@@ -40,6 +40,20 @@ String formatDurationHm(Duration duration) {
   return '$hh:$mm';
 }
 
+/// `04:12:07`, heures et secondes toujours écrites. Variante de
+/// [formatDurationHm] pour les mesures de durée du tableau de bord dont le
+/// profil demande la seconde plutôt que la minute.
+String formatDurationHms(Duration duration) {
+  final seconds = duration.inSeconds.abs();
+  final hours = seconds ~/ 3600;
+  final minutes = (seconds % 3600) ~/ 60;
+  final rest = seconds % 60;
+  final hh = hours.toString().padLeft(2, '0');
+  final mm = minutes.toString().padLeft(2, '0');
+  final ss = rest.toString().padLeft(2, '0');
+  return '$hh:$mm:$ss';
+}
+
 /// Distance en kilomètres, virgule française. En dessous de 100 m on reste en
 /// mètres : « 0,04 km » ne veut rien dire à l'échelle d'un départ.
 String formatDistance(double metres) {

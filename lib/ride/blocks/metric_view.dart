@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../account/rider_profile.dart';
 import '../../dashboard/block_density.dart';
 import '../../dashboard/dashboard_block.dart';
 import '../../dashboard/metric_id.dart';
@@ -28,12 +29,24 @@ class MetricView extends StatelessWidget {
     required this.metric,
     required this.sources,
     this.mode = MetricMode.big,
+    this.format = DurationFormat.hm,
+    this.min,
+    this.max,
     this.onTap,
   });
 
   final MetricId metric;
   final MetricSources sources;
   final MetricMode mode;
+
+  /// N'a d'effet que sur une mesure de durée — voir [MetricBlock.format].
+  final DurationFormat format;
+
+  /// Bornes de la jauge à plage libre — voir [MetricBlock.min]/[MetricBlock.max].
+  /// N'ont d'effet qu'en [MetricMode.gauge], sur une mesure sans zones
+  /// d'entraînement.
+  final double? min;
+  final double? max;
 
   /// Un tap sur la mesure. Sert aux watts, qui ouvrent la calibration du capteur
   /// de puissance : c'est là qu'on *constate* une puissance qui dérive, et non
@@ -50,7 +63,7 @@ class MetricView extends StatelessWidget {
   Widget build(BuildContext context) {
     final content = ListenableBuilder(
       listenable: Listenable.merge(metric.dependencies(sources)),
-      builder: (context, _) => _paint(metric.read(sources)),
+      builder: (context, _) => _paint(metric.read(sources, format: format)),
     );
 
     if (onTap == null) return content;
@@ -188,22 +201,80 @@ class MetricView extends StatelessWidget {
     );
   }
 
+  /// Le nombre de paliers de la jauge à plage libre — même dessin que la
+  /// jauge de zones, mais répartis également entre [min] et [max] plutôt que
+  /// sur des seuils réels. Cinq, comme les zones cardio : c'est la jauge la
+  /// plus familière de l'appli. **Même valeur que `RANGE_GAUGE_SEGMENTS`
+  /// côté site** (`companionSettings.ts`) — c'est elle qui dessine la
+  /// vignette qu'on a composée.
+  static const _rangeGaugeSegments = 5;
+
+  /// Une seule couleur pour tous les paliers allumés : contrairement aux
+  /// zones, une plage libre n'a pas de teinte propre à chaque tranche — juste
+  /// « on y est ». **Même valeur que `RANGE_GAUGE_COLOR` côté site.**
+  static const _rangeGaugeColor = Color(0xFF26A69A);
+
   /// La position dans la plage, plutôt que le chiffre exact.
   ///
-  /// La plage, ce sont les zones du cycliste : elles viennent du site, et il
-  /// n'en existe pas d'autre qui veuille dire quelque chose (une puissance « sur
-  /// 400 W » ne dit rien de commun entre deux cyclistes). **Sans zones, il n'y a
-  /// pas de plage** : on retombe alors sur le chiffre plein cadre plutôt que de
-  /// dessiner une jauge dont on aurait inventé le maximum. C'est le seul repli
-  /// de ce composant, et il tient à l'absence de donnée — pas à la taille de la
-  /// case, que [ScaleToFit] absorbe désormais seul.
+  /// Deux sources de plage, mutuellement exclusives : les zones du cycliste
+  /// quand la mesure en porte ([_zoneGauge]) — cardio, puissance, les seules
+  /// qui veulent dire quelque chose d'un cycliste à l'autre — ou un min/max
+  /// réglé dans l'éditeur ([_rangeGauge]) pour les autres. **Sans l'une ni
+  /// l'autre, on retombe sur le chiffre plein cadre** plutôt que de dessiner
+  /// une jauge dont on aurait inventé la plage.
   Widget _gauge(MetricReading reading) {
     final zones = metric.zonesOf(sources.riderProfile.profile);
-    if (zones.isEmpty) return _big(reading);
+    if (zones.isNotEmpty) return _zoneGauge(reading, zones);
+    if (min != null && max != null) return _rangeGauge(reading);
+    return _big(reading);
+  }
 
+  /// La jauge de zones : un palier par zone du cycliste, chacun de la couleur
+  /// de sa zone, allumés jusqu'à celle du moment.
+  Widget _zoneGauge(MetricReading reading, List<TrainingZone> zones) {
     final index = zones.indexWhere((zone) => zone.key == reading.zoneKey);
     final color = zoneColorOf(reading.zoneKey) ?? Colors.white24;
 
+    return _gaugeCard(
+      reading,
+      segments: zones.length,
+      isLit: (i) => i <= index && index >= 0,
+      litColorAt: (i) => zoneColorOf(zones[i].key) ?? color,
+    );
+  }
+
+  /// La jauge à plage libre : le pendant de [_zoneGauge] pour une mesure sans
+  /// zones d'entraînement, sur les bornes [min]/[max] réglées dans l'éditeur.
+  /// Mêmes paliers, également répartis entre les deux bornes plutôt que sur
+  /// des seuils réels — d'où une seule couleur au lieu d'une par palier.
+  ///
+  /// Un chiffre absent ([MetricReading.numericValue] `null`) éteint tous les
+  /// paliers plutôt que d'en deviner un : la mesure garde son tiret, la
+  /// jauge doit dire la même chose que lui.
+  Widget _rangeGauge(MetricReading reading) {
+    final value = reading.numericValue;
+    final fraction = value == null
+        ? null
+        : ((value - min!) / (max! - min!)).clamp(0.0, 1.0);
+    final lit = fraction == null ? -1 : (fraction * _rangeGaugeSegments).round();
+
+    return _gaugeCard(
+      reading,
+      segments: _rangeGaugeSegments,
+      isLit: (i) => i < lit,
+      litColorAt: (_) => _rangeGaugeColor,
+    );
+  }
+
+  /// La carte commune aux deux jauges : le chiffre, une rangée de paliers,
+  /// l'unité — seuls le nombre de paliers et leur couleur changent entre
+  /// [_zoneGauge] et [_rangeGauge].
+  Widget _gaugeCard(
+    MetricReading reading, {
+    required int segments,
+    required bool Function(int i) isLit,
+    required Color Function(int i) litColorAt,
+  }) {
     // Largeur fixe et non `stretch` : la carte se construit désormais à sa
     // taille naturelle, indépendante de la case, et `stretch` sous une
     // largeur non bornée lèverait — c'est `ScaleToFit` qui ramène ensuite
@@ -217,20 +288,18 @@ class MetricView extends StatelessWidget {
           children: [
             _value(reading, Colors.white, size: 48),
             SizedBox(height: BlockMetrics.natural.gap),
-            // Une case par zone plutôt qu'un remplissage continu : les zones
-            // sont des paliers, et un dégradé laisserait croire à une
-            // progression linéaire qu'elles n'ont pas.
+            // Une case par palier plutôt qu'un remplissage continu : un
+            // dégradé laisserait croire à une progression linéaire que les
+            // zones n'ont pas — et la plage libre garde le même dessin.
             Row(
               children: [
-                for (var i = 0; i < zones.length; i++) ...[
+                for (var i = 0; i < segments; i++) ...[
                   if (i > 0) const SizedBox(width: 2),
                   Expanded(
                     child: Container(
                       height: 8,
                       decoration: BoxDecoration(
-                        color: i <= index && index >= 0
-                            ? (zoneColorOf(zones[i].key) ?? color)
-                            : Colors.white12,
+                        color: isLit(i) ? litColorAt(i) : Colors.white12,
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),

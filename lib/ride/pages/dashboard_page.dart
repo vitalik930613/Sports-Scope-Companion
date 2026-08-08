@@ -205,6 +205,9 @@ class DashboardPage extends StatelessWidget {
             metric: metric.metric,
             sources: sources,
             mode: metric.mode,
+            format: metric.format,
+            min: metric.min,
+            max: metric.max,
             // Le tap des watts ouvre la calibration : c'est là qu'on *constate*
             // une puissance qui dérive, et non dans un menu deux pages plus loin.
             onTap: _isPower(metric.metric) ? onCalibratePower : null,

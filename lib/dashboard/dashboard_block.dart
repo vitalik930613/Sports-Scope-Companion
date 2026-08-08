@@ -85,29 +85,66 @@ abstract mixin class BlockMode {
 
 /// Une mesure du catalogue, seule dans sa cellule.
 class MetricBlock extends DashboardBlock {
-  const MetricBlock({required this.metric, this.mode = MetricMode.big});
+  const MetricBlock({
+    required this.metric,
+    this.mode = MetricMode.big,
+    this.format = DurationFormat.hm,
+    this.min,
+    this.max,
+  });
 
   final MetricId metric;
   final MetricMode mode;
+
+  /// N'a d'effet que sur une mesure de durée ([MetricId.duration],
+  /// [MetricId.movingTime], [MetricId.pauseTime], [MetricId.routeEta]) —
+  /// présent sur toute mesure comme [mode], mais silencieusement ignoré des
+  /// autres, plutôt qu'un champ optionnel de plus à défaire au rendu.
+  final DurationFormat format;
+
+  /// Bornes de la jauge à plage libre ([MetricMode.gauge] sur une mesure sans
+  /// zones d'entraînement), réglées dans l'éditeur. `null` sur un document
+  /// plus ancien ou sans ce réglage : [MetricView] retombe alors sur le
+  /// chiffre plein cadre, comme avant que ce mode existe pour ces mesures.
+  final double? min;
+  final double? max;
 
   /// `null` si la mesure nommée n'existe pas dans cette version : mieux vaut
   /// une cellule vide qu'une case qui affiche un tiret pour toujours.
   static MetricBlock? parse(Map<dynamic, dynamic> raw) {
     final metric = MetricId.fromKey(raw['metric']);
     if (metric == null) return null;
+
+    // Les deux ensemble ou aucun : une seule borne ne dit rien, et le site ne
+    // devrait jamais en écrire une sans l'autre — mais l'appli ne lui fait pas
+    // confiance pour autant (cf. tête de fichier).
+    final rawMin = _toDouble(raw['min']);
+    final rawMax = _toDouble(raw['max']);
+    final hasRange = rawMin != null && rawMax != null && rawMin < rawMax;
+
     return MetricBlock(
       metric: metric,
       mode: DashboardBlock._modeOf(raw['mode'], MetricMode.values),
+      format: DashboardBlock._modeOf(raw['format'], DurationFormat.values),
+      min: hasRange ? rawMin : null,
+      max: hasRange ? rawMax : null,
     );
   }
 
   @override
   bool operator ==(Object other) =>
-      other is MetricBlock && other.metric == metric && other.mode == mode;
+      other is MetricBlock &&
+      other.metric == metric &&
+      other.mode == mode &&
+      other.format == format &&
+      other.min == min &&
+      other.max == max;
 
   @override
-  int get hashCode => Object.hash(metric, mode);
+  int get hashCode => Object.hash(metric, mode, format, min, max);
 }
+
+double? _toDouble(Object? raw) => raw is num ? raw.toDouble() : null;
 
 enum MetricMode with BlockMode {
   /// Le chiffre plein cadre : ce qu'on lit à 30 km/h sans quitter la route des
@@ -126,6 +163,22 @@ enum MetricMode with BlockMode {
   zone('zone');
 
   const MetricMode(this.key);
+
+  @override
+  final String key;
+}
+
+/// Comment une mesure de durée écrit ses secondes. `hm` en tête : c'est le
+/// format d'avant ce réglage, donc celui sur lequel un document sans cette clé
+/// retombe.
+enum DurationFormat with BlockMode {
+  /// `04:12` — la seconde n'est pas écrite.
+  hm('hm'),
+
+  /// `04:12:07` — la seconde compte.
+  hms('hms');
+
+  const DurationFormat(this.key);
 
   @override
   final String key;
