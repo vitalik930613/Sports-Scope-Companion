@@ -301,7 +301,14 @@ class GridPosition {
 /// `MetricLayout`/`layoutRows` (`companionSettings.ts`).
 @immutable
 class MetricLayout {
-  const MetricLayout({this.icon, this.label, this.unit, required this.value, this.gaugeRow});
+  const MetricLayout({
+    this.icon,
+    this.label,
+    this.unit,
+    required this.value,
+    this.gaugeRow,
+    this.rowHeights = const {},
+  });
 
   final GridPosition? icon;
   final GridPosition? label;
@@ -312,6 +319,12 @@ class MetricLayout {
   /// (zones du cycliste, plage réglée, plage dynamique) se décide au rendu
   /// (`MetricView`), pas ici — voir [MetricBlock.min]/[MetricBlock.max].
   final int? gaugeRow;
+
+  /// Le poids de chaque rangée dans le partage de la hauteur réelle de la
+  /// case — voir [RowHeight]. Une rangée absente vaut [RowHeight.normal].
+  final Map<int, RowHeight> rowHeights;
+
+  RowHeight heightOf(int row) => rowHeights[row] ?? RowHeight.normal;
 
   /// Au-delà, une case ne serait plus lisible d'un coup d'œil en roulant —
   /// même borne que `CompanionSettings::MAX_LAYOUT_ROWS` côté site.
@@ -376,12 +389,26 @@ class MetricLayout {
     final value = positionFor('value') ??
         GridPosition(validGaugeRow == 0 ? 1 : 0, GridColumn.center);
 
+    final rowHeightsRaw = raw['row_heights'];
+    final rowHeights = <int, RowHeight>{};
+    if (rowHeightsRaw is Map) {
+      for (final entry in rowHeightsRaw.entries) {
+        final row = entry.key is String ? int.tryParse(entry.key as String) : null;
+        if (row == null || row < 0 || row >= maxRows) continue;
+        if (entry.value is! String) continue;
+
+        final height = RowHeight.fromKey(entry.value as String);
+        if (height != RowHeight.normal) rowHeights[row] = height;
+      }
+    }
+
     return MetricLayout(
       icon: positionFor('icon'),
       label: positionFor('label'),
       unit: positionFor('unit'),
       value: value,
       gaugeRow: validGaugeRow,
+      rowHeights: rowHeights,
     );
   }
 
@@ -392,10 +419,46 @@ class MetricLayout {
       other.label == label &&
       other.unit == unit &&
       other.value == value &&
-      other.gaugeRow == gaugeRow;
+      other.gaugeRow == gaugeRow &&
+      mapEquals(other.rowHeights, rowHeights);
 
   @override
-  int get hashCode => Object.hash(icon, label, unit, value, gaugeRow);
+  int get hashCode => Object.hash(
+        icon,
+        label,
+        unit,
+        value,
+        gaugeRow,
+        // Une somme ou-exclusif plutôt que `Object.hashAll` : l'ordre des
+        // entrées d'une `Map` n'a pas de sens à faire entrer dans le hash de
+        // deux dispositions par ailleurs égales.
+        rowHeights.entries.fold<int>(0, (acc, e) => acc ^ Object.hash(e.key, e.value)),
+      );
+}
+
+/// Le poids d'une rangée dans le partage de la hauteur réelle de la case —
+/// voir `CompanionSettings::ROW_HEIGHTS` côté site. [normal] n'a pas de clé
+/// JSON : c'est la valeur par défaut d'une rangée absente de
+/// [MetricLayout.rowHeights], jamais écrite pour rester silencieuse.
+enum RowHeight {
+  small('small', 1),
+  normal(null, 2),
+  large('large', 4);
+
+  const RowHeight(this.key, this.weight);
+
+  final String? key;
+
+  /// Le facteur `Expanded.flex` d'une rangée de texte/chiffre — même rapport
+  /// que `ROW_HEIGHT_WEIGHT` côté site (1 / 2 / 4), pour qu'une rangée
+  /// « grande » prenne le même quadruple de place sur le téléphone et sur le
+  /// site. Sans effet sur une rangée de jauge, qui garde toujours sa hauteur
+  /// naturelle.
+  final int weight;
+
+  /// [normal] pour toute clé absente ou inconnue — même repli qu'un mode
+  /// inconnu ailleurs dans ce fichier.
+  static RowHeight fromKey(String? raw) => values.firstWhere((h) => h.key == raw, orElse: () => normal);
 }
 
 /// Les cinq anciens `mode` d'un bloc `metric` — plus lus qu'une seule fois,

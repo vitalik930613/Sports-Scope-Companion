@@ -122,23 +122,46 @@ class MetricView extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, outerConstraints) {
         final width = _measuredWidth(outerConstraints);
+        final height = _measuredHeight(outerConstraints);
+
+        // Une case en grille a une hauteur réelle à remplir (`height` non
+        // nul) : la première rangée posée doit toucher le vrai haut de la
+        // case, pas seulement le haut d'un bloc de contenu ensuite recentré
+        // par [ScaleToFit] — et la dernière ne doit pas laisser de place
+        // morte en dessous d'elle. Chaque rangée de texte/chiffre reçoit donc
+        // une part de la hauteur réelle proportionnelle à son poids
+        // (`Expanded.flex`, voir [RowHeight]), son contenu centré dedans à sa
+        // taille naturelle ; une rangée de jauge, elle, garde toujours sa
+        // hauteur naturelle (une barre plus haute n'apporte rien). Sans
+        // hauteur réelle (une page qui défile) : repli sur la hauteur
+        // naturelle du contenu, comme avant ce chantier.
+        final children = [
+          for (var i = 0; i < rows.length; i++) ...[
+            if (i > 0) SizedBox(height: BlockMetrics.natural.gap),
+            if (layout.gaugeRow == rows[i])
+              _gaugeRow(reading)
+            else if (height != null)
+              Expanded(
+                flex: layout.heightOf(rows[i]).weight,
+                child: Center(child: _gridRow(rows[i], reading, ink, valueSize)),
+              )
+            else
+              _gridRow(rows[i], reading, ink, valueSize),
+          ],
+        ];
+
+        final column = Column(
+          mainAxisSize: height == null ? MainAxisSize.min : MainAxisSize.max,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: children,
+        );
 
         return BlockSurface(
           background: background,
           child: SizedBox(
             width: width,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (var i = 0; i < rows.length; i++) ...[
-                  if (i > 0) SizedBox(height: BlockMetrics.natural.gap),
-                  layout.gaugeRow == rows[i]
-                      ? _gaugeRow(reading)
-                      : _gridRow(rows[i], reading, ink, valueSize),
-                ],
-              ],
-            ),
+            height: height,
+            child: column,
           ),
         );
       },
@@ -154,47 +177,66 @@ class MetricView extends StatelessWidget {
   /// ordre fixe — icône, étiquette, unité, chiffre — qu'on les ait posés dans
   /// cet ordre ou non.
   Widget _gridRow(int row, MetricReading reading, Color ink, double valueSize) {
-    final cells = {
-      GridColumn.left: <Widget>[],
-      GridColumn.center: <Widget>[],
-      GridColumn.right: <Widget>[],
-    };
-
-    void place(GridPosition? pos, Widget Function() build) {
-      if (pos == null || pos.row != row) return;
-      cells[pos.column]!.add(build());
-    }
-
-    place(layout.icon, () => _iconWidget(ink));
-    place(layout.label, () => _labelWidget(ink));
+    Widget? iconAt(GridColumn c) =>
+        (layout.icon?.row == row && layout.icon?.column == c) ? _iconWidget(ink) : null;
+    Widget? labelAt(GridColumn c) =>
+        (layout.label?.row == row && layout.label?.column == c) ? _labelWidget(ink) : null;
     // Un jeton `unit` sur une mesure dont l'unité est vide (durée, braquet…)
     // ne dessine simplement rien, comme la jauge sur une mesure non
     // éligible — pas une clé mal réglée à corriger, juste rien à y mettre.
-    if (metric.unit.isNotEmpty) place(layout.unit, () => _unitWidget(ink));
-    place(layout.value, () => _value(reading, ink, size: valueSize));
+    Widget? unitAt(GridColumn c) =>
+        (metric.unit.isNotEmpty && layout.unit?.row == row && layout.unit?.column == c)
+            ? _unitWidget(ink)
+            : null;
+    Widget? valueAt(GridColumn c) =>
+        (layout.value.row == row && layout.value.column == c) ? _value(reading, ink, size: valueSize) : null;
 
-    Widget columnFor(GridColumn column, AlignmentGeometry alignment) {
-      final widgets = cells[column]!;
-      if (widgets.isEmpty) return const SizedBox.shrink();
-      return Align(
-        alignment: alignment,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var i = 0; i < widgets.length; i++) ...[
-              if (i > 0) SizedBox(width: BlockMetrics.natural.gap / 2),
-              widgets[i],
-            ],
-          ],
-        ),
-      );
+    bool isEmpty(GridColumn c) =>
+        iconAt(c) == null && labelAt(c) == null && unitAt(c) == null && valueAt(c) == null;
+
+    // L'icône garde toujours sa taille — la rogner la rendrait illisible. Le
+    // texte, lui, peut céder la place (`Flexible` + ellipse sur les `Text`
+    // eux-mêmes) si sa case ne suffit pas, plutôt que de déborder.
+    Widget columnContent(GridColumn c) {
+      final parts = <Widget>[];
+      void addFixed(Widget? w) {
+        if (w == null) return;
+        if (parts.isNotEmpty) parts.add(SizedBox(width: BlockMetrics.natural.gap / 2));
+        parts.add(w);
+      }
+
+      void addFlexible(Widget? w) {
+        if (w == null) return;
+        if (parts.isNotEmpty) parts.add(SizedBox(width: BlockMetrics.natural.gap / 2));
+        parts.add(Flexible(child: w));
+      }
+
+      addFixed(iconAt(c));
+      addFlexible(labelAt(c));
+      addFlexible(unitAt(c));
+      addFlexible(valueAt(c));
+
+      return Row(mainAxisSize: MainAxisSize.min, children: parts);
+    }
+
+    // Une colonne vide ne participe pas au partage de largeur — pas même une
+    // part égale : c'est ce qui fait qu'une seule colonne occupée récupère
+    // toute la largeur de la rangée plutôt qu'un tiers fixe. Occupée, elle
+    // partage ce qui reste avec les autres colonnes occupées de cette même
+    // rangée — jamais de débordement, même les trois chargées à la fois — le
+    // centre gardant deux fois leur poids : c'est presque toujours lui qui
+    // porte le chiffre, la colonne qui doit rester la plus grande quand
+    // plusieurs se disputent la rangée.
+    Widget slot(GridColumn c, AlignmentGeometry alignment, int flex) {
+      if (isEmpty(c)) return const SizedBox.shrink();
+      return Flexible(flex: flex, child: Align(alignment: alignment, child: columnContent(c)));
     }
 
     return Row(
       children: [
-        Expanded(child: columnFor(GridColumn.left, Alignment.centerLeft)),
-        Expanded(child: columnFor(GridColumn.center, Alignment.center)),
-        Expanded(child: columnFor(GridColumn.right, Alignment.centerRight)),
+        slot(GridColumn.left, Alignment.centerLeft, 1),
+        slot(GridColumn.center, Alignment.center, 2),
+        slot(GridColumn.right, Alignment.centerRight, 1),
       ],
     );
   }
@@ -378,6 +420,15 @@ class MetricView extends StatelessWidget {
   double _measuredWidth(BoxConstraints constraints) => constraints.hasBoundedWidth
       ? constraints.maxWidth - BlockMetrics.natural.padding * 2
       : _naturalWidth;
+
+  /// La hauteur réelle de la case, même rattrapage que [_measuredWidth] et
+  /// pour la même raison : sans lui, le contenu (souvent plus bas qu'une case
+  /// haute) se retrouverait recentré par [FittedBox] au lieu de remplir la
+  /// case du haut vers le bas comme composé. `null` sans hauteur réelle (une
+  /// page qui défile) — [_paint] retombe alors sur la hauteur naturelle du
+  /// contenu, il n'y a rien à remplir.
+  double? _measuredHeight(BoxConstraints constraints) =>
+      constraints.hasBoundedHeight ? constraints.maxHeight - BlockMetrics.natural.padding * 2 : null;
 
   /// Le chiffre, à sa taille naturelle.
   ///

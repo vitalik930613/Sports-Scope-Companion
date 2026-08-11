@@ -31,7 +31,10 @@ enum MetricId {
   duration('duration', 'Durée', '', Icons.timer_outlined),
   movingTime('moving_time', 'Temps en mouvement', '', Icons.directions_bike),
   pauseTime('pause_time', 'Durée pause', '', Icons.pause_circle_outline),
-  distance('distance', 'Distance', 'km', Icons.straighten),
+  // Vide et non « km » : `read()` écrit déjà l'unité dans la valeur elle-même
+  // (`formatDistanceKm`, « 4,20 km ») — un jeton `unit` séparé la redirait en
+  // double plutôt que de la compléter.
+  distance('distance', 'Distance', '', Icons.straighten),
   speed('speed', 'Vitesse', 'km/h', Icons.speed),
   speedAvg('speed_avg', 'Vitesse moyenne', 'km/h', Icons.speed),
   speedMax('speed_max', 'Vitesse max', 'km/h', Icons.speed),
@@ -47,7 +50,8 @@ enum MetricId {
   cadence('cadence', 'Cadence', 'tr/min', Icons.autorenew),
   cadenceAvg('cadence_avg', 'Cadence moyenne', 'tr/min', Icons.autorenew),
   cadenceMax('cadence_max', 'Cadence max', 'tr/min', Icons.autorenew),
-  ascent('ascent', 'Dénivelé positif', 'm', Icons.trending_up),
+  // Vide, même raison que [distance] : `read()` écrit déjà « 640 m ».
+  ascent('ascent', 'Dénivelé positif', '', Icons.trending_up),
   altitude('altitude', 'Altitude', 'm', Icons.terrain),
   grade('grade', 'Pente', '%', Icons.north_east),
   gradeAvg('grade_avg', 'Pente moyenne', '%', Icons.north_east),
@@ -59,8 +63,10 @@ enum MetricId {
   chainringPosition('chainring_position', 'Plateau', '', Icons.donut_large),
   sprocketPosition('sprocket_position', 'Pignon', '', Icons.album),
   gearRatio('gear_ratio', 'Rapport', '', Icons.compare_arrows),
-  routeRemaining('route_remaining', 'Distance restante', 'km', Icons.flag_outlined),
-  routeRemainingGain('route_remaining_gain', 'D+ restant', 'm', Icons.trending_up),
+  // Vides, même raison que [distance]/[ascent] : `read()` écrit déjà l'unité
+  // dans la valeur (`formatDistanceKm`, « ${…} m »).
+  routeRemaining('route_remaining', 'Distance restante', '', Icons.flag_outlined),
+  routeRemainingGain('route_remaining_gain', 'D+ restant', '', Icons.trending_up),
   routeEta('route_eta', 'Temps restant', '', Icons.schedule);
 
   const MetricId(this.key, this.name, this.unit, this.icon);
@@ -267,7 +273,7 @@ enum MetricId {
       // Moyenne en roulant, pas la moyenne des échantillons bruts : sans ça,
       // un feu rouge dilue la case pendant que la sortie continue.
       MetricId.speedAvg => MetricReading(
-          _kmhUnit(_movingAvgSpeedMps(stats)),
+          _kmh(_movingAvgSpeedMps(stats)),
           numericValue: _kmhValue(_movingAvgSpeedMps(stats)),
         ),
       MetricId.speedMax => MetricReading(
@@ -539,14 +545,6 @@ enum MetricId {
   static String? _kmh(double? metresPerSecond) {
     final value = _kmhValue(metresPerSecond);
     return value == null ? null : _decimal(value);
-  }
-
-  /// La vitesse moyenne porte son unité sur le chiffre lui-même : sa case
-  /// affiche un titre (« Vitesse moyenne ») là où les autres cases de vitesse
-  /// gardent l'unité en dessous.
-  static String? _kmhUnit(double? metresPerSecond) {
-    final value = _kmh(metresPerSecond);
-    return value == null ? null : '$value km/h';
   }
 
   static String _decimal(double value) =>
