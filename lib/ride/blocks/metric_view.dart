@@ -177,19 +177,26 @@ class MetricView extends StatelessWidget {
   /// ordre fixe — icône, étiquette, unité, chiffre — qu'on les ait posés dans
   /// cet ordre ou non.
   Widget _gridRow(int row, MetricReading reading, Color ink, double valueSize) {
+    // Le facteur d'échelle de cette rangée ([RowHeight.scale]) : une rangée
+    // ne reçoit plus de place ([slot], plus bas) que si son contenu grandit
+    // d'autant, sinon elle déborderait sur sa voisine plutôt que de s'y
+    // ajuster — voir la doc de [RowHeight].
+    final scale = layout.heightOf(row).scale;
+
     Widget? iconAt(GridColumn c) =>
-        (layout.icon?.row == row && layout.icon?.column == c) ? _iconWidget(ink) : null;
+        (layout.icon?.row == row && layout.icon?.column == c) ? _iconWidget(ink, scale) : null;
     Widget? labelAt(GridColumn c) =>
-        (layout.label?.row == row && layout.label?.column == c) ? _labelWidget(ink) : null;
+        (layout.label?.row == row && layout.label?.column == c) ? _labelWidget(ink, scale) : null;
     // Un jeton `unit` sur une mesure dont l'unité est vide (durée, braquet…)
     // ne dessine simplement rien, comme la jauge sur une mesure non
     // éligible — pas une clé mal réglée à corriger, juste rien à y mettre.
     Widget? unitAt(GridColumn c) =>
         (metric.unit.isNotEmpty && layout.unit?.row == row && layout.unit?.column == c)
-            ? _unitWidget(ink)
+            ? _unitWidget(ink, scale)
             : null;
-    Widget? valueAt(GridColumn c) =>
-        (layout.value.row == row && layout.value.column == c) ? _value(reading, ink, size: valueSize) : null;
+    Widget? valueAt(GridColumn c) => (layout.value.row == row && layout.value.column == c)
+        ? _value(reading, ink, size: valueSize * scale)
+        : null;
 
     bool isEmpty(GridColumn c) =>
         iconAt(c) == null && labelAt(c) == null && unitAt(c) == null && valueAt(c) == null;
@@ -241,9 +248,9 @@ class MetricView extends StatelessWidget {
     );
   }
 
-  Widget _iconWidget(Color ink) {
+  Widget _iconWidget(Color ink, double scale) {
     final custom = icon;
-    final size = BlockMetrics.natural.iconSize;
+    final size = BlockMetrics.natural.iconSize * scale;
     final tint = ink.withValues(alpha: 0.7);
     // FontAwesome n'est pas dessinable par [Icon] — [FaIcon] seul évite le
     // rognage/désalignement des glyphes non carrés (voir la doc de
@@ -252,24 +259,24 @@ class MetricView extends StatelessWidget {
     return custom != null ? FaIcon(custom, size: size, color: tint) : Icon(metric.icon, size: size, color: tint);
   }
 
-  Widget _labelWidget(Color ink) => Text(
+  Widget _labelWidget(Color ink, double scale) => Text(
         metric.name.toUpperCase(),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
           color: ink.withValues(alpha: 0.85),
-          fontSize: BlockMetrics.natural.titleSize + 2,
+          fontSize: (BlockMetrics.natural.titleSize + 2) * scale,
           fontWeight: FontWeight.w700,
         ),
       );
 
-  Widget _unitWidget(Color ink) => Text(
+  Widget _unitWidget(Color ink, double scale) => Text(
         metric.unit.toUpperCase(),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
           color: ink.withValues(alpha: 0.6),
-          fontSize: BlockMetrics.natural.unitSize,
+          fontSize: BlockMetrics.natural.unitSize * scale,
         ),
       );
 

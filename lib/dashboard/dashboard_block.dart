@@ -436,25 +436,39 @@ class MetricLayout {
       );
 }
 
-/// Le poids d'une rangée dans le partage de la hauteur réelle de la case —
-/// voir `CompanionSettings::ROW_HEIGHTS` côté site. [normal] n'a pas de clé
-/// JSON : c'est la valeur par défaut d'une rangée absente de
-/// [MetricLayout.rowHeights], jamais écrite pour rester silencieuse.
+/// Le poids d'une rangée dans le partage de la hauteur réelle de la case, et
+/// le facteur d'échelle de son contenu — voir `CompanionSettings::
+/// ROW_HEIGHTS` côté site. [normal] n'a pas de clé JSON : c'est la valeur par
+/// défaut d'une rangée absente de [MetricLayout.rowHeights], jamais écrite
+/// pour rester silencieuse.
+///
+/// **Les deux avancent ensemble**, et c'est ce qui compte ici : une rangée ne
+/// reçoit plus de place que si son contenu (icône, texte, chiffre) grandit
+/// d'autant — sinon une rangée « petite » à côté d'une « grande » se
+/// retrouverait avec un contenu à sa taille habituelle dans une case bien
+/// plus étroite que ce qu'il lui faut, et déborderait sur sa voisine plutôt
+/// que de s'y ajuster ([Center] ne rogne rien).
 enum RowHeight {
-  small('small', 1),
-  normal(null, 2),
-  large('large', 4);
+  small('small', 2, 0.5),
+  normal(null, 4, 1),
+  large('large', 8, 2);
 
-  const RowHeight(this.key, this.weight);
+  const RowHeight(this.key, this.weight, this.scale);
 
   final String? key;
 
   /// Le facteur `Expanded.flex` d'une rangée de texte/chiffre — même rapport
-  /// que `ROW_HEIGHT_WEIGHT` côté site (1 / 2 / 4), pour qu'une rangée
-  /// « grande » prenne le même quadruple de place sur le téléphone et sur le
-  /// site. Sans effet sur une rangée de jauge, qui garde toujours sa hauteur
-  /// naturelle.
+  /// que `ROW_HEIGHT_WEIGHT` côté site, et dans les mêmes proportions que
+  /// [scale] (2 / 4 / 8, soit 0,5 / 1 / 2 fois la normale — de « petite » à
+  /// « grande », le contenu quadruple). Sans effet sur une rangée de jauge,
+  /// qui garde toujours sa hauteur naturelle.
   final int weight;
+
+  /// Le facteur de taille de l'icône, de l'étiquette, de l'unité et du
+  /// chiffre de cette rangée — même rapport que `ROW_HEIGHT_SCALE` côté
+  /// site. C'est lui qui rend la rangée « plus en évidence », pas seulement
+  /// la case qui la contient.
+  final double scale;
 
   /// [normal] pour toute clé absente ou inconnue — même repli qu'un mode
   /// inconnu ailleurs dans ce fichier.
