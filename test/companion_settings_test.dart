@@ -338,7 +338,7 @@ void main() {
       });
 
       expect(block, const MetricBlock(metric: MetricId.power));
-      expect((block! as MetricBlock).mode, MetricMode.big);
+      expect((block! as MetricBlock).layout, MetricLayout.fallback);
     });
 
     test('la jauge radar se pose depuis la clé du site', () {

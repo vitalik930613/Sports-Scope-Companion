@@ -188,9 +188,33 @@ void main() {
         NavStateBlock(),
         TrainingBudgetBlock(),
         TrainingBudgetBlock(mode: TrainingBudgetMode.week),
-        MetricBlock(metric: MetricId.duration, mode: MetricMode.gauge),
-        MetricBlock(metric: MetricId.power, mode: MetricMode.gauge),
-        MetricBlock(metric: MetricId.heartRate, mode: MetricMode.compact),
+        // Mêmes dispositions que les anciens modes `gauge`/`compact` (voir
+        // `MetricLayout.forLegacyMode`), inlinées : un appel de fonction
+        // statique n'est pas une expression `const`.
+        MetricBlock(
+          metric: MetricId.duration,
+          layout: MetricLayout(
+            value: GridPosition(0, GridColumn.center),
+            gaugeRow: 1,
+            unit: GridPosition(2, GridColumn.center),
+          ),
+        ),
+        MetricBlock(
+          metric: MetricId.power,
+          layout: MetricLayout(
+            value: GridPosition(0, GridColumn.center),
+            gaugeRow: 1,
+            unit: GridPosition(2, GridColumn.center),
+          ),
+        ),
+        MetricBlock(
+          metric: MetricId.heartRate,
+          layout: MetricLayout(
+            icon: GridPosition(0, GridColumn.center),
+            value: GridPosition(1, GridColumn.center),
+            unit: GridPosition(2, GridColumn.center),
+          ),
+        ),
         MetricBlock(metric: MetricId.speed),
       ];
 

@@ -28,50 +28,57 @@ import 'dashboard_block.dart' show DurationFormat;
 /// ses dépendances dans [dependencies]. Le site pourra s'en servir dès qu'il
 /// connaîtra la clé ; l'appli plus ancienne, elle, l'ignorera sans broncher.
 enum MetricId {
-  duration('duration', 'durée', Icons.timer_outlined),
-  movingTime('moving_time', 'Durée en mouvement', Icons.directions_bike),
-  pauseTime('pause_time', 'Durée pause', Icons.pause_circle_outline),
-  distance('distance', 'distance', Icons.straighten),
-  speed('speed', 'km/h', Icons.speed),
-  speedAvg('speed_avg', 'Vitesse moyenne', Icons.speed),
-  speedMax('speed_max', 'km/h max', Icons.speed),
-  heartRate('heart_rate', 'bpm', Icons.favorite),
-  hrZone('hr_zone', 'zone bpm', Icons.favorite),
-  hrAvg('hr_avg', 'bpm moy', Icons.favorite_border),
-  hrMax('hr_max', 'bpm max', Icons.favorite_border),
-  power('power', 'W', Icons.bolt),
-  powerZone('power_zone', 'zone W', Icons.bolt),
-  powerAvg('power_avg', 'W moy', Icons.bolt),
-  powerNormalized('power_np', 'W NP', Icons.bolt),
-  powerMax('power_max', 'W max', Icons.bolt),
-  cadence('cadence', 'tr/min', Icons.autorenew),
-  cadenceAvg('cadence_avg', 'tr/min moy', Icons.autorenew),
-  cadenceMax('cadence_max', 'tr/min max', Icons.autorenew),
-  ascent('ascent', 'D+', Icons.trending_up),
-  altitude('altitude', 'm', Icons.terrain),
-  grade('grade', '% pente', Icons.north_east),
-  gradeAvg('grade_avg', '% pente moy', Icons.north_east),
-  gradeMax('grade_max', '% pente max', Icons.north_east),
-  calories('calories', 'kcal', Icons.local_fire_department),
-  caloriesPerHour('calories_per_hour', 'kcal/h', Icons.local_fire_department),
-  tss('tss', 'TSS', Icons.bar_chart),
-  gears('gears', 'braquet', Icons.settings),
-  chainringPosition('chainring_position', 'plateau', Icons.donut_large),
-  sprocketPosition('sprocket_position', 'pignon', Icons.album),
-  gearRatio('gear_ratio', 'rapport', Icons.compare_arrows),
-  routeRemaining('route_remaining', 'Distance restante', Icons.flag_outlined),
-  routeRemainingGain('route_remaining_gain', 'D+ restant', Icons.trending_up),
-  routeEta('route_eta', 'Durée restante', Icons.schedule);
+  duration('duration', 'Durée', '', Icons.timer_outlined),
+  movingTime('moving_time', 'Temps en mouvement', '', Icons.directions_bike),
+  pauseTime('pause_time', 'Durée pause', '', Icons.pause_circle_outline),
+  distance('distance', 'Distance', 'km', Icons.straighten),
+  speed('speed', 'Vitesse', 'km/h', Icons.speed),
+  speedAvg('speed_avg', 'Vitesse moyenne', 'km/h', Icons.speed),
+  speedMax('speed_max', 'Vitesse max', 'km/h', Icons.speed),
+  heartRate('heart_rate', 'Cardio', 'bpm', Icons.favorite),
+  hrZone('hr_zone', 'Zone cardio', 'bpm', Icons.favorite),
+  hrAvg('hr_avg', 'Cardio moyen', 'bpm', Icons.favorite_border),
+  hrMax('hr_max', 'Cardio max', 'bpm', Icons.favorite_border),
+  power('power', 'Puissance', 'W', Icons.bolt),
+  powerZone('power_zone', 'Zone de puissance', 'W', Icons.bolt),
+  powerAvg('power_avg', 'Puissance moyenne', 'W', Icons.bolt),
+  powerNormalized('power_np', 'Puissance normalisée', 'W', Icons.bolt),
+  powerMax('power_max', 'Puissance max', 'W', Icons.bolt),
+  cadence('cadence', 'Cadence', 'tr/min', Icons.autorenew),
+  cadenceAvg('cadence_avg', 'Cadence moyenne', 'tr/min', Icons.autorenew),
+  cadenceMax('cadence_max', 'Cadence max', 'tr/min', Icons.autorenew),
+  ascent('ascent', 'Dénivelé positif', 'm', Icons.trending_up),
+  altitude('altitude', 'Altitude', 'm', Icons.terrain),
+  grade('grade', 'Pente', '%', Icons.north_east),
+  gradeAvg('grade_avg', 'Pente moyenne', '%', Icons.north_east),
+  gradeMax('grade_max', 'Pente max', '%', Icons.north_east),
+  calories('calories', 'Calories', 'kcal', Icons.local_fire_department),
+  caloriesPerHour('calories_per_hour', 'Calories par heure', 'kcal/h', Icons.local_fire_department),
+  tss('tss', 'TSS', 'TSS', Icons.bar_chart),
+  gears('gears', 'Braquet', '', Icons.settings),
+  chainringPosition('chainring_position', 'Plateau', '', Icons.donut_large),
+  sprocketPosition('sprocket_position', 'Pignon', '', Icons.album),
+  gearRatio('gear_ratio', 'Rapport', '', Icons.compare_arrows),
+  routeRemaining('route_remaining', 'Distance restante', 'km', Icons.flag_outlined),
+  routeRemainingGain('route_remaining_gain', 'D+ restant', 'm', Icons.trending_up),
+  routeEta('route_eta', 'Temps restant', '', Icons.schedule);
 
-  const MetricId(this.key, this.unit, this.icon);
+  const MetricId(this.key, this.name, this.unit, this.icon);
 
-  /// La clé du contrat JSON. Écrite à la main plutôt que dérivée de [name] :
+  /// La clé du contrat JSON. Écrite à la main plutôt que dérivée du nom Dart :
   /// renommer une valeur Dart ne doit pas casser les documents déjà servis par
   /// le site.
   final String key;
 
-  /// Ce qui s'écrit sous le chiffre. Court à dessein — c'est une case de
-  /// bandeau, pas une légende.
+  /// Le nom de la mesure, ex. « Cardio » — l'étiquette d'un bloc `metric` qui
+  /// en pose une (voir [DashboardBlock]/`MetricLayoutToken.label`). Distinct
+  /// d'[unit] depuis la disposition libre du tableau de bord : avant, un seul
+  /// champ faisait les deux, tantôt un nom tantôt une unité selon la mesure.
+  final String name;
+
+  /// L'unité physique, ex. « bpm » — vide pour les mesures qui n'en ont pas
+  /// (une durée, une position de plateau…). Ce qui s'écrit sous le chiffre
+  /// (`MetricView`) ou à côté du nom, selon la disposition composée.
   final String unit;
 
   final IconData icon;

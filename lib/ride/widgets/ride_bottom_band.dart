@@ -134,7 +134,9 @@ class _RideBottomBandState extends State<RideBottomBand> {
         final reading = metric.read(widget.sources);
         return _BandMetric(
           value: reading.value,
-          label: metric.unit,
+          // Le nom de la mesure, pas son unité : dans une case sans icône,
+          // c'est ce qui dit laquelle on regarde (« Cardio », pas « bpm »).
+          label: metric.name,
           zoneKey: reading.zoneKey,
           background: reading.background,
           altBackground: _alternateBackgrounds[index % 2],

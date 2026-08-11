@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart' show Color;
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
+import 'companion_icons.dart';
 import 'metric_id.dart';
 
 /// Ce qu'on peut poser dans une page du tableau de bord, et **comment ça se
@@ -155,8 +157,9 @@ abstract mixin class BlockMode {
 class MetricBlock extends DashboardBlock {
   const MetricBlock({
     required this.metric,
-    this.mode = MetricMode.big,
+    this.layout = MetricLayout.fallback,
     this.format = DurationFormat.hm,
+    this.icon,
     this.min,
     this.max,
     super.color,
@@ -164,18 +167,31 @@ class MetricBlock extends DashboardBlock {
   });
 
   final MetricId metric;
-  final MetricMode mode;
+
+  /// Où se pose chaque élément (icône, étiquette, unité, chiffre, jauge) —
+  /// voir [MetricLayout]. Remplace les cinq anciens `mode` (`big`, `compact`,
+  /// `zone`, `gauge`, `dynamic_gauge`), qui n'existent plus que comme repli
+  /// de migration (voir [parse]).
+  final MetricLayout layout;
 
   /// N'a d'effet que sur une mesure de durée ([MetricId.duration],
   /// [MetricId.movingTime], [MetricId.pauseTime], [MetricId.routeEta]) —
-  /// présent sur toute mesure comme [mode], mais silencieusement ignoré des
+  /// présent sur toute mesure comme [layout], mais silencieusement ignoré des
   /// autres, plutôt qu'un champ optionnel de plus à défaire au rendu.
   final DurationFormat format;
 
-  /// Bornes de la jauge à plage libre ([MetricMode.gauge] sur une mesure sans
-  /// zones d'entraînement), réglées dans l'éditeur. `null` sur un document
-  /// plus ancien ou sans ce réglage : [MetricView] retombe alors sur le
-  /// chiffre plein cadre, comme avant que ce mode existe pour ces mesures.
+  /// L'icône personnalisée réglée dans l'éditeur, propre à ce bloc — `null` :
+  /// [MetricId.icon] fait foi. N'a d'effet que si [layout] pose un jeton
+  /// `icon` quelque part ; sinon réglée pour rien, comme un `min`/`max` sans
+  /// jauge.
+  final FaIconData? icon;
+
+  /// Bornes de la jauge à plage libre (une rangée de [layout] réglée sur
+  /// `gauge`, mesure sans zones d'entraînement), réglées dans l'éditeur.
+  /// `null` sur un document plus ancien, sans ce réglage, ou pour une jauge
+  /// dynamique (sa plage se lit dans la sortie en cours, pas ici) :
+  /// [MetricView] retombe alors sur la plage dynamique si la mesure en a une,
+  /// sur l'absence de jauge sinon — jamais sur une plage inventée.
   final double? min;
   final double? max;
 
@@ -192,10 +208,19 @@ class MetricBlock extends DashboardBlock {
     final rawMax = _toDouble(raw['max']);
     final hasRange = rawMin != null && rawMax != null && rawMin < rawMax;
 
+    // Migration : un document enregistré avant ce chantier, et jamais rouvert
+    // dans l'éditeur depuis, n'a que `mode` — jamais `layout`. Même table que
+    // `CompanionSettings::LEGACY_LAYOUTS` côté site, pour qu'il continue de
+    // s'afficher exactement comme avant, sans qu'on ait à le retoucher.
+    final layout = raw['layout'] == null
+        ? MetricLayout.forLegacyMode(DashboardBlock._modeOf(raw['mode'], MetricMode.values))
+        : MetricLayout.parse(raw['layout']);
+
     return MetricBlock(
       metric: metric,
-      mode: DashboardBlock._modeOf(raw['mode'], MetricMode.values),
+      layout: layout,
       format: DashboardBlock._modeOf(raw['format'], DurationFormat.values),
+      icon: companionIconFor(raw['icon'] is String ? raw['icon'] as String : null),
       min: hasRange ? rawMin : null,
       max: hasRange ? rawMax : null,
       color: DashboardBlock._colorOf(raw, 'color'),
@@ -207,8 +232,9 @@ class MetricBlock extends DashboardBlock {
   bool operator ==(Object other) =>
       other is MetricBlock &&
       other.metric == metric &&
-      other.mode == mode &&
+      other.layout == layout &&
       other.format == format &&
+      other.icon == icon &&
       other.min == min &&
       other.max == max &&
       other.color == color &&
@@ -216,11 +242,166 @@ class MetricBlock extends DashboardBlock {
 
   @override
   int get hashCode =>
-      Object.hash(metric, mode, format, min, max, color, textColor);
+      Object.hash(metric, layout, format, icon, min, max, color, textColor);
 }
 
 double? _toDouble(Object? raw) => raw is num ? raw.toDouble() : null;
 
+/// Où se pose un élément d'un bloc `metric` : une rangée (`0`–[MetricLayout.maxRows]
+/// exclu) et une colonne. Même contrat que les positions `"<rangée>-<colonne>"`
+/// du document JSON (`CompanionSettings::LAYOUT_COLUMNS` côté site).
+enum GridColumn { left, center, right }
+
+@immutable
+class GridPosition {
+  const GridPosition(this.row, this.column);
+
+  final int row;
+  final GridColumn column;
+
+  /// `null` si [raw] n'est pas une position valide — une rangée hors bornes,
+  /// une colonne inconnue, ou pas une chaîne du tout.
+  static GridPosition? parse(Object? raw) {
+    if (raw is! String) return null;
+
+    final parts = raw.split('-');
+    if (parts.length != 2) return null;
+
+    final row = int.tryParse(parts[0]);
+    if (row == null || row < 0 || row >= MetricLayout.maxRows) return null;
+
+    final column = switch (parts[1]) {
+      'left' => GridColumn.left,
+      'center' => GridColumn.center,
+      'right' => GridColumn.right,
+      _ => null,
+    };
+    if (column == null) return null;
+
+    return GridPosition(row, column);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is GridPosition && other.row == row && other.column == column;
+
+  @override
+  int get hashCode => Object.hash(row, column);
+}
+
+/// La disposition d'un bloc `metric` : une grille à 3 colonnes et jusqu'à
+/// [maxRows] rangées, où chaque élément se pose dans une case précise. Une
+/// clé absente = élément masqué ; [value] est la seule obligatoire. La jauge
+/// n'a pas de colonne — c'est une barre pleine largeur, pas un texte — donc
+/// seulement une rangée ([gaugeRow]).
+///
+/// Remplace les cinq anciens `mode` d'un bloc `metric` (voir [forLegacyMode]
+/// pour la migration d'un document plus ancien) — même contrat que
+/// `CompanionSettings::LAYOUT_*`/`sanitize_layout_positions` côté site et
+/// `MetricLayout`/`layoutRows` (`companionSettings.ts`).
+@immutable
+class MetricLayout {
+  const MetricLayout({this.icon, this.label, this.unit, required this.value, this.gaugeRow});
+
+  final GridPosition? icon;
+  final GridPosition? label;
+  final GridPosition? unit;
+  final GridPosition value;
+
+  /// La rangée occupée par la jauge, `null` si aucune n'est posée. Sa nature
+  /// (zones du cycliste, plage réglée, plage dynamique) se décide au rendu
+  /// (`MetricView`), pas ici — voir [MetricBlock.min]/[MetricBlock.max].
+  final int? gaugeRow;
+
+  /// Au-delà, une case ne serait plus lisible d'un coup d'œil en roulant —
+  /// même borne que `CompanionSettings::MAX_LAYOUT_ROWS` côté site.
+  static const maxRows = 4;
+
+  /// Le repli d'avant ce chantier : chiffre plein cadre, unité en dessous —
+  /// même valeur que `CompanionSettings::DEFAULT_METRIC_LAYOUT` (site) et
+  /// `DEFAULT_METRIC_LAYOUT` (`companionSettings.ts`).
+  static const fallback = MetricLayout(
+    value: GridPosition(0, GridColumn.center),
+    unit: GridPosition(1, GridColumn.center),
+  );
+
+  /// La disposition qu'un ancien `mode` dessinait — même table que
+  /// `CompanionSettings::LEGACY_LAYOUTS` côté site. Utilisée en lecture
+  /// seule, pour qu'un document enregistré avant ce chantier continue de
+  /// s'afficher comme avant.
+  static MetricLayout forLegacyMode(MetricMode mode) => switch (mode) {
+        MetricMode.big => fallback,
+        MetricMode.compact => const MetricLayout(
+            icon: GridPosition(0, GridColumn.center),
+            value: GridPosition(1, GridColumn.center),
+            unit: GridPosition(2, GridColumn.center),
+          ),
+        MetricMode.zone => const MetricLayout(
+            icon: GridPosition(0, GridColumn.center),
+            label: GridPosition(0, GridColumn.center),
+            value: GridPosition(1, GridColumn.center),
+          ),
+        MetricMode.gauge || MetricMode.dynamicGauge => const MetricLayout(
+            value: GridPosition(0, GridColumn.center),
+            gaugeRow: 1,
+            unit: GridPosition(2, GridColumn.center),
+          ),
+      };
+
+  /// Reconstruit une disposition depuis le document JSON — mêmes règles
+  /// qu'en Ruby (`sanitize_layout_positions`) : une position invalide masque
+  /// simplement son élément, la jauge évince ce qui partage sa rangée (dans
+  /// les deux sens : elle-même ignorée si un autre élément a été lu en
+  /// premier sur sa rangée n'a pas de sens ici puisqu'on lit tout d'un coup —
+  /// c'est donc elle qui gagne), le chiffre est toujours présent.
+  ///
+  /// Ne sait pas encore si la jauge a un sens pour la mesure choisie — c'est
+  /// [MetricBlock.parse] qui, comme `sanitize_block` côté site, la laisse
+  /// intacte : sa nature (zones, plage réglée, plage dynamique) se décide au
+  /// rendu, pas ici.
+  static MetricLayout parse(Object? raw) {
+    if (raw is! Map) return fallback;
+
+    final gaugeRaw = raw['gauge'];
+    final gaugeRow = gaugeRaw is String ? int.tryParse(gaugeRaw) : null;
+    final validGaugeRow =
+        gaugeRow != null && gaugeRow >= 0 && gaugeRow < maxRows ? gaugeRow : null;
+
+    GridPosition? positionFor(String key) {
+      final pos = GridPosition.parse(raw[key]);
+      if (pos == null) return null;
+      return (validGaugeRow != null && pos.row == validGaugeRow) ? null : pos;
+    }
+
+    final value = positionFor('value') ??
+        GridPosition(validGaugeRow == 0 ? 1 : 0, GridColumn.center);
+
+    return MetricLayout(
+      icon: positionFor('icon'),
+      label: positionFor('label'),
+      unit: positionFor('unit'),
+      value: value,
+      gaugeRow: validGaugeRow,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is MetricLayout &&
+      other.icon == icon &&
+      other.label == label &&
+      other.unit == unit &&
+      other.value == value &&
+      other.gaugeRow == gaugeRow;
+
+  @override
+  int get hashCode => Object.hash(icon, label, unit, value, gaugeRow);
+}
+
+/// Les cinq anciens `mode` d'un bloc `metric` — plus lus qu'une seule fois,
+/// pour migrer un document enregistré avant ce chantier ([MetricLayout.
+/// forLegacyMode]). [MetricBlock] ne porte plus de `mode` : sa disposition se
+/// compose librement ([MetricLayout]).
 enum MetricMode with BlockMode {
   /// Le chiffre plein cadre : ce qu'on lit à 30 km/h sans quitter la route des
   /// yeux. Mode par défaut, donc en tête.

@@ -204,8 +204,9 @@ class DashboardPage extends StatelessWidget {
         final MetricBlock metric => MetricView(
             metric: metric.metric,
             sources: sources,
-            mode: metric.mode,
+            layout: metric.layout,
             format: metric.format,
+            icon: metric.icon,
             min: metric.min,
             max: metric.max,
             color: metric.color,
