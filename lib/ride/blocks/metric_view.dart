@@ -200,100 +200,48 @@ class MetricView extends StatelessWidget {
     // ajuster — voir la doc de [RowHeight].
     final scale = layout.heightOf(row).scale;
 
-    // Dans une case en grille, chaque élément est mis à l'échelle sur la
-    // hauteur *réelle* de sa rangée ([rowHeight], posée par [Expanded.flex])
-    // plutôt que de rester centré à sa taille naturelle : sinon une case plus
-    // large que ce chantier de mesures se lit avec un vide au-dessus/en
-    // dessous de chaque élément, qui se voit comme un padding — en double
-    // emploi visuel avec [_rowGap] entre les rangées. `BoxFit.contain` grandit
-    // aussi bien qu'il réduit, contrairement au `scaleDown` intérieur des
-    // éléments eux-mêmes (icône, chiffre) — celui-ci garde son rôle de
-    // dernier recours contre une case trop étroite, indépendant de la hauteur
-    // de rangée. Sans hauteur réelle (page qui défile), rien ne change.
-    //
-    // [column] pilote l'alignement du `FittedBox` : sa boîte reçoit la part
-    // *entière* de la colonne ([Expanded], plus bas), presque toujours plus
-    // large que le contenu — c'est justement ce qui lui permet de grandir sur
-    // la hauteur sans être freiné par la largeur (voir `addFlexible`). Sans
-    // alignement posé sur la vraie position, `FittedBox` centre par défaut :
-    // deux éléments de colonnes différentes, chacun centré dans une boîte qui
-    // déborde largement sur la rangée, se superposent visuellement au milieu
-    // au lieu de tenir chacun leur coin — l'étiquette d'une case « gauche »
-    // se lisait à droite, l'unité d'une case « droite » retombait au centre.
-    Widget grow(Widget child, GridColumn column) => rowHeight == null
-        ? child
-        : SizedBox(
-            height: rowHeight,
-            child: FittedBox(fit: BoxFit.contain, alignment: _columnAlignment(column), child: child),
-          );
-
-    Widget? iconAt(GridColumn c) => (layout.icon?.row == row && layout.icon?.column == c)
-        ? grow(_iconWidget(ink, scale), c)
-        : null;
-    Widget? labelAt(GridColumn c) => (layout.label?.row == row && layout.label?.column == c)
-        ? grow(_labelWidget(ink, scale), c)
-        : null;
+    Widget? iconAt(GridColumn c) =>
+        (layout.icon?.row == row && layout.icon?.column == c) ? _iconWidget(ink, scale) : null;
+    Widget? labelAt(GridColumn c) =>
+        (layout.label?.row == row && layout.label?.column == c) ? _labelWidget(ink, scale) : null;
     // Un jeton `unit` sur une mesure dont l'unité est vide (durée, braquet…)
     // ne dessine simplement rien, comme la jauge sur une mesure non
     // éligible — pas une clé mal réglée à corriger, juste rien à y mettre.
     Widget? unitAt(GridColumn c) =>
         (metric.unit.isNotEmpty && layout.unit?.row == row && layout.unit?.column == c)
-            ? grow(_unitWidget(ink, scale), c)
+            ? _unitWidget(ink, scale)
             : null;
     Widget? valueAt(GridColumn c) => (layout.value.row == row && layout.value.column == c)
-        ? grow(
-            _value(
-              reading,
-              ink,
-              size: valueSize * scale,
-              naturalHeight: rowHeight == null ? _valueHeight : null,
-            ),
-            c,
+        ? _value(
+            reading,
+            ink,
+            size: valueSize * scale,
+            naturalHeight: rowHeight == null ? _valueHeight : null,
           )
         : null;
 
     bool isEmpty(GridColumn c) =>
         iconAt(c) == null && labelAt(c) == null && unitAt(c) == null && valueAt(c) == null;
 
-    // Un non-flexible dans une `Row` reçoit une largeur maximale *non
-    // bornée* pendant la mesure — donc rien, pas même l'icône, ne peut
-    // rester en dehors du partage flexible sans risquer de faire déborder
-    // la rangée : une case d'une seule colonne dans une grille dense (six
-    // colonnes et plus) peut être plus étroite que la taille naturelle de
-    // l'icône seule. Chacun reste néanmoins prioritaire ou non selon ce
-    // qu'il peut perdre sans devenir illisible : l'icône et le texte cèdent
-    // la place en dernier recours (`FittedBox`/ellipse), pas en premier.
+    // Les éléments d'une même case, à leur taille *naturelle* et dans un
+    // ordre fixe (icône, étiquette, unité, chiffre) — qu'on les ait posés
+    // dans cet ordre ou non. C'est le groupe entier que [slot] met ensuite à
+    // l'échelle et pousse vers le bord de sa colonne, jamais chaque élément
+    // séparément : deux éléments posés « en haut à gauche » doivent rester
+    // collés l'un à l'autre, pas dispersés chacun sur son propre partage de
+    // la largeur de la rangée.
     Widget columnContent(GridColumn c) {
       final parts = <Widget>[];
-      void addFlexible(Widget? w, {int flex = 1}) {
+      void add(Widget? w) {
         if (w == null) return;
         if (parts.isNotEmpty) parts.add(SizedBox(width: BlockMetrics.natural.gap / 2));
-        // `Expanded` (ajustement *tight*) et non `Flexible` (*loose*) : c'est
-        // ce qui donne à `grow()` une largeur *fixée*, pas seulement un
-        // plafond. Avec un ajustement loose, un élément plus étroit que sa
-        // part se contentait de sa taille naturelle, et la case de
-        // destination du `FittedBox(contain)` de `grow()` devenait étroite et
-        // haute — l'aspect du chiffre restait alors « plus large que haut »
-        // par rapport à elle, donc c'est la largeur qui gagnait l'ajustement
-        // et rien ne grandissait, malgré la hauteur de rangée disponible :
-        // le chiffre restait à sa taille naturelle, centré dans du vide. La
-        // capacité à rétrécir reste entière : elle est portée par le
-        // `FittedBox`/l'ellipse *interne* à chaque élément, pas par cet
-        // ajustement de partage.
-        parts.add(Expanded(flex: flex, child: w));
+        parts.add(w);
       }
 
-      // L'unité garde un poids réduit — un poids égal à celui du chiffre et
-      // de l'étiquette lui offrait la moitié de la largeur par un partage à
-      // parts égales, même pour un texte bien plus court (« km/h », « bpm »,
-      // « % »…) qui n'en a pas besoin — l'étiquette tronquait alors qu'il
-      // restait de la place, prise par une unité bien plus courte que sa
-      // part. Un poids réduit change la priorité du partage, pas la capacité
-      // à rétrécir (voir plus haut).
-      addFlexible(iconAt(c));
-      addFlexible(labelAt(c), flex: 3);
-      addFlexible(unitAt(c));
-      addFlexible(valueAt(c), flex: 3);
+      add(iconAt(c));
+      add(labelAt(c));
+      add(unitAt(c));
+      add(valueAt(c));
 
       return Row(mainAxisSize: MainAxisSize.min, children: parts);
     }
@@ -306,28 +254,65 @@ class MetricView extends StatelessWidget {
     // centre gardant deux fois leur poids : c'est presque toujours lui qui
     // porte le chiffre, la colonne qui doit rester la plus grande quand
     // plusieurs se disputent la rangée.
-    Widget slot(GridColumn c, AlignmentGeometry alignment, int flex) {
+    Widget slot(GridColumn c, int flex) {
       if (isEmpty(c)) return const SizedBox.shrink();
-      return Flexible(flex: flex, child: Align(alignment: alignment, child: columnContent(c)));
+      final content = columnContent(c);
+
+      // `Expanded` (ajustement *tight*), toujours : c'est ce qui donne à la
+      // case, en grille, une largeur *fixée* plutôt qu'un plafond — sans ça
+      // `FittedBox` (plus bas) mesurerait sa boîte sur la taille naturelle du
+      // groupe et ne grandirait jamais, quelle que soit la hauteur de rangée
+      // disponible (le chiffre resterait à sa taille naturelle, centré dans
+      // du vide). Sur une page qui défile, `Align` seul décide de tout et
+      // prend de toute façon toute la largeur qu'on lui offre — `Expanded`
+      // au lieu de `Flexible` n'y change donc rien.
+      return Expanded(
+        flex: flex,
+        child: rowHeight == null
+            ? Align(alignment: _columnAlignment(c), child: content)
+            // La boîte entière (icône **et** étiquette, pas chacune la
+            // sienne) grandit d'un seul tenant sur la hauteur réelle de la
+            // rangée : leurs tailles relatives — celle voulue par [scale] —
+            // restent donc celles composées plus haut, quel que soit le
+            // facteur qui les agrandit ensuite. Aligner sur le même coin que
+            // [_columnAlignment] (`top…` et non `center…`) évite qu'un
+            // groupe qui ne remplit pas toute la hauteur de sa boîte flotte
+            // au milieu plutôt que de tenir le bord réel de la rangée — et
+            // qu'un groupe voisin, plus gourmand, vienne y mordre : chacun
+            // grandit dans **sa** part de la largeur, jamais dans celle du
+            // suivant.
+            : SizedBox(
+                height: rowHeight,
+                child: FittedBox(fit: BoxFit.contain, alignment: _elementAlignment(c), child: content),
+              ),
+      );
     }
 
     return Row(
       children: [
-        slot(GridColumn.left, _columnAlignment(GridColumn.left), 1),
-        slot(GridColumn.center, _columnAlignment(GridColumn.center), 2),
-        slot(GridColumn.right, _columnAlignment(GridColumn.right), 1),
+        slot(GridColumn.left, 1),
+        slot(GridColumn.center, 2),
+        slot(GridColumn.right, 1),
       ],
     );
   }
 
-  /// Le bord vers lequel une colonne pousse son contenu — même correspondance
-  /// pour positionner un groupe d'éléments dans sa case ([slot]) que pour
-  /// aligner chacun dans la boîte, souvent bien plus large que lui, que lui
-  /// donne [_gridRow.grow].
+  /// Le bord vers lequel une colonne pousse son contenu — sur une page qui
+  /// défile, où rien ne dispute la hauteur d'une rangée à une autre.
   static Alignment _columnAlignment(GridColumn c) => switch (c) {
         GridColumn.left => Alignment.centerLeft,
         GridColumn.center => Alignment.center,
         GridColumn.right => Alignment.centerRight,
+      };
+
+  /// Le coin vers lequel un groupe pousse son contenu en grille — même
+  /// colonne que [_columnAlignment], mais calé en haut plutôt qu'au centre :
+  /// voir la doc de [_gridRow.slot] pour pourquoi le vertical n'y suit pas la
+  /// même règle.
+  static Alignment _elementAlignment(GridColumn c) => switch (c) {
+        GridColumn.left => Alignment.topLeft,
+        GridColumn.center => Alignment.topCenter,
+        GridColumn.right => Alignment.topRight,
       };
 
   Widget _iconWidget(Color ink, double scale) {
