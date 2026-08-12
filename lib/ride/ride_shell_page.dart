@@ -1047,6 +1047,10 @@ class _RideShellPageState extends State<RideShellPage>
                 // découverte, et un tap qui ne ferait rien serait pris pour un
                 // écran gelé.
                 onCalibratePower: _calibratePower,
+                // Sans carte, il n'y a personne à endormir — même garde que
+                // pour la commande de la grille (`DashboardPage.onSleep`
+                // plus bas).
+                onSleep: _preset.hasMap ? _sleep : null,
               ),
             ),
             // Le numéro de la page, juste au-dessus du bandeau et le temps de le
@@ -1080,7 +1084,11 @@ class _RideShellPageState extends State<RideShellPage>
               left: 0,
               right: 0,
               top: 0,
-              child: NotchBand(notch: _preset.notch, sources: _sources),
+              child: NotchBand(
+                notch: _preset.notch,
+                sources: _sources,
+                onSleep: _preset.hasMap ? _sleep : null,
+              ),
             ),
             // La pastille de col : repliée, épinglée en haut à droite. Posée
             // après le bandeau/numéro de page pour rester visible même

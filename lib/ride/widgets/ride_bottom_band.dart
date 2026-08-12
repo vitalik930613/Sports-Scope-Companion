@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../dashboard/dashboard_block.dart' show SleepMode;
 import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
+import '../blocks/sleep_block.dart';
 import 'band_metric_tile.dart';
 import 'swipe_zone.dart';
 
@@ -38,6 +40,7 @@ class RideBottomBand extends StatefulWidget {
     required this.bands,
     required this.sources,
     this.onCalibratePower,
+    this.onSleep,
   });
 
   /// Les jeux de valeurs du profil, dans l'ordre. Au moins un.
@@ -45,6 +48,11 @@ class RideBottomBand extends StatefulWidget {
 
   /// D'où les mesures se lisent — et de quoi elles dépendent.
   final MetricSources sources;
+
+  /// Demander la veille, sur un tap de la case `sleep` — voir [SleepControl].
+  /// `null` sur un profil sans carte, comme la commande de la grille : rien
+  /// à endormir.
+  final VoidCallback? onSleep;
 
   /// Calibrer le capteur de puissance, sur un tap des watts ou de leur zone.
   ///
@@ -107,8 +115,8 @@ class _RideBottomBandState extends State<RideBottomBand> {
           ),
           child: Row(
             children: [
-              for (final (index, metric) in widget.bands[_set].metrics.indexed)
-                Expanded(child: _metric(metric, index)),
+              for (final (index, slot) in widget.bands[_set].slots.indexed)
+                Expanded(child: _slot(slot, index)),
             ],
           ),
         ),
@@ -122,12 +130,28 @@ class _RideBottomBandState extends State<RideBottomBand> {
   /// une, garde toujours la priorité : c'est elle, l'information.
   static const _alternateBackgrounds = [Color(0xFF101214), Color(0xFF1F2226)];
 
-  Widget _metric(MetricId? metric, int index) {
+  Widget _slot(BandSlot? slot, int index) {
     // Une case vide reste dans la rangée — le glissé de largeur du `Row`
     // parent dépend du nombre de cases, pas de leur contenu — mais n'y
     // dessine rien.
-    if (metric == null) return const SizedBox.shrink();
+    if (slot == null) return const SizedBox.shrink();
 
+    return switch (slot) {
+      BandMetricSlot(:final metric) => _metric(metric, index),
+      BandActionSlot(:final action) => _action(action),
+    };
+  }
+
+  // Même marge que `BandMetricTile` : sans elle, l'icône touchait ses
+  // voisines alors que chaque case de mesure en garde une.
+  Widget _action(BandAction action) => switch (action) {
+        BandAction.sleep => Padding(
+            padding: const EdgeInsets.fromLTRB(2, 3, 2, 3),
+            child: SleepControl(onSleep: widget.onSleep, mode: SleepMode.compact),
+          ),
+      };
+
+  Widget _metric(MetricId metric, int index) {
     final tile = ListenableBuilder(
       listenable: Listenable.merge(metric.dependencies(widget.sources)),
       builder: (context, _) {

@@ -58,16 +58,16 @@ class RidePreset {
     ],
     bands: [
       RideBandSpec([
-        MetricId.duration,
-        MetricId.distance,
-        MetricId.speed,
-        MetricId.power,
+        BandMetricSlot(MetricId.duration),
+        BandMetricSlot(MetricId.distance),
+        BandMetricSlot(MetricId.speed),
+        BandMetricSlot(MetricId.power),
       ]),
       RideBandSpec([
-        MetricId.heartRate,
-        MetricId.hrZone,
-        MetricId.power,
-        MetricId.powerZone,
+        BandMetricSlot(MetricId.heartRate),
+        BandMetricSlot(MetricId.hrZone),
+        BandMetricSlot(MetricId.power),
+        BandMetricSlot(MetricId.powerZone),
       ]),
     ],
   );
@@ -543,6 +543,45 @@ class LapGridLayout extends LapPageLayout {
   }
 }
 
+/// Ce qu'une case du bandeau ou de la bande de l'encoche peut porter : une
+/// mesure comme avant, ou une commande — pour l'instant, seule « mettre en
+/// veille ». Une clé de site unique (`MetricId.fromKey` + `'sleep'`) resterait
+/// ambiguë le jour où les deux catalogues se recouperaient ; `BandSlot`
+/// tranche une fois à l'analyse plutôt qu'à chaque lecture par les deux
+/// bandes.
+@immutable
+sealed class BandSlot {
+  const BandSlot();
+
+  /// `null` pour une case vide, ou une clé inconnue de cette version de
+  /// l'appli — même repli que [MetricId.fromKey], pour la même raison : un
+  /// document plus récent que l'appli ne doit rien faire échouer.
+  static BandSlot? parse(Object? raw) {
+    if (raw == 'sleep') return const BandActionSlot(BandAction.sleep);
+    final metric = MetricId.fromKey(raw);
+    return metric == null ? null : BandMetricSlot(metric);
+  }
+}
+
+/// Une mesure, comme toutes les cases du bandeau et de l'encoche avant que
+/// `BandSlot` existe.
+@immutable
+class BandMetricSlot extends BandSlot {
+  const BandMetricSlot(this.metric);
+  final MetricId metric;
+}
+
+/// Les commandes qu'une case peut porter. Un `enum` et non un simple bool sur
+/// [BandActionSlot], pour qu'une deuxième commande n'ait un jour rien à
+/// changer à [BandSlot.parse] ni aux `switch` qui la dessinent.
+enum BandAction { sleep }
+
+@immutable
+class BandActionSlot extends BandSlot {
+  const BandActionSlot(this.action);
+  final BandAction action;
+}
+
 /// Un jeu de valeurs du bandeau.
 ///
 /// **Quatre cases, pas plus** : au-delà, les chiffres deviennent trop petits
@@ -550,25 +589,25 @@ class LapGridLayout extends LapPageLayout {
 /// bandeau. Ce qui ne tient pas passe dans le jeu suivant, à un glissé de là.
 @immutable
 class RideBandSpec {
-  const RideBandSpec(this.metrics);
+  const RideBandSpec(this.slots);
 
   static const maxMetrics = 4;
 
   // Une case peut être vide (`null`) : c'est le site qui décide où, une case
   // du milieu laissée vide ne doit pas recoller celles qui suivent.
-  final List<MetricId?> metrics;
+  final List<BandSlot?> slots;
 
   static RideBandSpec? parse(Object? raw) {
     final list = raw is Map ? raw['metrics'] : raw;
     if (list is! List) return null;
 
-    final metrics = <MetricId?>[];
+    final slots = <BandSlot?>[];
     for (final entry in list) {
-      if (metrics.length == maxMetrics) break;
-      metrics.add(MetricId.fromKey(entry));
+      if (slots.length == maxMetrics) break;
+      slots.add(BandSlot.parse(entry));
     }
 
-    return metrics.every((metric) => metric == null) ? null : RideBandSpec(metrics);
+    return slots.every((slot) => slot == null) ? null : RideBandSpec(slots);
   }
 }
 
@@ -585,13 +624,13 @@ class RideBandSpec {
 class NotchSpec {
   const NotchSpec({this.left, this.right});
 
-  final MetricId? left;
-  final MetricId? right;
+  final BandSlot? left;
+  final BandSlot? right;
 
   static NotchSpec? parse(Object? raw) {
     if (raw is! Map) return null;
-    final left = MetricId.fromKey(raw['left']);
-    final right = MetricId.fromKey(raw['right']);
+    final left = BandSlot.parse(raw['left']);
+    final right = BandSlot.parse(raw['right']);
     return left == null && right == null ? null : NotchSpec(left: left, right: right);
   }
 }

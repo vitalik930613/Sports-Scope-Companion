@@ -3,8 +3,10 @@ import 'dart:ui' show DisplayFeature, DisplayFeatureType;
 
 import 'package:flutter/material.dart';
 
+import '../../dashboard/dashboard_block.dart' show SleepMode;
 import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
+import '../blocks/sleep_block.dart';
 import 'band_metric_tile.dart';
 import 'swipe_zone.dart';
 
@@ -25,13 +27,18 @@ import 'swipe_zone.dart';
 /// le rétroéclairage, et `translucent` le laisse passer tout en laissant le
 /// glissé horizontal se faire reconnaître pour changer de jeu.
 class NotchBand extends StatefulWidget {
-  const NotchBand({super.key, required this.notch, required this.sources});
+  const NotchBand({super.key, required this.notch, required this.sources, this.onSleep});
 
   /// Les jeux de la bande, dans l'ordre. Vide (le cas par défaut) laisse la
   /// bande invisible — voir [RidePreset.notch].
   final List<NotchSpec> notch;
 
   final MetricSources sources;
+
+  /// Demander la veille, sur un tap d'un côté réglé sur `sleep` — voir
+  /// [SleepControl]. `null` sur un profil sans carte, comme la commande de
+  /// la grille : rien à endormir.
+  final VoidCallback? onSleep;
 
   /// Plancher pour les écrans sans encoche : sans lui, la valeur se collerait
   /// au bord. Un peu plus haut que l'ancienne bande `RadarDistanceBadges`
@@ -118,9 +125,16 @@ class _NotchBandState extends State<NotchBand> {
     return null;
   }
 
-  Widget _slot(MetricId? metric) {
-    if (metric == null) return const SizedBox.shrink();
+  Widget _slot(BandSlot? slot) {
+    if (slot == null) return const SizedBox.shrink();
 
+    return switch (slot) {
+      BandMetricSlot(:final metric) => _metric(metric),
+      BandActionSlot(:final action) => _action(action),
+    };
+  }
+
+  Widget _metric(MetricId metric) {
     return FittedBox(
       fit: BoxFit.scaleDown,
       child: ListenableBuilder(
@@ -139,4 +153,8 @@ class _NotchBandState extends State<NotchBand> {
       ),
     );
   }
+
+  Widget _action(BandAction action) => switch (action) {
+        BandAction.sleep => SleepControl(onSleep: widget.onSleep, mode: SleepMode.compact),
+      };
 }
