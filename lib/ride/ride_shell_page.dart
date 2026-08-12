@@ -39,6 +39,7 @@ import 'widgets/climb_badge.dart';
 import 'widgets/climb_profile_overlay.dart';
 import 'widgets/map_edge_handle.dart';
 import 'widgets/map_swipe_zone.dart';
+import 'widgets/notch_band.dart';
 import 'widgets/radar_frame.dart';
 import 'widgets/radar_side_gauge.dart';
 import 'widgets/radar_wake_page.dart';
@@ -957,7 +958,7 @@ class _RideShellPageState extends State<RideShellPage>
             // carte.
             //
             // Dans la même pile et pas dans une route poussée : le bandeau, les
-            // jauges du radar, le cadre d'alerte et les mètres de l'encoche
+            // jauges du radar, le cadre d'alerte et la bande de l'encoche
             // appartiennent à la coquille, et une route par-dessus les
             // emporterait tous. On consulte un bilan **pendant une sortie** —
             // une voiture qui remonte doit se voir de là comme d'ailleurs.
@@ -1028,6 +1029,19 @@ class _RideShellPageState extends State<RideShellPage>
               child: Center(
                 child: RidePageFlash(page: _page, count: _pageCount),
               ),
+            ),
+            // La bande de l'encoche : jusqu'à une mesure de chaque côté de la
+            // caméra selfie, sur l'emplacement de l'ancienne
+            // `RadarDistanceBadges`. Avant la pastille de col et le cadre
+            // d'alerte dans la pile, pour que les deux continuent de se
+            // dessiner par-dessus elle — le radar garde la priorité visuelle
+            // sur ce que le profil y a placé.
+            Positioned(
+              key: const ValueKey('encoche'),
+              left: 0,
+              right: 0,
+              top: 0,
+              child: NotchBand(notch: _preset.notch, sources: _sources),
             ),
             // La pastille de col : repliée, épinglée en haut à droite. Posée
             // après le bandeau/numéro de page pour rester visible même

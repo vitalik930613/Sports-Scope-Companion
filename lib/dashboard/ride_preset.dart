@@ -26,6 +26,7 @@ class RidePreset {
     this.description,
     required this.pages,
     required this.bands,
+    this.notch = const NotchSpec(),
     this.sensors = const SensorSettings(),
     this.radar = const RadarSettings(),
     this.lighting = const LightingSettings(),
@@ -86,6 +87,11 @@ class RidePreset {
 
   /// Les jeux de valeurs du bandeau, dans l'ordre. Au moins un.
   final List<RideBandSpec> bands;
+
+  /// La bande de l'encoche : une mesure au plus de chaque côté. Contrairement
+  /// à [bands], vide est une valeur normale — un profil qui n'a jamais touché
+  /// ce réglage garde un écran identique à celui d'avant qu'il existe.
+  final NotchSpec notch;
 
   final SensorSettings sensors;
   final RadarSettings radar;
@@ -223,6 +229,7 @@ class RidePreset {
       // sortie ne se diagnostique pas au guidon.
       pages: pages.isEmpty ? [RidePreset.builtIn.pages.last] : pages,
       bands: bands.isEmpty ? RidePreset.builtIn.bands : bands,
+      notch: NotchSpec.parse(raw['notch']),
       sensors: SensorSettings.parse(raw['sensors']),
       radar: RadarSettings.parse(raw['radar']),
       lighting: LightingSettings.parse(raw['lighting']),
@@ -555,6 +562,24 @@ class RideBandSpec {
   }
 }
 
+/// Ce que la bande de l'encoche affiche, de chaque côté de la caméra selfie.
+///
+/// Contrairement à [RideBandSpec], vide (les deux champs à `null`) est un état
+/// normal et non un repli : un profil qui n'a jamais touché ce réglage doit
+/// laisser la bande invisible, exactement comme avant que ce réglage existe.
+@immutable
+class NotchSpec {
+  const NotchSpec({this.left, this.right});
+
+  final MetricId? left;
+  final MetricId? right;
+
+  static NotchSpec parse(Object? raw) {
+    if (raw is! Map) return const NotchSpec();
+    return NotchSpec(left: MetricId.fromKey(raw['left']), right: MetricId.fromKey(raw['right']));
+  }
+}
+
 /// Les capteurs que ce profil utilise.
 ///
 /// Un home-trainer n'a que faire du GPS — ni du service au premier plan, ni de
@@ -639,9 +664,10 @@ class RadarSettings {
   final double closeM;
   final double rangeM;
 
-  /// L'habillage plein écran : les jauges des gouttières, le cadre qui s'embrase
-  /// et les mètres dans la bande de l'encoche — le radar par-dessus toutes les
-  /// pages, qu'on les ait demandées ou non.
+  /// L'habillage plein écran : les jauges des gouttières et le cadre qui
+  /// s'embrase — le radar par-dessus toutes les pages, qu'on les ait demandées
+  /// ou non. Ne gouverne pas la bande de l'encoche, dont le contenu vient du
+  /// profil et pas du radar.
   ///
   /// Coupé, **le capteur continue de tourner** : les tonalités restent, le
   /// réveil d'écran aussi, et le radar ne se voit plus que là où le profil a
