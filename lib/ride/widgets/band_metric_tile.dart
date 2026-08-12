@@ -19,10 +19,17 @@ class BandMetricTile extends StatelessWidget {
     this.zoneKey,
     this.background,
     this.altBackground,
+    this.labelFirst = false,
   });
 
   final String? value;
   final String label;
+
+  /// Le libellé au-dessus du chiffre plutôt qu'en dessous — l'inverse du
+  /// bandeau du bas. Utilisé par `NotchBand` : dans une bande plus basse et
+  /// plus proche du regard, savoir *quelle* mesure on lit avant de lire son
+  /// chiffre se lit mieux d'un coup d'œil.
+  final bool labelFirst;
 
   /// `z1`…`z7` pour peindre la case aux couleurs de la zone, `null` pour la
   /// laisser sur le fond de la case.
@@ -42,36 +49,37 @@ class BandMetricTile extends StatelessWidget {
     final zoneColor = background ?? zoneColorOf(zoneKey);
     final foreground = zoneColor == null ? Colors.white : foregroundOf(zoneColor);
 
+    final valueText = FittedBox(
+      fit: BoxFit.scaleDown,
+      // Les valeurs sont de longueurs très inégales (« 8 » et « 1:12:34 ») et
+      // la case partage sa largeur en parts égales : sans réduction, la
+      // durée déborderait sur un téléphone étroit.
+      child: Text(
+        value ?? '—',
+        maxLines: 1,
+        style: TextStyle(
+          color: foreground,
+          fontSize: 24,
+          fontWeight: FontWeight.w500,
+          height: 1.1,
+        ),
+      ),
+    );
+
+    final labelText = Text(
+      label,
+      maxLines: 1,
+      // Sur un aplat de zone, le libellé passe de « discret » à « lisible » :
+      // le blanc à 54 % disparaît sur le jaune comme sur le rouge.
+      style: TextStyle(
+        color: zoneColor == null ? Colors.white54 : foreground.withValues(alpha: 0.75),
+        fontSize: 11,
+      ),
+    );
+
     final content = Column(
       mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        // Les valeurs sont de longueurs très inégales (« 8 » et « 1:12:34 ») et
-        // la case partage sa largeur en parts égales : sans réduction, la
-        // durée déborderait sur un téléphone étroit.
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            value ?? '—',
-            maxLines: 1,
-            style: TextStyle(
-              color: foreground,
-              fontSize: 24,
-              fontWeight: FontWeight.w500,
-              height: 1.1,
-            ),
-          ),
-        ),
-        Text(
-          label,
-          maxLines: 1,
-          // Sur un aplat de zone, le libellé passe de « discret » à « lisible » :
-          // le blanc à 54 % disparaît sur le jaune comme sur le rouge.
-          style: TextStyle(
-            color: zoneColor == null ? Colors.white54 : foreground.withValues(alpha: 0.75),
-            fontSize: 11,
-          ),
-        ),
-      ],
+      children: labelFirst ? [labelText, valueText] : [valueText, labelText],
     );
 
     final surface = zoneColor ?? altBackground;

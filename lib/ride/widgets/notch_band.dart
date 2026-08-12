@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' show DisplayFeature, DisplayFeatureType;
 
 import 'package:flutter/material.dart';
 
@@ -79,6 +80,17 @@ class _NotchBandState extends State<NotchBand> {
 
     final current = widget.notch[_set];
 
+    // Chaque valeur centrée dans l'espace qui lui reste — à gauche ou à
+    // droite de la caméra selfie — plutôt que collée au bord de l'écran.
+    // `displayFeatures` donne les bords réels de l'encoche matérielle, en
+    // pixels logiques ; sans elle (aucune encoche rapportée par l'OS), les
+    // deux valeurs se partagent la largeur en deux moitiés égales.
+    final totalWidth = MediaQuery.sizeOf(context).width;
+    final cutout = _cutoutOf(context);
+    final leftWidth = cutout != null ? cutout.bounds.left : totalWidth / 2;
+    final rightWidth = cutout != null ? totalWidth - cutout.bounds.right : totalWidth / 2;
+    final gapWidth = cutout != null ? cutout.bounds.width : 0.0;
+
     return SwipeZone(
       behavior: HitTestBehavior.translucent,
       onSwipe: _onSwipe,
@@ -88,39 +100,42 @@ class _NotchBandState extends State<NotchBand> {
           color: Color(0xFF101214),
           border: Border(bottom: BorderSide(color: Colors.white24)),
         ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _slot(current.left, Alignment.centerLeft),
-              _slot(current.right, Alignment.centerRight),
-            ],
-          ),
+        child: Row(
+          children: [
+            SizedBox(width: leftWidth, child: Center(child: _slot(current.left))),
+            if (gapWidth > 0) SizedBox(width: gapWidth),
+            SizedBox(width: rightWidth, child: Center(child: _slot(current.right))),
+          ],
         ),
       ),
     );
   }
 
-  Widget _slot(MetricId? metric, Alignment alignment) {
+  static DisplayFeature? _cutoutOf(BuildContext context) {
+    for (final feature in MediaQuery.displayFeaturesOf(context)) {
+      if (feature.type == DisplayFeatureType.cutout) return feature;
+    }
+    return null;
+  }
+
+  Widget _slot(MetricId? metric) {
     if (metric == null) return const SizedBox.shrink();
 
-    return Flexible(
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        alignment: alignment,
-        child: ListenableBuilder(
-          listenable: Listenable.merge(metric.dependencies(widget.sources)),
-          builder: (context, _) {
-            final reading = metric.read(widget.sources);
-            return BandMetricTile(
-              value: reading.value,
-              label: metric.name,
-              zoneKey: reading.zoneKey,
-              background: reading.background,
-            );
-          },
-        ),
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: ListenableBuilder(
+        listenable: Listenable.merge(metric.dependencies(widget.sources)),
+        builder: (context, _) {
+          final reading = metric.read(widget.sources);
+          return BandMetricTile(
+            value: reading.value,
+            label: metric.name,
+            zoneKey: reading.zoneKey,
+            background: reading.background,
+            // Inverse du bandeau du bas : le libellé au-dessus du chiffre.
+            labelFirst: true,
+          );
+        },
       ),
     );
   }
