@@ -52,6 +52,9 @@ enum MetricId {
   grade('grade', 'Pente', '%', Icons.north_east),
   gradeAvg('grade_avg', 'Pente moyenne', '%', Icons.north_east),
   gradeMax('grade_max', 'Pente max', '%', Icons.north_east),
+  climbRate('climb_rate', 'Vitesse ascensionnelle', 'm/h', Icons.upgrade),
+  climbRateAvg('climb_rate_avg', 'Vitesse ascensionnelle moyenne', 'm/h', Icons.upgrade),
+  climbRateMax('climb_rate_max', 'Vitesse ascensionnelle max', 'm/h', Icons.upgrade),
   calories('calories', 'Calories', 'kcal', Icons.local_fire_department),
   caloriesPerHour('calories_per_hour', 'Calories par heure', 'kcal/h', Icons.local_fire_department),
   tss('tss', 'TSS', 'TSS', Icons.bar_chart),
@@ -358,6 +361,20 @@ enum MetricId {
       // rouleau sans distance parcourue, la fenêtre ne s'est jamais remplie.
       MetricId.gradeAvg => _gradeReading(active ? stats.avgGrade : null),
       MetricId.gradeMax => _gradeReading(active ? stats.maxGrade : null),
+      // Même garde que la pente : la vitesse ascensionnelle se lit sur la même
+      // fenêtre, qui reste naturellement vide sans altitude.
+      MetricId.climbRate => MetricReading(
+          active ? stats.climbRateMph?.round().toString() : null,
+          numericValue: active ? stats.climbRateMph : null,
+        ),
+      MetricId.climbRateAvg => MetricReading(
+          active ? stats.avgClimbRateMph?.round().toString() : null,
+          numericValue: active ? stats.avgClimbRateMph : null,
+        ),
+      MetricId.climbRateMax => MetricReading(
+          active ? stats.maxClimbRateMph?.round().toString() : null,
+          numericValue: active ? stats.maxClimbRateMph : null,
+        ),
       MetricId.calories => MetricReading(
           stats.calories?.toString(),
           numericValue: stats.calories?.toDouble(),

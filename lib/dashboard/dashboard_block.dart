@@ -115,6 +115,11 @@ sealed class DashboardBlock {
           color: color,
           textColor: textColor,
         ),
+      'clock' => ClockBlock(
+          mode: _modeOf(raw['mode'], ClockMode.values),
+          color: color,
+          textColor: textColor,
+        ),
       'empty' => const EmptyBlock(),
       _ => null,
     };
@@ -1005,6 +1010,43 @@ enum RadarMode with BlockMode {
   gauge('gauge');
 
   const RadarMode(this.key);
+
+  @override
+  final String key;
+}
+
+/// L'heure courante.
+///
+/// **La seule case du tableau de bord qui ne dépend d'aucun capteur ni de
+/// l'enregistreur** : elle tourne même hors sortie, contrairement à `duration`
+/// (`MetricId`) qui n'existe qu'en enregistrant. Ça la sort du catalogue
+/// `MetricId`/`MetricSources`, qui n'existent que pour les mesures issues de ces
+/// sources — d'où un `DashboardBlock` à part plutôt qu'une entrée de plus au
+/// catalogue.
+class ClockBlock extends DashboardBlock {
+  const ClockBlock({this.mode = ClockMode.hm, super.color, super.textColor});
+
+  final ClockMode mode;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ClockBlock &&
+      other.mode == mode &&
+      other.color == color &&
+      other.textColor == textColor;
+
+  @override
+  int get hashCode => Object.hash(mode, color, textColor);
+}
+
+enum ClockMode with BlockMode {
+  /// `14:03` — ce qu'on lit d'un coup d'œil en roulant. Mode par défaut.
+  hm('hm'),
+
+  /// `14:03:07`, la seconde comptée.
+  hms('hms');
+
+  const ClockMode(this.key);
 
   @override
   final String key;

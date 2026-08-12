@@ -69,6 +69,21 @@ String formatDistance(double metres) {
   return '${km.toStringAsFixed(decimals).replaceAll('.', ',')} km';
 }
 
+/// `14:03`, heure locale — une horloge murale, pas un compteur écoulé comme
+/// [formatDurationHm].
+String formatClockHm(DateTime at) {
+  final local = at.toLocal();
+  String two(int value) => value.toString().padLeft(2, '0');
+  return '${two(local.hour)}:${two(local.minute)}';
+}
+
+/// [formatClockHm] avec la seconde comptée.
+String formatClockHms(DateTime at) {
+  final local = at.toLocal();
+  String two(int value) => value.toString().padLeft(2, '0');
+  return '${two(local.hour)}:${two(local.minute)}:${two(local.second)}';
+}
+
 /// `28/07/2026 · 14:03`, en heure locale.
 String formatDateTime(DateTime at) {
   final local = at.toLocal();

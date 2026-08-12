@@ -182,6 +182,11 @@ class RideStats {
   /// zéro.
   double? minGrade;
 
+  /// La vitesse ascensionnelle la plus forte vue depuis le départ, en m/h —
+  /// même échantillonnage que [maxGrade] (la même fenêtre [_gradeWindow] sert
+  /// aux deux), signée pour la même raison.
+  double? maxClimbRateMph;
+
   /// Les minima, sur **exactement la même population que les moyennes** : tout
   /// point qui porte la mesure, zéros compris. C'est ce qui les rend lisibles
   /// ensemble — un minimum calculé sur les seuls points « en action » ne serait
@@ -260,6 +265,18 @@ class RideStats {
 
   double? get avgSpeedMps => _speedCount > 0 ? _speedSum / _speedCount : null;
 
+  /// La vitesse ascensionnelle moyenne, en m/h : le dénivelé total sur le temps
+  /// *en mouvement*, pas chronométré — un arrêt ravito ne doit pas diluer le
+  /// chiffre, même raison que [avgSpeedMps] côté vitesse. Volontairement pas une
+  /// moyenne des échantillons de [climbRateMph] : ceux-là sont signés et
+  /// tendraient vers un solde net qui inclut les descentes, alors qu'on veut
+  /// savoir à quelle vitesse on grimpe. `null` tant qu'on n'a pas encore roulé.
+  double? get avgClimbRateMph {
+    final movingHours = _movingMs / 1000 / 3600;
+    if (movingHours <= 0) return null;
+    return ascentM / movingHours;
+  }
+
   /// La pente moyenne depuis le départ, signée — une sortie qui boucle tend
   /// donc vers 0 malgré le relief parcouru, même moyenne « par échantillon »
   /// que les autres mesures d'ici plutôt qu'un ratio D+ / distance.
@@ -310,6 +327,24 @@ class RideStats {
   }
 
   double get _gradeSpanM => hasBaroAltitude ? gradeWindowM : gpsGradeWindowM;
+
+  /// La vitesse ascensionnelle sous les roues, en m/h et **signée** — miroir de
+  /// [gradePercent] sur la même fenêtre [_gradeWindow], mais rapportée au temps
+  /// écoulé entre ses deux bornes plutôt qu'à la distance parcourue. Mêmes
+  /// gardes que la pente, pour les mêmes raisons : une fenêtre pas encore assez
+  /// large ou périmée ne dirait qu'un bruit amplifié.
+  double? get climbRateMph {
+    if (_gradeWindow.length < 2) return null;
+
+    final oldest = _gradeWindow.first;
+    final newest = _gradeWindow.last;
+    final run = newest.distanceM - oldest.distanceM;
+    if (run < _gradeSpanM) return null;
+
+    final seconds = newest.at.difference(oldest.at).inMilliseconds / 1000;
+    if (seconds <= 0) return null;
+    return (newest.altitudeM - oldest.altitudeM) / seconds * 3600;
+  }
 
   /// La vitesse d'un point : celle du GPS, ou à défaut celle du capteur de roue.
   ///
@@ -379,6 +414,13 @@ class RideStats {
         _gradeCount++;
         maxGrade = maxGrade == null || grade > maxGrade! ? grade : maxGrade;
         minGrade = minGrade == null || grade < minGrade! ? grade : minGrade;
+      }
+
+      final climbRate = climbRateMph;
+      if (climbRate != null) {
+        maxClimbRateMph = maxClimbRateMph == null || climbRate > maxClimbRateMph!
+            ? climbRate
+            : maxClimbRateMph;
       }
     }
 
@@ -547,6 +589,7 @@ class RideStats {
     maxSpeedMps = null;
     maxGrade = null;
     minGrade = null;
+    maxClimbRateMph = null;
     minHeartRate = minCadence = minPower = null;
     minSpeedMps = null;
     _hrSum = _hrCount = 0;
