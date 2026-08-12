@@ -110,18 +110,27 @@ class StatRow {
 /// et c'est tout ce qu'on demande à un bilan de moyennes.
 ///
 /// L'unité est dans le titre et pas sur chaque ligne : elle vaut pour les
-/// trois, et la colonne des valeurs tient alors dans une demi-case.
+/// trois, et la colonne des valeurs tient alors dans une demi-case. Rendue
+/// plus petite que le titre ([StatCard.unit]) : sur la même ligne qu'un
+/// libellé ou une icône, elle ne doit jamais rivaliser avec eux.
 class StatCard extends StatelessWidget {
   const StatCard({
     super.key,
     required this.title,
     required this.rows,
+    this.unit,
     this.icon,
     this.color,
     this.textColor,
   });
 
   final String title;
+
+  /// Affichée après le titre, plus petite — jamais concaténée dedans : sur
+  /// la même ligne qu'un libellé, l'unité doit toujours se lire plus
+  /// discrète que lui.
+  final String? unit;
+
   final List<StatRow> rows;
 
   /// Devant le titre : dit quelle mesure on regarde avant même de lire le nom
@@ -159,13 +168,23 @@ class StatCard extends StatelessWidget {
                 SizedBox(width: metrics.gap / 2),
               ],
               Expanded(
-                child: Text(
-                  title.toUpperCase(),
+                child: RichText(
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: dimInk,
-                    fontSize: metrics.titleSize,
+                  text: TextSpan(
+                    text: title.toUpperCase(),
+                    style: TextStyle(
+                      color: dimInk,
+                      fontSize: metrics.titleSize,
+                    ),
+                    children: unit == null
+                        ? null
+                        : [
+                            TextSpan(
+                              text: ' (${unit!.toUpperCase()})',
+                              style: TextStyle(fontSize: metrics.titleSize * 0.8),
+                            ),
+                          ],
                   ),
                 ),
               ),

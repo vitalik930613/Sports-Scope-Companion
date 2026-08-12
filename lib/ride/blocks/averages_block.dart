@@ -196,7 +196,8 @@ class _Stat {
   final Color? maxBackground;
 
   Widget card({Color? color, Color? textColor}) => StatCard(
-        title: '$name ($unit)',
+        title: name,
+        unit: unit,
         icon: icon,
         rows: [
           StatRow('Moyen', avg, background: avgBackground),
