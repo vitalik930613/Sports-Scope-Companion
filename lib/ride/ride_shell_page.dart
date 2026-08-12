@@ -259,6 +259,11 @@ class _RideShellPageState extends State<RideShellPage>
   /// temps qui passe.
   Timer? _tick;
 
+  /// Boutons distants (D-Fly du Di2) : squelette de câblage en attente du
+  /// décodeur — voir `RemoteButtonSample` (`ble/samples.dart`) et le TODO dans
+  /// `ble/decoders/di2.dart`. Personne n'émet encore cet échantillon.
+  StreamSubscription<SensorSample>? _remoteButtonSub;
+
   /// Le cycliste a-t-il changé de page de sa main depuis la dernière décision ?
   bool _userMoved = false;
 
@@ -324,6 +329,18 @@ class _RideShellPageState extends State<RideShellPage>
     // d'ouvrir des fichiers. Inutile si le profil coupe le son.
     if (_preset.radar.sounds && _preset.sensors.radar) {
       unawaited(_radarSound.warmUp());
+    }
+
+    // Même garde que pour le radar : un profil qui écarte le Di2 (vélo prêté,
+    // boîtier de l'autre vélo) ne doit pas laisser ses boutons piloter le
+    // tableau de bord. `_stepPage` marque déjà le geste comme manuel
+    // (`_autoMoves == 0` dans `_onPageChanged`), donc une pression suspend le
+    // retour auto exactement comme un glissé de bandeau.
+    if (_preset.sensors.gears) {
+      _remoteButtonSub = widget.hub.samples.listen((sample) {
+        if (sample is! RemoteButtonSample) return;
+        _stepPage(sample.button == RemoteButton.next ? 1 : -1);
+      });
     }
 
     // La boussole ne sert qu'avec une carte — c'est la page qui consomme le cap
@@ -857,6 +874,7 @@ class _RideShellPageState extends State<RideShellPage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _tick?.cancel();
+    unawaited(_remoteButtonSub?.cancel());
     // Le magnétomètre s'éteint avec la sortie : c'est le seul capteur de ce
     // dossier qui coûterait de la batterie une fois l'écran refermé.
     unawaited(widget.compass?.stop());

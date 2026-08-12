@@ -3,6 +3,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'decoders/csc.dart';
 import 'decoders/cycling_power.dart';
 import 'decoders/di2.dart';
+import 'decoders/di2_buttons.dart';
 import 'decoders/heart_rate.dart';
 import 'decoders/varia.dart';
 import 'samples.dart';
@@ -86,6 +87,27 @@ class Di2Characteristic extends CharacteristicDecoder {
     final gears = Di2Gears.parse(data);
     return gears == null ? const [] : [GearSample(at, gears)];
   }
+}
+
+class Di2ButtonsCharacteristic extends CharacteristicDecoder {
+  final _channels = Di2ButtonChannels();
+
+  @override
+  Guid get characteristic => BleCharacteristics.di2Buttons;
+
+  @override
+  List<SensorSample> decode(List<int> data, DateTime at) => [
+        for (final channel in _channels.update(data))
+          // Convention du cycliste : canal pair = page suivante, impair =
+          // page précédente (voir `ride_shell_page.dart`).
+          RemoteButtonSample(
+            at,
+            channel.isEven ? RemoteButton.next : RemoteButton.previous,
+          ),
+      ];
+
+  @override
+  void reset() => _channels.reset();
 }
 
 class VariaRadarCharacteristic extends CharacteristicDecoder {

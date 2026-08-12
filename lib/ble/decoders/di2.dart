@@ -97,3 +97,6 @@ class Di2Gears {
   @override
   String toString() => '$frontPosition × $rearPosition/$rearCount';
 }
+
+// Les boutons satellites/sprinter (D-Fly) notifient sur une characteristic
+// distincte de celle-ci, `0x2AC2` — voir `decoders/di2_buttons.dart`.

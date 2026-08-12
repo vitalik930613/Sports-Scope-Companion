@@ -469,6 +469,9 @@ class RideRecorder extends ChangeNotifier {
         // Le radar dit ce qui arrive derrière, pas ce que fait le cycliste :
         // rien à enregistrer dans la trace.
         break;
+      case RemoteButtonSample():
+        // Un geste sur le tableau de bord, pas une mesure de la sortie.
+        break;
     }
   }
 

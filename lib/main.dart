@@ -16,6 +16,7 @@ import 'dashboard/companion_settings_store.dart';
 import 'dashboard/preset_picker.dart';
 import 'dashboard/ride_preset.dart';
 import 'devices/device_linker.dart';
+import 'devices/gatt_sniff_page.dart';
 import 'devices/known_devices_store.dart';
 import 'devices/sensor_status_strip.dart';
 import 'devices/sensors_page.dart';
@@ -563,6 +564,14 @@ class _HomePageState extends State<HomePage> {
     ));
   }
 
+  /// Banc d'essai temporaire, le temps d'identifier la caractéristique D-Fly
+  /// des boutons Di2 — voir `devices/gatt_sniff_page.dart`.
+  void _openGattSniff() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => GattSniffPage(hub: _hub),
+    ));
+  }
+
   /// L'écran Compte, et **ce qu'il faut aller chercher au retour**.
   ///
   /// La page rend `true` quand la connexion vient d'aboutir. Ça n'est pas une
@@ -732,6 +741,11 @@ class _HomePageState extends State<HomePage> {
             onPressed: _openClimbDebug,
             icon: const Icon(Icons.landscape),
             tooltip: 'Simuler un col',
+          ),
+          IconButton(
+            onPressed: _openGattSniff,
+            icon: const Icon(Icons.bug_report),
+            tooltip: 'Sniff GATT (D-Fly)',
           ),
           IconButton(
             onPressed: _openSensors,

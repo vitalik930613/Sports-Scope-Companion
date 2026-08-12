@@ -90,6 +90,8 @@ class SensorHub {
         latestCadence.value = rpm;
       case GearSample(:final gears):
         latestGears.value = gears;
+      case RemoteButtonSample():
+        break; // une impulsion, rien à retenir ici — voir RideShellPage
       case RadarSample():
         latestRadar.value = sample;
       case WheelSpeedSample():

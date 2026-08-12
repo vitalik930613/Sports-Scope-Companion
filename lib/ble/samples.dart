@@ -54,6 +54,22 @@ class GearSample extends SensorSample {
   final Di2Gears gears;
 }
 
+/// Ce que le tableau de bord doit faire d'une pression sur un bouton distant.
+///
+/// Volontairement pas le code de bouton brut : c'est le futur décodeur (D-Fly
+/// du Di2, protocole non encore établi — voir `decoders/di2.dart`) qui
+/// connaîtra le mapping matériel, pas [RideShellPage]. Deux valeurs seulement
+/// parce que c'est tout ce qu'on sait vouloir en faire aujourd'hui — changer
+/// de page, dans un sens ou l'autre.
+enum RemoteButton { next, previous }
+
+/// Une pression sur un bouton distant, déjà traduite en [RemoteButton].
+class RemoteButtonSample extends SensorSample {
+  const RemoteButtonSample(super.at, this.button);
+
+  final RemoteButton button;
+}
+
 /// Un véhicule détecté par le radar arrière.
 class RadarTarget {
   const RadarTarget({

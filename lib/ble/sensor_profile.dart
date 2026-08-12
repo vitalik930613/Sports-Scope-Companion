@@ -67,6 +67,19 @@ final sensorProfiles = <SensorProfile>[
     characteristic: BleCharacteristics.di2Gears,
     decoder: Di2Characteristic.new,
   ),
+  // Même capacité que la position des vitesses, à dessein : désactiver
+  // « gears » dans un profil de sortie (vélo prêté, boîtier de l'autre vélo)
+  // doit aussi couper les boutons, pas seulement l'affichage du braquet. Un
+  // Di2 dont les canaux D-Fly ne sont pas configurés n'expose simplement pas
+  // cette characteristic — `_subscribeAll` s'en accommode déjà (voir
+  // `sensor_connection.dart`), rien de plus à faire ici.
+  SensorProfile(
+    kind: SensorKind.gears,
+    label: 'Boutons D-Fly (Di2)',
+    service: BleServices.di2,
+    characteristic: BleCharacteristics.di2Buttons,
+    decoder: Di2ButtonsCharacteristic.new,
+  ),
   SensorProfile(
     kind: SensorKind.radar,
     label: 'Radar',
