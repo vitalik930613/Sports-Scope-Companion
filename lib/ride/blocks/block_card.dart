@@ -73,7 +73,7 @@ class BlockCard extends StatelessWidget {
           SizedBox(height: metrics.gap),
           for (final line in lines)
             Padding(
-              padding: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.only(bottom: 2),
               child: Text(
                 line,
                 style: TextStyle(
@@ -174,7 +174,7 @@ class StatCard extends StatelessWidget {
           SizedBox(height: metrics.gap),
           for (final row in rows)
             Padding(
-              padding: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.only(bottom: 2),
               // Pas de `baseline` ici : le fond de zone met la valeur dans un
               // `Container` (pour son rembourrage et son coin arrondi), qui
               // n'a pas de ligne de base à offrir — un Row en `baseline` la

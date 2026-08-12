@@ -31,10 +31,7 @@ enum MetricId {
   duration('duration', 'Durée', '', Icons.timer_outlined),
   movingTime('moving_time', 'Temps en mouvement', '', Icons.directions_bike),
   pauseTime('pause_time', 'Durée pause', '', Icons.pause_circle_outline),
-  // Vide et non « km » : `read()` écrit déjà l'unité dans la valeur elle-même
-  // (`formatDistanceKm`, « 4,20 km ») — un jeton `unit` séparé la redirait en
-  // double plutôt que de la compléter.
-  distance('distance', 'Distance', '', Icons.straighten),
+  distance('distance', 'Distance', 'km', Icons.straighten),
   speed('speed', 'Vitesse', 'km/h', Icons.speed),
   speedAvg('speed_avg', 'Vitesse moyenne', 'km/h', Icons.speed),
   speedMax('speed_max', 'Vitesse max', 'km/h', Icons.speed),
@@ -50,8 +47,7 @@ enum MetricId {
   cadence('cadence', 'Cadence', 'tr/min', Icons.autorenew),
   cadenceAvg('cadence_avg', 'Cadence moyenne', 'tr/min', Icons.autorenew),
   cadenceMax('cadence_max', 'Cadence max', 'tr/min', Icons.autorenew),
-  // Vide, même raison que [distance] : `read()` écrit déjà « 640 m ».
-  ascent('ascent', 'Dénivelé positif', '', Icons.trending_up),
+  ascent('ascent', 'Dénivelé positif', 'm', Icons.trending_up),
   altitude('altitude', 'Altitude', 'm', Icons.terrain),
   grade('grade', 'Pente', '%', Icons.north_east),
   gradeAvg('grade_avg', 'Pente moyenne', '%', Icons.north_east),
@@ -63,10 +59,8 @@ enum MetricId {
   chainringPosition('chainring_position', 'Plateau', '', Icons.donut_large),
   sprocketPosition('sprocket_position', 'Pignon', '', Icons.album),
   gearRatio('gear_ratio', 'Rapport', '', Icons.compare_arrows),
-  // Vides, même raison que [distance]/[ascent] : `read()` écrit déjà l'unité
-  // dans la valeur (`formatDistanceKm`, « ${…} m »).
-  routeRemaining('route_remaining', 'Distance restante', '', Icons.flag_outlined),
-  routeRemainingGain('route_remaining_gain', 'D+ restant', '', Icons.trending_up),
+  routeRemaining('route_remaining', 'Distance restante', 'km', Icons.flag_outlined),
+  routeRemainingGain('route_remaining_gain', 'D+ restant', 'm', Icons.trending_up),
   routeEta('route_eta', 'Temps restant', '', Icons.schedule);
 
   const MetricId(this.key, this.name, this.unit, this.icon);
@@ -263,7 +257,7 @@ enum MetricId {
       // même pas. Le tiret dit la bonne chose — on ne mesure pas ça ici.
       MetricId.distance => MetricReading(
           active && sources.recorder.gpsEnabled
-              ? formatDistanceKm(sources.recorder.distanceM)
+              ? formatKm(sources.recorder.distanceM)
               : null,
           numericValue: active && sources.recorder.gpsEnabled
               ? sources.recorder.distanceM / 1000
@@ -348,7 +342,7 @@ enum MetricId {
       // et un cumul avant le départ vaut « rien », pas « zéro mètre ».
       MetricId.ascent => MetricReading(
           active && sources.recorder.gpsEnabled
-              ? '${stats.ascentM.round()} m'
+              ? stats.ascentM.round().toString()
               : null,
           numericValue: active && sources.recorder.gpsEnabled ? stats.ascentM : null,
         ),
@@ -433,7 +427,7 @@ enum MetricId {
     if (nav == null || !nav.onRoute || nav.isStale(DateTime.now())) {
       return const MetricReading(null);
     }
-    return MetricReading(formatDistanceKm(nav.remainingM), numericValue: nav.remainingM / 1000);
+    return MetricReading(formatKm(nav.remainingM), numericValue: nav.remainingM / 1000);
   }
 
   static MetricReading _remainingGainReading(MetricSources sources) {
@@ -441,7 +435,7 @@ enum MetricId {
     if (nav == null || !nav.onRoute || nav.isStale(DateTime.now())) {
       return const MetricReading(null);
     }
-    return MetricReading('${nav.remainingGainM.round()} m', numericValue: nav.remainingGainM);
+    return MetricReading(nav.remainingGainM.round().toString(), numericValue: nav.remainingGainM);
   }
 
   /// Vitesse moyenne « en roulant » : la distance parcourue sur le seul temps

@@ -17,15 +17,21 @@ String formatDuration(Duration duration) {
   return hours > 0 ? '$hours:$mm:$ss' : '$mm:$ss';
 }
 
-/// `4,20 km`, jamais en mètres. Pour les mesures de distance du tableau de
-/// bord (distance parcourue, distance restante) : une case ne doit pas
-/// changer d'unité en cours de route, contrairement à [formatDistance] qui
-/// bascule sous 100 m pour un départ ou une arrivée toute proche.
-String formatDistanceKm(double metres) {
+/// `4,20`, jamais en mètres et sans l'unité — pour les mesures de distance du
+/// tableau de bord (distance parcourue, distance restante) dont l'unité est un
+/// jeton `unit` séparé (voir `MetricId.unit`), positionnable dans l'éditeur
+/// plutôt qu'écrit dans le chiffre. Une case ne doit pas changer d'échelle en
+/// cours de route, contrairement à [formatDistance] qui bascule sous 100 m
+/// pour un départ ou une arrivée toute proche.
+String formatKm(double metres) {
   final km = metres / 1000;
   final decimals = km >= 100 ? 1 : 2;
-  return '${km.toStringAsFixed(decimals).replaceAll('.', ',')} km';
+  return km.toStringAsFixed(decimals).replaceAll('.', ',');
 }
+
+/// [formatKm] avec l'unité accolée — pour les lignes de texte qui n'ont pas de
+/// jeton `unit` à côté (listes de côtes, tableaux de moyennes).
+String formatDistanceKm(double metres) => '${formatKm(metres)} km';
 
 /// `04:12`, heures toujours écrites. Pour les mesures de temps du tableau de
 /// bord (durée, temps en mouvement, temps restant) : leur largeur ne doit pas

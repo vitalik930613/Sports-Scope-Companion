@@ -85,6 +85,11 @@ class MetricView extends StatelessWidget {
   static const _bigValueSize = 64.0;
   static const _gaugeValueSize = 48.0;
 
+  /// L'espace entre deux rangées (icône/étiquette/unité/chiffre/jauge) — plus
+  /// resserré que [BlockMetrics.gap], qui reste la valeur du rembourrage et de
+  /// l'espace sous le titre des cartes de texte, pas de celui-ci.
+  static const _rowGap = 8.0;
+
   @override
   Widget build(BuildContext context) {
     final content = ListenableBuilder(
@@ -137,7 +142,7 @@ class MetricView extends StatelessWidget {
         // naturelle du contenu, comme avant ce chantier.
         final children = [
           for (var i = 0; i < rows.length; i++) ...[
-            if (i > 0) SizedBox(height: BlockMetrics.natural.gap),
+            if (i > 0) const SizedBox(height: _rowGap),
             if (layout.gaugeRow == rows[i])
               _gaugeRow(reading)
             else if (height != null)
@@ -201,27 +206,34 @@ class MetricView extends StatelessWidget {
     bool isEmpty(GridColumn c) =>
         iconAt(c) == null && labelAt(c) == null && unitAt(c) == null && valueAt(c) == null;
 
-    // L'icône garde toujours sa taille — la rogner la rendrait illisible. Le
-    // texte, lui, peut céder la place (`Flexible` + ellipse sur les `Text`
-    // eux-mêmes) si sa case ne suffit pas, plutôt que de déborder.
+    // Un non-flexible dans une `Row` reçoit une largeur maximale *non
+    // bornée* pendant la mesure — donc rien, pas même l'icône, ne peut
+    // rester en dehors du partage `Flexible` sans risquer de faire déborder
+    // la rangée : une case d'une seule colonne dans une grille dense (six
+    // colonnes et plus) peut être plus étroite que la taille naturelle de
+    // l'icône seule. Chacun reste néanmoins prioritaire ou non selon ce
+    // qu'il peut perdre sans devenir illisible : l'icône et le texte cèdent
+    // la place en dernier recours (`FittedBox`/ellipse), pas en premier.
     Widget columnContent(GridColumn c) {
       final parts = <Widget>[];
-      void addFixed(Widget? w) {
+      void addFlexible(Widget? w, {int flex = 1}) {
         if (w == null) return;
         if (parts.isNotEmpty) parts.add(SizedBox(width: BlockMetrics.natural.gap / 2));
-        parts.add(w);
+        parts.add(Flexible(flex: flex, child: w));
       }
 
-      void addFlexible(Widget? w) {
-        if (w == null) return;
-        if (parts.isNotEmpty) parts.add(SizedBox(width: BlockMetrics.natural.gap / 2));
-        parts.add(Flexible(child: w));
-      }
-
-      addFixed(iconAt(c));
-      addFlexible(labelAt(c));
+      // L'unité reste `Flexible` — un poids fixe la ferait déborder plutôt
+      // que céder la place dans une case étroite, la même raison qui garde
+      // le chiffre et l'étiquette flexibles. Mais un poids égal au leur lui
+      // offrait la moitié de la largeur par un partage à parts égales, même
+      // pour un texte bien plus court (« km/h », « bpm », « % »…) qui n'en a
+      // pas besoin — l'étiquette tronquait alors qu'il restait de la place,
+      // prise par une unité bien plus courte que sa part. Un poids réduit
+      // change la priorité du partage sans retirer la capacité à rétrécir.
+      addFlexible(iconAt(c));
+      addFlexible(labelAt(c), flex: 3);
       addFlexible(unitAt(c));
-      addFlexible(valueAt(c));
+      addFlexible(valueAt(c), flex: 3);
 
       return Row(mainAxisSize: MainAxisSize.min, children: parts);
     }
@@ -256,7 +268,14 @@ class MetricView extends StatelessWidget {
     // rognage/désalignement des glyphes non carrés (voir la doc de
     // `FaIconData`). L'icône par défaut d'une mesure, elle, reste une icône
     // Material ([MetricId.icon]).
-    return custom != null ? FaIcon(custom, size: size, color: tint) : Icon(metric.icon, size: size, color: tint);
+    final glyph = custom != null ? FaIcon(custom, size: size, color: tint) : Icon(metric.icon, size: size, color: tint);
+    // `FittedBox` en dernier recours seulement — une case généreuse laisse
+    // l'icône à sa taille naturelle (rien à réduire), mais une colonne plus
+    // étroite que [size] (une case d'une seule colonne dans une grille de
+    // six et plus, l'icône y dépasse déjà la largeur disponible avant même
+    // toute mise à l'échelle de rangée) la réduit plutôt que de déborder de
+    // la rangée.
+    return FittedBox(fit: BoxFit.scaleDown, child: glyph);
   }
 
   Widget _labelWidget(Color ink, double scale) => Text(
