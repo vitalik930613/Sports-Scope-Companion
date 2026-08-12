@@ -685,9 +685,19 @@ class _RideShellPageState extends State<RideShellPage>
   /// `viewPadding` et non `padding` : la première garde la hauteur de
   /// l'obstruction physique même quand les barres système sont masquées. Le bas,
   /// lui, est retiré par [webInsetsFor] — le bandeau natif occupe cette zone.
+  ///
+  /// Le haut n'est **pas** le `viewPadding.top` brut : c'est
+  /// [NotchBand.heightFor], qui inclut son plancher pour les écrans sans
+  /// encoche. Pousser le `viewPadding.top` seul ferait croire à la page une
+  /// zone obstruée plus courte que la bande réellement dessinée sur ces
+  /// écrans, et sa bannière de virage se dessinerait sous la bande plutôt que
+  /// juste en dessous.
   Future<void> _publishInsets() async {
     if (!mounted) return;
-    await _web?.pushInsets(webInsetsFor(MediaQuery.viewPaddingOf(context)));
+    await _web?.pushInsets(
+      webInsetsFor(MediaQuery.viewPaddingOf(context))
+          .copyWith(top: NotchBand.heightFor(context)),
+    );
   }
 
   @override

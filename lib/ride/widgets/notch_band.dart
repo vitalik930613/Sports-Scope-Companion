@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
 import 'band_metric_tile.dart';
+import 'swipe_zone.dart';
 
 /// La bande de l'encoche : jusqu'à une mesure de chaque côté de la caméra
 /// selfie, sur l'ancien emplacement de `RadarDistanceBadges` (retiré).
@@ -16,36 +17,84 @@ import 'band_metric_tile.dart';
 /// dessiner par-dessus, comme il le faisait déjà par-dessus le reste de
 /// l'écran.
 ///
-/// Aucun geste : la zone de tap du haut appartient à la page web, c'est elle
-/// qui pilote le rétroéclairage.
-class NotchBand extends StatelessWidget {
+/// **Plusieurs jeux, comme le bandeau du bas** ([RideBottomBand]) : un glissé
+/// horizontal fait défiler l'un vers l'autre. `SwipeZone` y est branché en
+/// `HitTestBehavior.translucent`, pas `opaque` (son défaut) — le tap de cette
+/// zone appartient toujours à la page web en dessous, c'est elle qui pilote
+/// le rétroéclairage, et `translucent` le laisse passer tout en laissant le
+/// glissé horizontal se faire reconnaître pour changer de jeu.
+class NotchBand extends StatefulWidget {
   const NotchBand({super.key, required this.notch, required this.sources});
 
-  final NotchSpec notch;
+  /// Les jeux de la bande, dans l'ordre. Vide (le cas par défaut) laisse la
+  /// bande invisible — voir [RidePreset.notch].
+  final List<NotchSpec> notch;
+
   final MetricSources sources;
 
   /// Plancher pour les écrans sans encoche : sans lui, la valeur se collerait
-  /// au bord. Reprend la hauteur de l'ancienne bande `RadarDistanceBadges`.
-  static const _minHeight = 46.0;
+  /// au bord. Un peu plus haut que l'ancienne bande `RadarDistanceBadges`
+  /// (46) : la bande porte maintenant un fond et plusieurs jeux, elle a
+  /// besoin d'un peu plus de présence.
+  static const _minHeight = 60.0;
+
+  /// Ce que la bande occupe réellement, encoche matérielle comprise.
+  /// `RideShellPage` s'en sert pour republier l'inset du haut vers la page
+  /// web (`_publishInsets`) : sans ça, la page croirait la zone obstruée
+  /// aussi courte que l'encoche physique, et sur un écran où [_minHeight]
+  /// prend le dessus (encoche absente ou plus courte que ce plancher), la
+  /// bannière de virage se dessinerait sous la bande plutôt que juste en
+  /// dessous.
+  static double heightFor(BuildContext context) =>
+      // `viewPadding` et non `padding` : en immersif les barres système sont
+      // masquées, mais l'encoche, elle, est toujours là.
+      math.max(MediaQuery.viewPaddingOf(context).top, _minHeight);
+
+  @override
+  State<NotchBand> createState() => _NotchBandState();
+}
+
+class _NotchBandState extends State<NotchBand> {
+  /// Le jeu affiché. Même logique que `_RideBottomBandState._set` : il ne
+  /// suit ni la page, ni rien d'autre que le doigt.
+  int _set = 0;
+
+  /// Refermée sur elle-même, comme le bandeau du bas — un bout de liste
+  /// voudrait dire « glissé sans effet ».
+  void _onSwipe(int direction) => setState(
+        () => _set = (_set + direction) % widget.notch.length,
+      );
+
+  @override
+  void didUpdateWidget(NotchBand oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Même rattrapage que le bandeau du bas : changer de profil en cours de
+    // route peut raccourcir la liste.
+    if (_set >= widget.notch.length) _set = 0;
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (notch.left == null && notch.right == null) return const SizedBox.shrink();
+    if (widget.notch.isEmpty) return const SizedBox.shrink();
 
-    // `viewPadding` et non `padding` : en immersif les barres système sont
-    // masquées, mais l'encoche, elle, est toujours là.
-    final height = math.max(MediaQuery.viewPaddingOf(context).top, _minHeight);
+    final current = widget.notch[_set];
 
-    return IgnorePointer(
-      child: SizedBox(
-        height: height,
+    return SwipeZone(
+      behavior: HitTestBehavior.translucent,
+      onSwipe: _onSwipe,
+      child: Container(
+        height: NotchBand.heightFor(context),
+        decoration: const BoxDecoration(
+          color: Color(0xFF101214),
+          border: Border(bottom: BorderSide(color: Colors.white24)),
+        ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _slot(notch.left, Alignment.centerLeft),
-              _slot(notch.right, Alignment.centerRight),
+              _slot(current.left, Alignment.centerLeft),
+              _slot(current.right, Alignment.centerRight),
             ],
           ),
         ),
@@ -61,9 +110,9 @@ class NotchBand extends StatelessWidget {
         fit: BoxFit.scaleDown,
         alignment: alignment,
         child: ListenableBuilder(
-          listenable: Listenable.merge(metric.dependencies(sources)),
+          listenable: Listenable.merge(metric.dependencies(widget.sources)),
           builder: (context, _) {
-            final reading = metric.read(sources);
+            final reading = metric.read(widget.sources);
             return BandMetricTile(
               value: reading.value,
               label: metric.name,

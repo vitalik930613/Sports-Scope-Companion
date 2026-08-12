@@ -26,7 +26,7 @@ class RidePreset {
     this.description,
     required this.pages,
     required this.bands,
-    this.notch = const NotchSpec(),
+    this.notch = const [],
     this.sensors = const SensorSettings(),
     this.radar = const RadarSettings(),
     this.lighting = const LightingSettings(),
@@ -88,10 +88,12 @@ class RidePreset {
   /// Les jeux de valeurs du bandeau, dans l'ordre. Au moins un.
   final List<RideBandSpec> bands;
 
-  /// La bande de l'encoche : une mesure au plus de chaque côté. Contrairement
-  /// à [bands], vide est une valeur normale — un profil qui n'a jamais touché
-  /// ce réglage garde un écran identique à celui d'avant qu'il existe.
-  final NotchSpec notch;
+  /// Les jeux de la bande de l'encoche, dans l'ordre — même forme que [bands],
+  /// un glissé horizontal fait défiler l'un vers l'autre. Contrairement à
+  /// [bands], une liste vide est une valeur normale — un profil qui n'a
+  /// jamais touché ce réglage garde un écran identique à celui d'avant qu'il
+  /// existe.
+  final List<NotchSpec> notch;
 
   final SensorSettings sensors;
   final RadarSettings radar;
@@ -229,7 +231,7 @@ class RidePreset {
       // sortie ne se diagnostique pas au guidon.
       pages: pages.isEmpty ? [RidePreset.builtIn.pages.last] : pages,
       bands: bands.isEmpty ? RidePreset.builtIn.bands : bands,
-      notch: NotchSpec.parse(raw['notch']),
+      notch: _notch(raw['notch']),
       sensors: SensorSettings.parse(raw['sensors']),
       radar: RadarSettings.parse(raw['radar']),
       lighting: LightingSettings.parse(raw['lighting']),
@@ -267,6 +269,14 @@ class RidePreset {
     return [
       for (final entry in raw)
         if (RideBandSpec.parse(entry) case final band?) band,
+    ];
+  }
+
+  static List<NotchSpec> _notch(Object? raw) {
+    if (raw is! List) return const [];
+    return [
+      for (final entry in raw)
+        if (NotchSpec.parse(entry) case final set?) set,
     ];
   }
 }
@@ -562,11 +572,15 @@ class RideBandSpec {
   }
 }
 
-/// Ce que la bande de l'encoche affiche, de chaque côté de la caméra selfie.
+/// Ce qu'un jeu de la bande de l'encoche affiche, de chaque côté de la caméra
+/// selfie.
 ///
-/// Contrairement à [RideBandSpec], vide (les deux champs à `null`) est un état
-/// normal et non un repli : un profil qui n'a jamais touché ce réglage doit
-/// laisser la bande invisible, exactement comme avant que ce réglage existe.
+/// [RidePreset.notch] est une liste de jeux, entre lesquels un glissé
+/// horizontal fait défiler — même principe que [RideBandSpec] pour le
+/// bandeau du bas. Contrairement à lui, une liste vide (ou absente) est un
+/// état normal et non un repli : un profil qui n'a jamais touché ce réglage
+/// doit laisser la bande invisible, exactement comme avant que ce réglage
+/// existe.
 @immutable
 class NotchSpec {
   const NotchSpec({this.left, this.right});
@@ -574,9 +588,11 @@ class NotchSpec {
   final MetricId? left;
   final MetricId? right;
 
-  static NotchSpec parse(Object? raw) {
-    if (raw is! Map) return const NotchSpec();
-    return NotchSpec(left: MetricId.fromKey(raw['left']), right: MetricId.fromKey(raw['right']));
+  static NotchSpec? parse(Object? raw) {
+    if (raw is! Map) return null;
+    final left = MetricId.fromKey(raw['left']);
+    final right = MetricId.fromKey(raw['right']);
+    return left == null && right == null ? null : NotchSpec(left: left, right: right);
   }
 }
 

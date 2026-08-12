@@ -39,14 +39,26 @@ class SwipeZone extends StatefulWidget {
 }
 
 class _SwipeZoneState extends State<SwipeZone> {
-  double _dragged = 0;
+  double _draggedX = 0;
+
+  /// Suivi en plus de [_draggedX], pour ne rien déclencher sur un geste qui
+  /// n'a d'horizontal que quelques pixels de bruit — typiquement un doigt qui
+  /// part du bord bas de l'écran pour un geste système (menu, barres). Un
+  /// `HorizontalDragGestureRecognizer` seul ne compare jamais dx à dy : il
+  /// gagne l'arène dès que dx dépasse le seuil de tolérance, même sur un
+  /// geste franchement vertical.
+  double _draggedY = 0;
 
   void _onDragEnd(DragEndDetails details) {
-    final direction = swipeDirection(
-      dx: _dragged,
-      velocity: details.velocity.pixelsPerSecond.dx,
-    );
-    _dragged = 0;
+    final horizontal = _draggedX.abs() >= _draggedY.abs();
+    final direction = horizontal
+        ? swipeDirection(
+            dx: _draggedX,
+            velocity: details.velocity.pixelsPerSecond.dx,
+          )
+        : 0;
+    _draggedX = 0;
+    _draggedY = 0;
     if (direction != 0) widget.onSwipe(direction);
   }
 
@@ -55,8 +67,14 @@ class _SwipeZoneState extends State<SwipeZone> {
     return GestureDetector(
       behavior: widget.behavior,
       onTap: widget.onTap,
-      onHorizontalDragStart: (_) => _dragged = 0,
-      onHorizontalDragUpdate: (d) => _dragged += d.delta.dx,
+      onHorizontalDragStart: (_) {
+        _draggedX = 0;
+        _draggedY = 0;
+      },
+      onHorizontalDragUpdate: (d) {
+        _draggedX += d.delta.dx;
+        _draggedY += d.delta.dy;
+      },
       onHorizontalDragEnd: _onDragEnd,
       child: widget.child,
     );
