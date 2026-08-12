@@ -116,6 +116,11 @@ sealed class DashboardBlock {
           textColor: textColor,
         ),
       'clock' => ClockBlock.parse(raw),
+      'sleep' => SleepBlock(
+          mode: _modeOf(raw['mode'], SleepMode.values),
+          color: color,
+          textColor: textColor,
+        ),
       'empty' => const EmptyBlock(),
       _ => null,
     };
@@ -925,6 +930,49 @@ enum RouteMode with BlockMode {
   compact('compact');
 
   const RouteMode(this.key);
+
+  @override
+  final String key;
+}
+
+/// Met la carte en veille : voile noir et rétroéclairage à 1 %, comme un appui
+/// long sur la carte sait déjà le faire — mais depuis une page de données qui
+/// n'a pas la carte sous les yeux. Le bouton ramène donc d'abord le cycliste
+/// sur la carte (`RideShellPage._sleep`), puis demande au site d'entrer en
+/// veille lui-même (`NavigationWebController.requestSleep`), par le même
+/// chemin que l'appui long — pas de voile ni de logique de veille propres à
+/// l'appli, qui n'a jamais dessiné sa propre veille depuis le retrait de
+/// `lib/sleep/` (voir « La veille par appui long, sur la carte seulement »).
+///
+/// Sans effet sur un profil sans carte : voir `RideShellPage.onSleep`.
+class SleepBlock extends DashboardBlock {
+  const SleepBlock({
+    this.mode = SleepMode.full,
+    super.color,
+    super.textColor,
+  });
+
+  final SleepMode mode;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SleepBlock &&
+      other.mode == mode &&
+      other.color == color &&
+      other.textColor == textColor;
+
+  @override
+  int get hashCode => Object.hash(mode, color, textColor);
+}
+
+enum SleepMode with BlockMode {
+  /// Le bouton large, à portée de pouce sur une route bosselée.
+  full('full'),
+
+  /// L'icône seule, pour une cellule de grille.
+  compact('compact');
+
+  const SleepMode(this.key);
 
   @override
   final String key;

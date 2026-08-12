@@ -221,6 +221,28 @@ class NavigationWebController {
     }
   }
 
+  /// Demande à la page d'entrer en veille — même geste que l'appui long
+  /// qu'elle sait déjà détecter, mais déclenché ici par un bouton natif
+  /// (`SleepControl`, sur une page de données sans carte sous les yeux).
+  /// Reprend le chemin exact de `toggleScreenOffManual` côté site
+  /// (`RouteNavigation.vue`) : la page dessine son propre voile, coupe sa
+  /// boucle de rendu, et renvoie le message `screen` habituel — `ScreenPolicy`
+  /// n'a donc rien de plus à apprendre pour dimmer l'écran que pour un appui
+  /// long réel.
+  ///
+  /// `?.` sur l'objet ET sur la méthode : un site plus ancien n'expose pas
+  /// `sleepEnter`, et l'appeler ne doit pas lever d'exception — le bouton
+  /// reste alors sans effet plutôt que de faire planter la sortie.
+  Future<void> requestSleep() async {
+    try {
+      await webView.runJavaScript(
+        'void (window.sportsScopeCompanion?.sleepEnter?.());',
+      );
+    } catch (e) {
+      debugPrint('[web] veille ignorée : $e');
+    }
+  }
+
   /// Déclenche le téléchargement hors ligne du trajet affiché, depuis le menu
   /// natif — voir `OfflineMapNotifier` et `companionBridge.ts` côté Rails. Le
   /// téléchargement (tuiles, archive PMTiles) reste entièrement côté site :

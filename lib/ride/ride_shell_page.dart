@@ -787,6 +787,17 @@ class _RideShellPageState extends State<RideShellPage>
     _applyScreen(_screenPolicy.movedTo(onMap: _onMap));
   }
 
+  /// Bouton « Mettre en veille » d'une page de données ([SleepControl]) :
+  /// ramène le cycliste sur la carte — seule à savoir s'endormir — puis le lui
+  /// demande (`requestSleep`, même chemin que l'appui long côté site,
+  /// `toggleScreenOffManual` dans `RouteNavigation.vue`). Sans ce retour, le
+  /// voile se poserait hors champ et `ScreenPolicy` ne dimmerait rien,
+  /// `_asleep` exigeant `_onMap`.
+  void _sleep() {
+    if (_mapPage case final page?) _goToPage(page);
+    unawaited(_web?.requestSleep());
+  }
+
   /// Messages venus de la page.
   ///
   /// `ready` : la page annonce que son pont est en place.
@@ -1184,6 +1195,10 @@ class _RideShellPageState extends State<RideShellPage>
       // commandes disparaissent plutôt que de répondre « non ».
       onChooseRoute: _preset.hasMap ? _chooseRoute : null,
       onClearRoute: _preset.hasMap ? _clearRoute : null,
+      // Sans carte, il n'y a personne pour s'endormir : `_sleep` ramènerait le
+      // cycliste vers une page qui n'existe pas et n'appellerait `requestSleep`
+      // sur aucun contrôleur.
+      onSleep: _preset.hasMap ? _sleep : null,
       // Même raison : sans carte, il n'y a rien à archiver. `_offline` dit
       // lui-même si un tracé est effectivement suivi (`supported`).
       offlineMap: _preset.hasMap ? _offline : null,

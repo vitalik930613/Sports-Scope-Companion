@@ -15,6 +15,7 @@ import '../blocks/nav_state_block.dart';
 import '../blocks/radar_block.dart';
 import '../blocks/recording_block.dart';
 import '../blocks/route_block.dart';
+import '../blocks/sleep_block.dart';
 import '../blocks/training_budget_block.dart';
 import '../blocks/zones_block.dart';
 import '../nav_state.dart';
@@ -45,6 +46,7 @@ class DashboardPage extends StatelessWidget {
     this.onClose,
     this.onChooseRoute,
     this.onClearRoute,
+    this.onSleep,
     this.offlineMap,
     this.onDownloadOffline,
     this.onCalibratePower,
@@ -93,6 +95,13 @@ class DashboardPage extends StatelessWidget {
   /// que pas de commande.
   final VoidCallback? onChooseRoute;
   final VoidCallback? onClearRoute;
+
+  /// Mettre la carte en veille depuis cette page de données — voir
+  /// `SleepBlock` et `NavigationWebController.requestSleep`.
+  ///
+  /// Nul sur un profil sans carte (voir `RideShellPage.onSleep`) : il n'y a
+  /// personne à endormir.
+  final VoidCallback? onSleep;
 
   /// Où en est la carte hors-ligne du tracé affiché, poussée par la page — voir
   /// `OfflineMapNotifier`. Le téléchargement lui-même reste entièrement côté
@@ -308,6 +317,12 @@ class DashboardPage extends StatelessWidget {
             icon: clock.icon,
             color: clock.color,
             textColor: clock.textColor,
+          ),
+        final SleepBlock sleep => SleepControl(
+            onSleep: onSleep,
+            mode: sleep.mode,
+            color: sleep.color,
+            textColor: sleep.textColor,
           ),
         EmptyBlock() => const SizedBox.shrink(),
       };
