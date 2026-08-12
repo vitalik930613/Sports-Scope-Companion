@@ -544,11 +544,11 @@ class LapGridLayout extends LapPageLayout {
 }
 
 /// Ce qu'une case du bandeau ou de la bande de l'encoche peut porter : une
-/// mesure comme avant, ou une commande — pour l'instant, seule « mettre en
-/// veille ». Une clé de site unique (`MetricId.fromKey` + `'sleep'`) resterait
-/// ambiguë le jour où les deux catalogues se recouperaient ; `BandSlot`
-/// tranche une fois à l'analyse plutôt qu'à chaque lecture par les deux
-/// bandes.
+/// mesure comme avant, une commande — pour l'instant, seule « mettre en
+/// veille » — ou le radar. Une clé de site unique (`MetricId.fromKey` +
+/// `'sleep'`) resterait ambiguë le jour où les catalogues se recouperaient ;
+/// `BandSlot` tranche une fois à l'analyse plutôt qu'à chaque lecture par les
+/// deux bandes.
 @immutable
 sealed class BandSlot {
   const BandSlot();
@@ -558,9 +558,23 @@ sealed class BandSlot {
   /// document plus récent que l'appli ne doit rien faire échouer.
   static BandSlot? parse(Object? raw) {
     if (raw == 'sleep') return const BandActionSlot(BandAction.sleep);
+    if (raw is String && raw.startsWith('radar_')) {
+      return BandRadarSlot(_radarModeOf(raw.substring('radar_'.length)));
+    }
     final metric = MetricId.fromKey(raw);
     return metric == null ? null : BandMetricSlot(metric);
   }
+}
+
+/// Le mode nommé, ou [RadarMode.distance] — le mode par défaut, pour un mode
+/// de bande que cette version de l'appli ne connaît pas encore. Même repli
+/// qu'un genre de composant de grille (`DashboardBlock._modeOf`) : une case
+/// déjà posée par le site ne doit pas disparaître pour un mode trop récent.
+RadarMode _radarModeOf(String key) {
+  for (final mode in RadarMode.values) {
+    if (mode.key == key) return mode;
+  }
+  return RadarMode.distance;
 }
 
 /// Une mesure, comme toutes les cases du bandeau et de l'encoche avant que
@@ -580,6 +594,16 @@ enum BandAction { sleep }
 class BandActionSlot extends BandSlot {
   const BandActionSlot(this.action);
   final BandAction action;
+}
+
+/// Le radar arrière, en case de bandeau ou d'encoche — voir [RadarBlockView]
+/// pour le rendu réel des modes. Seul un sous-ensemble de [RadarMode] a un
+/// sens dans une case aussi petite : `distance`, `count` et `gauge` — voir
+/// `BAND_RADAR_MODES` côté site.
+@immutable
+class BandRadarSlot extends BandSlot {
+  const BandRadarSlot(this.mode);
+  final RadarMode mode;
 }
 
 /// Un jeu de valeurs du bandeau.

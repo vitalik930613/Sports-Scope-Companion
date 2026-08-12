@@ -1,12 +1,15 @@
 import 'dart:math' as math;
 import 'dart:ui' show DisplayFeature, DisplayFeatureType;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../../dashboard/dashboard_block.dart' show SleepMode;
+import '../../dashboard/dashboard_block.dart' show RadarMode, SleepMode;
 import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
+import '../blocks/radar_block.dart';
 import '../blocks/sleep_block.dart';
+import '../radar_severity.dart';
 import 'band_metric_tile.dart';
 import 'swipe_zone.dart';
 
@@ -27,13 +30,23 @@ import 'swipe_zone.dart';
 /// le rétroéclairage, et `translucent` le laisse passer tout en laissant le
 /// glissé horizontal se faire reconnaître pour changer de jeu.
 class NotchBand extends StatefulWidget {
-  const NotchBand({super.key, required this.notch, required this.sources, this.onSleep});
+  const NotchBand({
+    super.key,
+    required this.notch,
+    required this.sources,
+    this.radar,
+    this.onSleep,
+  });
 
   /// Les jeux de la bande, dans l'ordre. Vide (le cas par défaut) laisse la
   /// bande invisible — voir [RidePreset.notch].
   final List<NotchSpec> notch;
 
   final MetricSources sources;
+
+  /// Nul quand le profil a coupé le radar — même source que le bandeau du
+  /// bas (`RideBottomBand.radar`) et le cadre d'alerte.
+  final ValueListenable<RadarView>? radar;
 
   /// Demander la veille, sur un tap d'un côté réglé sur `sleep` — voir
   /// [SleepControl]. `null` sur un profil sans carte, comme la commande de
@@ -131,8 +144,14 @@ class _NotchBandState extends State<NotchBand> {
     return switch (slot) {
       BandMetricSlot(:final metric) => _metric(metric),
       BandActionSlot(:final action) => _action(action),
+      BandRadarSlot(:final mode) => _radar(mode),
     };
   }
+
+  // Pas de `FittedBox` ici, à l'inverse de [_metric] : [RadarBlockView] se
+  // met déjà à l'échelle de sa case via [BlockSurface] (`block_card.dart`),
+  // comme dans une case de grille — l'ajouter mesurerait deux fois.
+  Widget _radar(RadarMode mode) => RadarBlockView(radar: widget.radar, mode: mode);
 
   Widget _metric(MetricId metric) {
     return FittedBox(

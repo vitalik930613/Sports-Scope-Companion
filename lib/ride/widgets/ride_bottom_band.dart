@@ -1,9 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../../dashboard/dashboard_block.dart' show SleepMode;
+import '../../dashboard/dashboard_block.dart' show RadarMode, SleepMode;
 import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
+import '../blocks/radar_block.dart';
 import '../blocks/sleep_block.dart';
+import '../radar_severity.dart';
 import 'band_metric_tile.dart';
 import 'swipe_zone.dart';
 
@@ -39,6 +42,7 @@ class RideBottomBand extends StatefulWidget {
     super.key,
     required this.bands,
     required this.sources,
+    this.radar,
     this.onCalibratePower,
     this.onSleep,
   });
@@ -48,6 +52,11 @@ class RideBottomBand extends StatefulWidget {
 
   /// D'où les mesures se lisent — et de quoi elles dépendent.
   final MetricSources sources;
+
+  /// Nul quand le profil a coupé le radar — même source que la page de
+  /// données (`DashboardPage.radar`) et le cadre d'alerte, pas une seconde
+  /// écoute du capteur.
+  final ValueListenable<RadarView>? radar;
 
   /// Demander la veille, sur un tap de la case `sleep` — voir [SleepControl].
   /// `null` sur un profil sans carte, comme la commande de la grille : rien
@@ -139,6 +148,7 @@ class _RideBottomBandState extends State<RideBottomBand> {
     return switch (slot) {
       BandMetricSlot(:final metric) => _metric(metric, index),
       BandActionSlot(:final action) => _action(action),
+      BandRadarSlot(:final mode) => _radar(mode),
     };
   }
 
@@ -150,6 +160,10 @@ class _RideBottomBandState extends State<RideBottomBand> {
             child: SleepControl(onSleep: widget.onSleep, mode: SleepMode.compact),
           ),
       };
+
+  // Pas de marge supplémentaire : [BlockSurface] (`block_card.dart`) porte
+  // déjà son propre padding, comme dans une case de grille.
+  Widget _radar(RadarMode mode) => RadarBlockView(radar: widget.radar, mode: mode);
 
   Widget _metric(MetricId metric, int index) {
     final tile = ListenableBuilder(
