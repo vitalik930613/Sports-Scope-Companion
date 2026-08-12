@@ -115,11 +115,7 @@ sealed class DashboardBlock {
           color: color,
           textColor: textColor,
         ),
-      'clock' => ClockBlock(
-          mode: _modeOf(raw['mode'], ClockMode.values),
-          color: color,
-          textColor: textColor,
-        ),
+      'clock' => ClockBlock.parse(raw),
       'empty' => const EmptyBlock(),
       _ => null,
     };
@@ -1024,19 +1020,62 @@ enum RadarMode with BlockMode {
 /// sources — d'où un `DashboardBlock` à part plutôt qu'une entrée de plus au
 /// catalogue.
 class ClockBlock extends DashboardBlock {
-  const ClockBlock({this.mode = ClockMode.hm, super.color, super.textColor});
+  const ClockBlock({
+    this.mode = ClockMode.hm,
+    this.layout = const MetricLayout(value: GridPosition(0, GridColumn.center)),
+    this.icon,
+    super.color,
+    super.textColor,
+  });
 
   final ClockMode mode;
+
+  /// Où se posent l'icône, l'étiquette et le chiffre — même grille qu'un bloc
+  /// `metric` ([MetricLayout]), réglable comme lui. **Jamais d'`unit` ni de
+  /// `gaugeRow`** : une horloge n'a ni l'un ni l'autre, contrairement à une
+  /// mesure qui peut y avoir droit selon son genre — [parse] les retire même
+  /// si le document en portait.
+  final MetricLayout layout;
+
+  /// L'icône personnalisée réglée dans l'éditeur — même contrat que
+  /// [MetricBlock.icon]. `null` : [ClockCard] retombe sur son icône par
+  /// défaut, faute de [MetricId] pour en porter une.
+  final FaIconData? icon;
+
+  static ClockBlock parse(Map<dynamic, dynamic> raw) {
+    final parsed = raw['layout'] == null
+        ? const MetricLayout(value: GridPosition(0, GridColumn.center))
+        : MetricLayout.parse(raw['layout']);
+    // Ni jauge ni unité pour une horloge : on ne garde que ce que ClockCard
+    // sait dessiner, plutôt que de faire confiance à un document qui en
+    // porterait plus — même convention que le reste du fichier (rien ne lève,
+    // un réglage sans effet est ignoré et non refusé).
+    final layout = MetricLayout(
+      icon: parsed.icon,
+      label: parsed.label,
+      value: parsed.value,
+      rowHeights: parsed.rowHeights,
+    );
+    return ClockBlock(
+      mode: DashboardBlock._modeOf(raw['mode'], ClockMode.values),
+      layout: layout,
+      icon: companionIconFor(raw['icon'] is String ? raw['icon'] as String : null),
+      color: DashboardBlock._colorOf(raw, 'color'),
+      textColor: DashboardBlock._colorOf(raw, 'text_color'),
+    );
+  }
 
   @override
   bool operator ==(Object other) =>
       other is ClockBlock &&
       other.mode == mode &&
+      other.layout == layout &&
+      other.icon == icon &&
       other.color == color &&
       other.textColor == textColor;
 
   @override
-  int get hashCode => Object.hash(mode, color, textColor);
+  int get hashCode => Object.hash(mode, layout, icon, color, textColor);
 }
 
 enum ClockMode with BlockMode {

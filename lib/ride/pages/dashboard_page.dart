@@ -304,6 +304,8 @@ class DashboardPage extends StatelessWidget {
           ),
         final ClockBlock clock => ClockCard(
             mode: clock.mode,
+            layout: clock.layout,
+            icon: clock.icon,
             color: clock.color,
             textColor: clock.textColor,
           ),
