@@ -85,10 +85,12 @@ class MetricView extends StatelessWidget {
   static const _bigValueSize = 64.0;
   static const _gaugeValueSize = 48.0;
 
-  /// L'espace entre deux rangées (icône/étiquette/unité/chiffre/jauge) — plus
-  /// resserré que [BlockMetrics.gap], qui reste la valeur du rembourrage et de
-  /// l'espace sous le titre des cartes de texte, pas de celui-ci.
-  static const _rowGap = 8.0;
+  /// L'espace entre deux rangées (icône/étiquette/unité/chiffre/jauge) — nul
+  /// en grille : sur une case déjà courte, ces quelques pixels valent mieux
+  /// rendus au chiffre (via `grow()`) qu'à un vide entre les rangées. Une page
+  /// qui défile garde un espace, sinon les rangées s'y liraient collées.
+  static const _rowGap = 0.0;
+  static const _rowGapScrolling = 8.0;
 
   @override
   Widget build(BuildContext context) {
@@ -135,20 +137,30 @@ class MetricView extends StatelessWidget {
         // par [ScaleToFit] — et la dernière ne doit pas laisser de place
         // morte en dessous d'elle. Chaque rangée de texte/chiffre reçoit donc
         // une part de la hauteur réelle proportionnelle à son poids
-        // (`Expanded.flex`, voir [RowHeight]), son contenu centré dedans à sa
-        // taille naturelle ; une rangée de jauge, elle, garde toujours sa
-        // hauteur naturelle (une barre plus haute n'apporte rien). Sans
-        // hauteur réelle (une page qui défile) : repli sur la hauteur
-        // naturelle du contenu, comme avant ce chantier.
+        // (`Expanded.flex`, voir [RowHeight]), et son contenu grandit pour la
+        // remplir plutôt que de rester centré à sa taille naturelle avec du
+        // vide autour — un centrage y aurait fait le même effet qu'un padding
+        // interne, en double emploi avec [_rowGap] ; une rangée de jauge, elle,
+        // garde toujours sa hauteur naturelle (une barre plus haute n'apporte
+        // rien). Sans hauteur réelle (une page qui défile) : repli sur la
+        // hauteur naturelle du contenu, comme avant ce chantier.
         final children = [
           for (var i = 0; i < rows.length; i++) ...[
-            if (i > 0) const SizedBox(height: _rowGap),
+            if (i > 0) SizedBox(height: height == null ? _rowGapScrolling : _rowGap),
             if (layout.gaugeRow == rows[i])
               _gaugeRow(reading)
             else if (height != null)
               Expanded(
                 flex: layout.heightOf(rows[i]).weight,
-                child: Center(child: _gridRow(rows[i], reading, ink, valueSize)),
+                child: LayoutBuilder(
+                  builder: (context, rowConstraints) => _gridRow(
+                    rows[i],
+                    reading,
+                    ink,
+                    valueSize,
+                    rowHeight: rowConstraints.maxHeight,
+                  ),
+                ),
               )
             else
               _gridRow(rows[i], reading, ink, valueSize),
@@ -181,26 +193,63 @@ class MetricView extends StatelessWidget {
   /// pas) à côté. Plusieurs éléments dans une même case s'y affichent dans un
   /// ordre fixe — icône, étiquette, unité, chiffre — qu'on les ait posés dans
   /// cet ordre ou non.
-  Widget _gridRow(int row, MetricReading reading, Color ink, double valueSize) {
+  Widget _gridRow(int row, MetricReading reading, Color ink, double valueSize, {double? rowHeight}) {
     // Le facteur d'échelle de cette rangée ([RowHeight.scale]) : une rangée
     // ne reçoit plus de place ([slot], plus bas) que si son contenu grandit
     // d'autant, sinon elle déborderait sur sa voisine plutôt que de s'y
     // ajuster — voir la doc de [RowHeight].
     final scale = layout.heightOf(row).scale;
 
-    Widget? iconAt(GridColumn c) =>
-        (layout.icon?.row == row && layout.icon?.column == c) ? _iconWidget(ink, scale) : null;
-    Widget? labelAt(GridColumn c) =>
-        (layout.label?.row == row && layout.label?.column == c) ? _labelWidget(ink, scale) : null;
+    // Dans une case en grille, chaque élément est mis à l'échelle sur la
+    // hauteur *réelle* de sa rangée ([rowHeight], posée par [Expanded.flex])
+    // plutôt que de rester centré à sa taille naturelle : sinon une case plus
+    // large que ce chantier de mesures se lit avec un vide au-dessus/en
+    // dessous de chaque élément, qui se voit comme un padding — en double
+    // emploi visuel avec [_rowGap] entre les rangées. `BoxFit.contain` grandit
+    // aussi bien qu'il réduit, contrairement au `scaleDown` intérieur des
+    // éléments eux-mêmes (icône, chiffre) — celui-ci garde son rôle de
+    // dernier recours contre une case trop étroite, indépendant de la hauteur
+    // de rangée. Sans hauteur réelle (page qui défile), rien ne change.
+    //
+    // [column] pilote l'alignement du `FittedBox` : sa boîte reçoit la part
+    // *entière* de la colonne ([Expanded], plus bas), presque toujours plus
+    // large que le contenu — c'est justement ce qui lui permet de grandir sur
+    // la hauteur sans être freiné par la largeur (voir `addFlexible`). Sans
+    // alignement posé sur la vraie position, `FittedBox` centre par défaut :
+    // deux éléments de colonnes différentes, chacun centré dans une boîte qui
+    // déborde largement sur la rangée, se superposent visuellement au milieu
+    // au lieu de tenir chacun leur coin — l'étiquette d'une case « gauche »
+    // se lisait à droite, l'unité d'une case « droite » retombait au centre.
+    Widget grow(Widget child, GridColumn column) => rowHeight == null
+        ? child
+        : SizedBox(
+            height: rowHeight,
+            child: FittedBox(fit: BoxFit.contain, alignment: _columnAlignment(column), child: child),
+          );
+
+    Widget? iconAt(GridColumn c) => (layout.icon?.row == row && layout.icon?.column == c)
+        ? grow(_iconWidget(ink, scale), c)
+        : null;
+    Widget? labelAt(GridColumn c) => (layout.label?.row == row && layout.label?.column == c)
+        ? grow(_labelWidget(ink, scale), c)
+        : null;
     // Un jeton `unit` sur une mesure dont l'unité est vide (durée, braquet…)
     // ne dessine simplement rien, comme la jauge sur une mesure non
     // éligible — pas une clé mal réglée à corriger, juste rien à y mettre.
     Widget? unitAt(GridColumn c) =>
         (metric.unit.isNotEmpty && layout.unit?.row == row && layout.unit?.column == c)
-            ? _unitWidget(ink, scale)
+            ? grow(_unitWidget(ink, scale), c)
             : null;
     Widget? valueAt(GridColumn c) => (layout.value.row == row && layout.value.column == c)
-        ? _value(reading, ink, size: valueSize * scale)
+        ? grow(
+            _value(
+              reading,
+              ink,
+              size: valueSize * scale,
+              naturalHeight: rowHeight == null ? _valueHeight : null,
+            ),
+            c,
+          )
         : null;
 
     bool isEmpty(GridColumn c) =>
@@ -208,7 +257,7 @@ class MetricView extends StatelessWidget {
 
     // Un non-flexible dans une `Row` reçoit une largeur maximale *non
     // bornée* pendant la mesure — donc rien, pas même l'icône, ne peut
-    // rester en dehors du partage `Flexible` sans risquer de faire déborder
+    // rester en dehors du partage flexible sans risquer de faire déborder
     // la rangée : une case d'une seule colonne dans une grille dense (six
     // colonnes et plus) peut être plus étroite que la taille naturelle de
     // l'icône seule. Chacun reste néanmoins prioritaire ou non selon ce
@@ -219,17 +268,28 @@ class MetricView extends StatelessWidget {
       void addFlexible(Widget? w, {int flex = 1}) {
         if (w == null) return;
         if (parts.isNotEmpty) parts.add(SizedBox(width: BlockMetrics.natural.gap / 2));
-        parts.add(Flexible(flex: flex, child: w));
+        // `Expanded` (ajustement *tight*) et non `Flexible` (*loose*) : c'est
+        // ce qui donne à `grow()` une largeur *fixée*, pas seulement un
+        // plafond. Avec un ajustement loose, un élément plus étroit que sa
+        // part se contentait de sa taille naturelle, et la case de
+        // destination du `FittedBox(contain)` de `grow()` devenait étroite et
+        // haute — l'aspect du chiffre restait alors « plus large que haut »
+        // par rapport à elle, donc c'est la largeur qui gagnait l'ajustement
+        // et rien ne grandissait, malgré la hauteur de rangée disponible :
+        // le chiffre restait à sa taille naturelle, centré dans du vide. La
+        // capacité à rétrécir reste entière : elle est portée par le
+        // `FittedBox`/l'ellipse *interne* à chaque élément, pas par cet
+        // ajustement de partage.
+        parts.add(Expanded(flex: flex, child: w));
       }
 
-      // L'unité reste `Flexible` — un poids fixe la ferait déborder plutôt
-      // que céder la place dans une case étroite, la même raison qui garde
-      // le chiffre et l'étiquette flexibles. Mais un poids égal au leur lui
-      // offrait la moitié de la largeur par un partage à parts égales, même
-      // pour un texte bien plus court (« km/h », « bpm », « % »…) qui n'en a
-      // pas besoin — l'étiquette tronquait alors qu'il restait de la place,
-      // prise par une unité bien plus courte que sa part. Un poids réduit
-      // change la priorité du partage sans retirer la capacité à rétrécir.
+      // L'unité garde un poids réduit — un poids égal à celui du chiffre et
+      // de l'étiquette lui offrait la moitié de la largeur par un partage à
+      // parts égales, même pour un texte bien plus court (« km/h », « bpm »,
+      // « % »…) qui n'en a pas besoin — l'étiquette tronquait alors qu'il
+      // restait de la place, prise par une unité bien plus courte que sa
+      // part. Un poids réduit change la priorité du partage, pas la capacité
+      // à rétrécir (voir plus haut).
       addFlexible(iconAt(c));
       addFlexible(labelAt(c), flex: 3);
       addFlexible(unitAt(c));
@@ -253,12 +313,22 @@ class MetricView extends StatelessWidget {
 
     return Row(
       children: [
-        slot(GridColumn.left, Alignment.centerLeft, 1),
-        slot(GridColumn.center, Alignment.center, 2),
-        slot(GridColumn.right, Alignment.centerRight, 1),
+        slot(GridColumn.left, _columnAlignment(GridColumn.left), 1),
+        slot(GridColumn.center, _columnAlignment(GridColumn.center), 2),
+        slot(GridColumn.right, _columnAlignment(GridColumn.right), 1),
       ],
     );
   }
+
+  /// Le bord vers lequel une colonne pousse son contenu — même correspondance
+  /// pour positionner un groupe d'éléments dans sa case ([slot]) que pour
+  /// aligner chacun dans la boîte, souvent bien plus large que lui, que lui
+  /// donne [_gridRow.grow].
+  static Alignment _columnAlignment(GridColumn c) => switch (c) {
+        GridColumn.left => Alignment.centerLeft,
+        GridColumn.center => Alignment.center,
+        GridColumn.right => Alignment.centerRight,
+      };
 
   Widget _iconWidget(Color ink, double scale) {
     final custom = icon;
@@ -462,24 +532,30 @@ class MetricView extends StatelessWidget {
   /// inégales (« 8 » et « 1:12:34 ») et une largeur de case ne s'élargit pas
   /// pour les accueillir. La hauteur, elle, est fixe — c'est la carte entière
   /// que `ScaleToFit` met à l'échelle ensuite, pas ce chiffre pris seul.
+  ///
+  /// [naturalHeight] pose une hauteur de référence fixe pour la mesure de
+  /// taille naturelle — utile en page qui défile, où rien d'autre ne fixe une
+  /// échelle commune aux chiffres de longueurs très inégales. `null` en
+  /// grille : `grow()` (dans [_gridRow]) pose déjà sa propre boîte sur la
+  /// hauteur *réelle* de la rangée, donc cette référence fixe n'y servirait
+  /// qu'à imposer une deuxième échelle inutile, redondante avec celle de
+  /// `grow()` — la seule que suivent déjà l'icône, l'étiquette et l'unité.
   Widget _value(
     MetricReading reading,
     Color ink, {
     required double size,
-  }) =>
-      SizedBox(
-        height: _valueHeight,
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            reading.value ?? '—',
-            maxLines: 1,
-            style: TextStyle(
-              color: ink,
-              fontSize: size,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-      );
+    double? naturalHeight = _valueHeight,
+  }) {
+    final text = Text(
+      reading.value ?? '—',
+      maxLines: 1,
+      style: TextStyle(
+        color: ink,
+        fontSize: size,
+        fontWeight: FontWeight.w500,
+      ),
+    );
+    if (naturalHeight == null) return text;
+    return SizedBox(height: naturalHeight, child: FittedBox(fit: BoxFit.scaleDown, child: text));
+  }
 }
