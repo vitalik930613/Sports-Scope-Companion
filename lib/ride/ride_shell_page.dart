@@ -39,7 +39,6 @@ import 'widgets/climb_badge.dart';
 import 'widgets/climb_profile_overlay.dart';
 import 'widgets/map_edge_handle.dart';
 import 'widgets/map_swipe_zone.dart';
-import 'widgets/radar_distance_badges.dart';
 import 'widgets/radar_frame.dart';
 import 'widgets/radar_side_gauge.dart';
 import 'widgets/radar_wake_page.dart';
@@ -1030,10 +1029,9 @@ class _RideShellPageState extends State<RideShellPage>
                 child: RidePageFlash(page: _page, count: _pageCount),
               ),
             ),
-            // La pastille de col : repliée, épinglée en haut à droite, sous la
-            // bande de l'encoche (RadarDistanceBadges) pour ne jamais
-            // s'empiler avec elle. Posée après le bandeau/numéro de page pour
-            // rester visible même par-dessus la veille radar (reveil-radar) —
+            // La pastille de col : repliée, épinglée en haut à droite. Posée
+            // après le bandeau/numéro de page pour rester visible même
+            // par-dessus la veille radar (reveil-radar) —
             // un col en cours ne doit pas disparaître derrière une alerte
             // voiture, les deux sont des informations indépendantes.
             Positioned(
@@ -1116,20 +1114,6 @@ class _RideShellPageState extends State<RideShellPage>
                   valueListenable: _radar,
                   builder: (context, radar, _) =>
                       RadarFrame(severity: radar.severity),
-                ),
-              ),
-            // Les mètres dans la bande de l'encoche, au-dessus du cadre : c'est
-            // le chiffre qu'on va chercher, il ne doit être recouvert par rien.
-            if (_overlay)
-              Positioned(
-                key: const ValueKey('metres-radar'),
-                left: 0,
-                right: 0,
-                top: 0,
-                child: ValueListenableBuilder<RadarView>(
-                  valueListenable: _radar,
-                  builder: (context, radar, _) =>
-                      RadarDistanceBadges(view: radar),
                 ),
               ),
           ],

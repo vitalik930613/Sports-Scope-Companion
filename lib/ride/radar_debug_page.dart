@@ -7,7 +7,6 @@ import 'radar_alert_sound.dart';
 import 'radar_severity.dart';
 import 'radar_simulator.dart';
 import 'radar_wake_policy.dart';
-import 'widgets/radar_distance_badges.dart';
 import 'widgets/radar_frame.dart';
 import 'widgets/radar_side_gauge.dart';
 import 'widgets/radar_wake_page.dart';
@@ -16,14 +15,14 @@ import 'widgets/radar_wake_page.dart';
 /// sans voiture.
 ///
 /// Elle n'imite rien. Ce sont **les widgets de la sortie** qui sont montés ici —
-/// la même jauge, le même cadre, les mêmes mètres — nourris par le même
-/// [RadarViewNotifier] et doublés du même lecteur de sons. Une page qui
-/// redessinerait le radar à sa façon ne prouverait que sa propre justesse ;
-/// celle-ci prouve celle de la sortie.
+/// la même jauge, le même cadre — nourris par le même [RadarViewNotifier] et
+/// doublés du même lecteur de sons. Une page qui redessinerait le radar à sa
+/// façon ne prouverait que sa propre justesse ; celle-ci prouve celle de la
+/// sortie.
 ///
 /// Le fond n'est pas décoratif non plus : il passe du blanc au sombre pour que
-/// le dégradé des gouttières, le halo des marques et les pastilles de mètres
-/// soient jugés sur le pire cas — une carte enneigée en haut, une forêt en bas.
+/// le dégradé des gouttières et le halo des marques soient jugés sur le pire
+/// cas — une carte enneigée en haut, une forêt en bas.
 class RadarDebugPage extends StatefulWidget {
   const RadarDebugPage({super.key});
 
@@ -133,8 +132,9 @@ class _RadarDebugPageState extends State<RadarDebugPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      // Pas d'`AppBar` : les mètres s'affichent dans la bande de l'encoche, et
-      // une barre par-dessus les mettrait ailleurs que là où on veut les juger.
+      // Pas d'`AppBar` : le cadre et les gouttières vont jusqu'au bord de
+      // l'écran, et une barre par-dessus les mettrait ailleurs que là où on
+      // veut les juger.
       body: ValueListenableBuilder<RadarView>(
         valueListenable: _radar,
         builder: (context, radar, _) => Stack(
@@ -171,12 +171,6 @@ class _RadarDebugPageState extends State<RadarDebugPage> {
                 ),
               ),
             Positioned.fill(child: RadarFrame(severity: radar.severity)),
-            Positioned(
-              left: 0,
-              right: 0,
-              top: 0,
-              child: RadarDistanceBadges(view: radar),
-            ),
             Positioned(
               left: 0,
               right: 0,
