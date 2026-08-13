@@ -197,6 +197,7 @@ class DashboardPage extends StatelessWidget {
             rows: grid.rows,
             cols: grid.cols,
             cells: grid.cells,
+            dividers: grid.dividers,
             cellBuilder: _block,
             onMeasured: onGridMeasured,
           ),

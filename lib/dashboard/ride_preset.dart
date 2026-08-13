@@ -341,6 +341,7 @@ class GridPageSpec extends RidePageSpec {
     required this.rows,
     required this.cols,
     required this.cells,
+    this.dividers = const [],
     super.menu,
   });
 
@@ -350,6 +351,10 @@ class GridPageSpec extends RidePageSpec {
   /// Les cellules effectivement plaçables : dans la grille, et sans
   /// recouvrement. La première posée gagne (cf. [placedCells]).
   final List<GridCell> cells;
+
+  /// Les séparateurs posés entre les cases — décoratifs, sans effet sur la
+  /// géométrie des cellules (cf. [placedDividers]).
+  final List<GridDivider> dividers;
 
   /// Au-delà, les cases deviennent trop petites pour porter un chiffre lisible
   /// en roulant — c'est la même raison qui borne le bandeau à quatre cases.
@@ -374,6 +379,7 @@ class GridPageSpec extends RidePageSpec {
       rows: rows,
       cols: cols,
       cells: cells,
+      dividers: _gridDividers(raw['dividers'], rows: rows, cols: cols),
       menu: menu,
     );
   }
@@ -399,6 +405,23 @@ List<GridCell> _gridCells(
     ],
     spanOf: (cell) => cell.span,
     withSpan: (cell, span) => GridCell(span: span, block: cell.block),
+    rows: rows,
+    cols: cols,
+  );
+}
+
+/// Place les séparateurs d'une entrée `dividers`, partagé entre [GridPageSpec]
+/// et [LapGridLayout] — même géométrie, décorative, que [_gridCells].
+List<GridDivider> _gridDividers(
+  Object? raw, {
+  required int rows,
+  required int cols,
+}) {
+  return placedDividers(
+    [
+      for (final entry in (raw is List ? raw : []))
+        if (GridDivider.parse(entry) case final divider?) divider,
+    ],
     rows: rows,
     cols: cols,
   );
@@ -527,11 +550,13 @@ class LapGridLayout extends LapPageLayout {
     required this.rows,
     required this.cols,
     required this.cells,
+    this.dividers = const [],
   });
 
   final int rows;
   final int cols;
   final List<GridCell> cells;
+  final List<GridDivider> dividers;
 
   static LapGridLayout? parse(Map<dynamic, dynamic> raw) {
     final rows = _gridSide(raw['rows']);
@@ -539,7 +564,12 @@ class LapGridLayout extends LapPageLayout {
     final cells = _gridCells(raw['cells'], rows: rows, cols: cols);
     return cells.isEmpty
         ? null
-        : LapGridLayout(rows: rows, cols: cols, cells: cells);
+        : LapGridLayout(
+            rows: rows,
+            cols: cols,
+            cells: cells,
+            dividers: _gridDividers(raw['dividers'], rows: rows, cols: cols),
+          );
   }
 }
 

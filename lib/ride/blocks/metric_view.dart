@@ -205,8 +205,24 @@ class MetricView extends StatelessWidget {
     // ajuster — voir la doc de [RowHeight].
     final scale = layout.heightOf(row).scale;
 
-    Widget? iconAt(GridColumn c) =>
-        (layout.icon?.row == row && layout.icon?.column == c) ? _iconWidget(ink, scale) : null;
+    Widget? iconAt(GridColumn c) {
+      if (layout.icon?.row != row || layout.icon?.column != c) return null;
+      // Sur la même case qu'une étiquette ou le chiffre, l'icône reprend leur
+      // taille : posés côte à côte, ils se lisent comme un seul mot (« ❤ FC »
+      // ou « ❤ 158 »), et une icône bien plus grande que ce qui la suit casse
+      // cette lecture d'un coup d'œil. Le libellé gagne si les deux partagent
+      // la case avec l'icône : c'est lui, pas le chiffre, qu'on veut lire
+      // comme sa légende. Seule, l'icône garde sa taille habituelle, plus
+      // lisible dans une case qui n'a qu'elle à montrer.
+      final pairedWithLabel = layout.label?.row == row && layout.label?.column == c;
+      final pairedWithValue = layout.value.row == row && layout.value.column == c;
+      final matchSize = pairedWithLabel
+          ? (BlockMetrics.natural.titleSize + 2) * scale
+          : pairedWithValue
+              ? valueSize * scale
+              : null;
+      return _iconWidget(ink, scale, matchSize: matchSize);
+    }
     Widget? labelAt(GridColumn c) =>
         (layout.label?.row == row && layout.label?.column == c) ? _labelWidget(ink, scale) : null;
     // Un jeton `unit` sur une mesure dont l'unité est vide (durée, braquet…)
@@ -320,9 +336,9 @@ class MetricView extends StatelessWidget {
         GridColumn.right => Alignment.topRight,
       };
 
-  Widget _iconWidget(Color ink, double scale) {
+  Widget _iconWidget(Color ink, double scale, {double? matchSize}) {
     final custom = icon;
-    final size = BlockMetrics.natural.iconSize * scale;
+    final size = matchSize ?? BlockMetrics.natural.iconSize * scale;
     final tint = ink.withValues(alpha: 0.7);
     // FontAwesome n'est pas dessinable par [Icon] — [FaIcon] seul évite le
     // rognage/désalignement des glyphes non carrés (voir la doc de

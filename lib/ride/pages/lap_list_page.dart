@@ -98,6 +98,7 @@ class _LapListBodyState extends State<LapListBody> {
             rows: grid.rows,
             cols: grid.cols,
             cells: grid.cells,
+            dividers: grid.dividers,
             cellBuilder: (block) =>
                 _block(block, laps: laps, selected: selected),
             onMeasured: widget.onGridMeasured,

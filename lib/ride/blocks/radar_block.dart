@@ -93,9 +93,12 @@ class RadarBlockView extends StatelessWidget {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Même taille que le compte à côté (`× N`) : c'est la seule
+                // façon de faire lire icône et chiffre comme une seule
+                // information plutôt que comme deux tailles rivales.
                 Icon(
                   Icons.directions_car,
-                  size: BlockMetrics.natural.iconSize + 2,
+                  size: BlockMetrics.natural.iconSize,
                   color: severityColor,
                 ),
                 // Le compte n'est écrit que s'il y a de quoi compter : « ×1 »

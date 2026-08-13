@@ -83,9 +83,13 @@ class RecordingCard extends StatelessWidget {
       children: [
         Row(
           children: [
+            // Même taille que le chronomètre à côté : sinon l'icône d'état
+            // (pause/enregistrement) se lit comme accessoire d'un chiffre
+            // deux fois plus grand qu'elle.
             Icon(
               paused ? Icons.pause_circle : Icons.fiber_manual_record,
               color: paused ? Colors.orange : Colors.red,
+              size: Theme.of(context).textTheme.headlineMedium?.fontSize,
             ),
             const SizedBox(width: 8),
             // Le chronomètre compte les secondes *enregistrées* : en pause il

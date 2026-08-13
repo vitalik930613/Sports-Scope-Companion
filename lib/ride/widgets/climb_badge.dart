@@ -31,7 +31,9 @@ class ClimbBadge extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.landscape, size: 18, color: fg),
+            // Même taille que la pente juste après : c'est le chiffre qui
+            // porte l'information, l'icône n'est qu'un repère devant lui.
+            Icon(Icons.landscape, size: 15, color: fg),
             const SizedBox(width: 6),
             Text(
               '${climb.grade.round()} %',

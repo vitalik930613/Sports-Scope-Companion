@@ -159,3 +159,118 @@ List<T> placedCells<T>(
 
   return kept;
 }
+
+/// Un séparateur ne bouge jamais dans une seule direction : `horizontal`
+/// dessine une ligne **horizontale** (donc sous une ligne de la grille),
+/// `vertical` une ligne **verticale** (à droite d'une colonne). Un enum
+/// dédié plutôt que `Axis` (déjà pris par Flutter, et qui nommerait l'axe
+/// dans lequel le trait s'étend, pas celui qu'il sépare — l'inverse de ce
+/// qu'on veut lire ici).
+enum DividerAxis {
+  horizontal,
+  vertical;
+
+  static DividerAxis? parse(Object? raw) => switch (raw) {
+        'h' => DividerAxis.horizontal,
+        'v' => DividerAxis.vertical,
+        _ => null,
+      };
+}
+
+/// Purement décoratif : contrairement à la couleur d'un bloc, il n'y a pas de
+/// calcul de repli sensé pour un séparateur sans couleur — il lui en faut
+/// toujours une. Même littéral que `DEFAULT_DIVIDER_COLOR` (site, Rails) et
+/// `DEFAULT_DIVIDER_COLOR` (`companionSettings.ts`).
+const defaultDividerColor = Color(0xFF9CA3AF);
+
+/// Une ligne colorée qui traverse toute une gouttière de la grille — jamais un
+/// segment : la largeur/hauteur des cases ne change pas, poser un séparateur
+/// se limite donc à choisir sa gouttière.
+///
+/// [at] est la gouttière traversée, à partir de 1 : la gouttière `n` sépare
+/// la ligne/colonne `n-1` de la ligne/colonne `n`. Même contrat que côté site
+/// (`Divider`, `companionSettings.ts`) et `CompanionSettings.sanitize_dividers`
+/// (Rails).
+@immutable
+class GridDivider {
+  const GridDivider({required this.axis, required this.at, required this.color});
+
+  final DividerAxis axis;
+  final int at;
+  final Color color;
+
+  /// `at` ramené dans une grille de [rows] × [cols], ou `null` s'il n'y a pas
+  /// de gouttière à cette position (bord de la grille, ou grille à un seul
+  /// rang/une seule colonne). Tolérant, comme [GridSpan.clampedTo] : un
+  /// document plus récent que l'appli ne doit rien faire échouer.
+  GridDivider? clampedTo({required int rows, required int cols}) {
+    final limit = (axis == DividerAxis.horizontal ? rows : cols) - 1;
+    if (at < 1 || at > limit) return null;
+    return this;
+  }
+
+  static GridDivider? parse(Object? raw) {
+    if (raw is! Map) return null;
+    final axis = DividerAxis.parse(raw['axis']);
+    if (axis == null) return null;
+    final at = raw['at'];
+    if (at is! num) return null;
+    return GridDivider(axis: axis, at: at.toInt(), color: _parseHexColor(raw['color']) ?? defaultDividerColor);
+  }
+}
+
+/// `#rrggbb` uniquement — même format que `sanitize_hex_color` côté site, et
+/// même logique que `DashboardBlock._colorOf`, dupliquée ici plutôt que
+/// partagée : deux usages, sur des types différents (bloc vs séparateur),
+/// n'imposent pas une dépendance entre les deux fichiers.
+Color? _parseHexColor(Object? value) {
+  if (value is! String) return null;
+  final match = RegExp(r'^#([0-9a-fA-F]{6})$').firstMatch(value);
+  if (match == null) return null;
+  return Color(0xFF000000 | int.parse(match.group(1)!, radix: 16));
+}
+
+/// Le rectangle qu'occupe un séparateur — toute la largeur (horizontal) ou
+/// toute la hauteur (vertical) — même géométrie que [gridRectFor], pour la
+/// bande **entre** deux cases plutôt qu'une case.
+Rect dividerRectFor(
+  GridDivider divider, {
+  required int rows,
+  required int cols,
+  required Size size,
+  double gap = 8,
+}) {
+  if (divider.axis == DividerAxis.horizontal) {
+    final cellHeight = (size.height - gap * (rows - 1)) / rows;
+    final top = divider.at * cellHeight + (divider.at - 1) * gap;
+    return Rect.fromLTWH(0, top, size.width, gap);
+  }
+
+  final cellWidth = (size.width - gap * (cols - 1)) / cols;
+  final left = divider.at * cellWidth + (divider.at - 1) * gap;
+  return Rect.fromLTWH(left, 0, gap, size.height);
+}
+
+/// Les séparateurs qui tiennent dans la grille — pendant de [placedCells]
+/// pour les gouttières, plus simple : pas de recouvrement possible entre deux
+/// lignes/colonnes différentes, une gouttière ne porte donc qu'un
+/// séparateur par construction côté site (`sanitize_dividers`). On ne garde
+/// que la première d'une gouttière déjà prise, pour rester tolérant à un
+/// document qui ne viendrait pas de cet assainisseur.
+List<GridDivider> placedDividers(
+  List<GridDivider> dividers, {
+  required int rows,
+  required int cols,
+}) {
+  final kept = <GridDivider>[];
+  final taken = <(DividerAxis, int)>{};
+
+  for (final divider in dividers) {
+    final clamped = divider.clampedTo(rows: rows, cols: cols);
+    if (clamped == null) continue;
+    if (!taken.add((clamped.axis, clamped.at))) continue;
+    kept.add(clamped);
+  }
+
+  return kept;
+}

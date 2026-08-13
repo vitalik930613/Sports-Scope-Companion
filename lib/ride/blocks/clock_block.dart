@@ -151,8 +151,20 @@ class _ClockCardState extends State<ClockCard> {
     final layout = widget.layout;
     final scale = layout.heightOf(row).scale;
 
-    Widget? iconAt(GridColumn c) =>
-        (layout.icon?.row == row && layout.icon?.column == c) ? _iconWidget(ink, scale) : null;
+    Widget? iconAt(GridColumn c) {
+      if (layout.icon?.row != row || layout.icon?.column != c) return null;
+      // Même règle que [MetricView] : accolée à l'étiquette ou à l'heure,
+      // l'icône reprend leur taille plutôt que de les dominer — le libellé
+      // gagne si les deux partagent la case avec l'icône.
+      final pairedWithLabel = layout.label?.row == row && layout.label?.column == c;
+      final pairedWithValue = layout.value.row == row && layout.value.column == c;
+      final matchSize = pairedWithLabel
+          ? (BlockMetrics.natural.titleSize + 2) * scale
+          : pairedWithValue
+              ? _valueSize * scale
+              : null;
+      return _iconWidget(ink, scale, matchSize: matchSize);
+    }
     Widget? labelAt(GridColumn c) =>
         (layout.label?.row == row && layout.label?.column == c) ? _labelWidget(ink, scale) : null;
     Widget? valueAt(GridColumn c) => (layout.value.row == row && layout.value.column == c)
@@ -212,9 +224,9 @@ class _ClockCardState extends State<ClockCard> {
         GridColumn.right => Alignment.topRight,
       };
 
-  Widget _iconWidget(Color ink, double scale) {
+  Widget _iconWidget(Color ink, double scale, {double? matchSize}) {
     final custom = widget.icon;
-    final size = BlockMetrics.natural.iconSize * scale;
+    final size = matchSize ?? BlockMetrics.natural.iconSize * scale;
     final tint = ink.withValues(alpha: 0.7);
     final glyph = custom != null
         ? FaIcon(custom, size: size, color: tint)
