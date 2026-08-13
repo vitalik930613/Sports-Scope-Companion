@@ -166,6 +166,7 @@ class MetricBlock extends DashboardBlock {
     this.layout = MetricLayout.fallback,
     this.format = DurationFormat.hm,
     this.icon,
+    this.label,
     this.min,
     this.max,
     super.color,
@@ -191,6 +192,11 @@ class MetricBlock extends DashboardBlock {
   /// `icon` quelque part ; sinon réglée pour rien, comme un `min`/`max` sans
   /// jauge.
   final FaIconData? icon;
+
+  /// Le libellé personnalisé réglé dans l'éditeur, propre à ce bloc — `null` :
+  /// [MetricId.name] fait foi. Même repli qu'[icon] si [layout] ne pose pas de
+  /// jeton `label` quelque part : réglé pour rien.
+  final String? label;
 
   /// Bornes de la jauge à plage libre (une rangée de [layout] réglée sur
   /// `gauge`, mesure sans zones d'entraînement), réglées dans l'éditeur.
@@ -227,6 +233,9 @@ class MetricBlock extends DashboardBlock {
       layout: layout,
       format: DashboardBlock._modeOf(raw['format'], DurationFormat.values),
       icon: companionIconFor(raw['icon'] is String ? raw['icon'] as String : null),
+      label: raw['label'] is String && (raw['label'] as String).trim().isNotEmpty
+          ? (raw['label'] as String).trim()
+          : null,
       min: hasRange ? rawMin : null,
       max: hasRange ? rawMax : null,
       color: DashboardBlock._colorOf(raw, 'color'),
@@ -241,14 +250,15 @@ class MetricBlock extends DashboardBlock {
       other.layout == layout &&
       other.format == format &&
       other.icon == icon &&
+      other.label == label &&
       other.min == min &&
       other.max == max &&
       other.color == color &&
       other.textColor == textColor;
 
   @override
-  int get hashCode =>
-      Object.hash(metric, layout, format, icon, min, max, color, textColor);
+  int get hashCode => Object.hash(
+      metric, layout, format, icon, label, min, max, color, textColor);
 }
 
 double? _toDouble(Object? raw) => raw is num ? raw.toDouble() : null;

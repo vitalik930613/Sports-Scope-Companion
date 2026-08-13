@@ -217,6 +217,7 @@ class DashboardPage extends StatelessWidget {
             layout: metric.layout,
             format: metric.format,
             icon: metric.icon,
+            label: metric.label,
             min: metric.min,
             max: metric.max,
             color: metric.color,

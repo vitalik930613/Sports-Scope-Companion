@@ -32,6 +32,7 @@ class MetricView extends StatelessWidget {
     this.layout = MetricLayout.fallback,
     this.format = DurationFormat.hm,
     this.icon,
+    this.label,
     this.min,
     this.max,
     this.color,
@@ -51,6 +52,10 @@ class MetricView extends StatelessWidget {
   /// L'icône personnalisée réglée dans l'éditeur — voir [MetricBlock.icon].
   /// `null` : [MetricId.icon] fait foi.
   final FaIconData? icon;
+
+  /// Le libellé personnalisé réglé dans l'éditeur — voir [MetricBlock.label].
+  /// `null` : [MetricId.name] fait foi, comme avant ce réglage.
+  final String? label;
 
   /// Bornes de la jauge à plage libre — voir [MetricBlock.min]/
   /// [MetricBlock.max]. N'ont d'effet que sur une mesure sans zones
@@ -334,7 +339,7 @@ class MetricView extends StatelessWidget {
   }
 
   Widget _labelWidget(Color ink, double scale) => Text(
-        metric.name.toUpperCase(),
+        (label?.trim().isNotEmpty == true ? label!.trim() : metric.name).toUpperCase(),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
