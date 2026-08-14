@@ -107,6 +107,7 @@ sealed class DashboardBlock {
         ),
       'precip_radar' => PrecipRadarBlock(color: color, textColor: textColor),
       'precip_forecast' => PrecipForecastBlock(color: color, textColor: textColor),
+      'weather_forecast' => WeatherForecastBlock(color: color, textColor: textColor),
       'training_budget' => TrainingBudgetBlock(
           mode: _modeOf(raw['mode'], TrainingBudgetMode.values),
           color: color,
@@ -1109,6 +1110,30 @@ class PrecipForecastBlock extends DashboardBlock {
   @override
   bool operator ==(Object other) =>
       other is PrecipForecastBlock &&
+      other.color == color &&
+      other.textColor == textColor;
+
+  @override
+  int get hashCode => Object.hash(color, textColor);
+}
+
+/// Les prévisions météo horaires (Open-Meteo), pour la position GPS
+/// courante : température et vent en courbes, précipitations en barres, sur
+/// les douze prochaines heures.
+///
+/// Un seul mode, même raison que [PrecipRadarBlock]/[PrecipForecastBlock] :
+/// rien à faire varier selon la case. Distinct de [PrecipForecastBlock], qui
+/// ne regarde que les précipitations sur 3h à 15 min de pas pour répondre à
+/// « une averse arrive-t-elle bientôt ? » — celui-ci donne la tendance de
+/// toute la sortie. La donnée vient du GPS et non de la page de navigation,
+/// donc un profil de home-trainer sans WebView peut quand même le poser (il
+/// affichera l'état "pas de GPS", comme les deux autres).
+class WeatherForecastBlock extends DashboardBlock {
+  const WeatherForecastBlock({super.color, super.textColor});
+
+  @override
+  bool operator ==(Object other) =>
+      other is WeatherForecastBlock &&
       other.color == color &&
       other.textColor == textColor;
 

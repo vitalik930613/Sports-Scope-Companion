@@ -12,11 +12,15 @@ import 'block_card.dart';
 /// Contrairement à [PrecipRadarBlockView] (le radar RainViewer, qu'on lit à
 /// l'œil sur une carte), ce bloc répond directement en chiffres à « une averse
 /// arrive, et dans combien de temps ? » : une phrase, puis une frise de barres
-/// sur les prochaines heures. Composé à taille naturelle et mis à l'échelle
-/// par [BlockSurface]/[ScaleToFit], comme la plupart des blocs — pas de
-/// [LayoutBuilder] sur la case réelle comme [RadarCanvas], qui lui doit choisir
-/// combien de tuiles réseau charger ; une frise de barres n'a rien de tel à
-/// décider selon la taille de la case.
+/// sur les prochaines heures.
+///
+/// **Remplit toute la case, comme [PrecipRadarBlockView]** — et pas à taille
+/// naturelle réduite par [ScaleToFit] comme la plupart des blocs de texte
+/// ([BlockCard]/[StatCard]) : une frise de barres profite d'une case généreuse
+/// (des barres plus hautes se lisent mieux) là où un chiffre agrandi au-delà
+/// du nécessaire ne ferait que détonner à côté de ses voisines. Seul le texte
+/// (titre, phrase de tête) garde une taille fixe — c'est la zone des barres qui
+/// s'étire ([Expanded]/[LayoutBuilder]), jamais la police.
 ///
 /// Relève une nouvelle prévision à chaque changement de position GPS
 /// significatif — [PrecipitationForecastClient] throttle lui-même l'appel
@@ -116,9 +120,9 @@ class _PrecipForecastCard extends StatelessWidget {
   final Color? color;
   final Color? textColor;
 
-  /// Même largeur naturelle que [BlockCard]/[StatCard] — cohérent avec le
-  /// reste des cartes de texte du dashboard avant mise à l'échelle.
-  static const _naturalWidth = 220.0;
+  /// Repli hors contrainte de hauteur (page qui défile, cf. [AveragesCard]) :
+  /// la case ne borne alors rien, la frise garde une hauteur raisonnable
+  /// plutôt que de s'effondrer à zéro.
   static const _barAreaHeight = 46.0;
 
   /// La hauteur pleine d'une barre, en mm sur le quart d'heure — au-delà,
@@ -135,68 +139,77 @@ class _PrecipForecastCard extends StatelessWidget {
   static const _heavyThreshold = 2.0;
 
   @override
-  Widget build(BuildContext context) => BlockSurface(background: color, child: _content());
-
-  Widget _content() {
+  Widget build(BuildContext context) {
     const metrics = BlockMetrics.natural;
     final ink = textColor ?? (color == null ? Colors.white : foregroundOf(color!));
 
-    return SizedBox(
-      width: _naturalWidth,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            'ORAGE QUI ARRIVE',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: ink.withValues(alpha: 0.7), fontSize: metrics.titleSize),
-          ),
-          SizedBox(height: metrics.gap),
-          Text(
-            _headline(),
-            style: TextStyle(color: ink, fontSize: metrics.lineSize, fontWeight: FontWeight.w600),
-          ),
-          SizedBox(height: metrics.gap),
-          SizedBox(
-            height: _barAreaHeight,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                for (final step in forecast.steps)
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 1),
-                      child: FractionallySizedBox(
-                        alignment: Alignment.bottomCenter,
-                        heightFactor: _heightFractionOf(step.precipitation),
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: _colorFor(step.precipitation),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 2),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Container(
+      width: double.infinity,
+      height: double.infinity,
+      padding: EdgeInsets.all(BlockMetrics.natural.padding),
+      decoration: BoxDecoration(
+        color: color ?? BlockCard.background,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      clipBehavior: Clip.hardEdge,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final bars = _barsRow();
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: constraints.hasBoundedHeight ? MainAxisSize.max : MainAxisSize.min,
             children: [
-              Text('Maintenant',
-                  style: TextStyle(color: ink.withValues(alpha: 0.6), fontSize: metrics.lineSize * 0.75)),
-              Text(_lastLabel(),
-                  style: TextStyle(color: ink.withValues(alpha: 0.6), fontSize: metrics.lineSize * 0.75)),
+              Text(
+                'ORAGE QUI ARRIVE',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: ink.withValues(alpha: 0.7), fontSize: metrics.titleSize),
+              ),
+              SizedBox(height: metrics.gap),
+              Text(
+                _headline(),
+                style: TextStyle(color: ink, fontSize: metrics.lineSize, fontWeight: FontWeight.w600),
+              ),
+              SizedBox(height: metrics.gap),
+              constraints.hasBoundedHeight ? Expanded(child: bars) : SizedBox(height: _barAreaHeight, child: bars),
+              const SizedBox(height: 2),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Maintenant',
+                      style: TextStyle(color: ink.withValues(alpha: 0.6), fontSize: metrics.lineSize * 0.75)),
+                  Text(_lastLabel(),
+                      style: TextStyle(color: ink.withValues(alpha: 0.6), fontSize: metrics.lineSize * 0.75)),
+                ],
+              ),
             ],
-          ),
-        ],
+          );
+        },
       ),
     );
   }
+
+  Widget _barsRow() => Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          for (final step in forecast.steps)
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 1),
+                child: FractionallySizedBox(
+                  alignment: Alignment.bottomCenter,
+                  heightFactor: _heightFractionOf(step.precipitation),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: _colorFor(step.precipitation),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      );
 
   double _heightFractionOf(double mm) => (mm / _maxMmPerStep).clamp(0.04, 1.0);
 
