@@ -10,6 +10,60 @@ import '../../recording/ride_recorder.dart';
 import '../../weather/rainviewer_client.dart';
 import 'block_card.dart';
 
+/// Le repère du cycliste — même flèche que la carte de navigation
+/// (`RouteNavigation.vue`, `updateLocationMarker` : chemin SVG
+/// `M12 2 L20 21 L12 16 L4 21 Z` dans un viewBox 24×24, bleu Google Maps
+/// `#4285F4`, liseré blanc) recopiée à la main en `CustomPainter` — pas de
+/// rendu partagé possible entre la carte web (MapLibre GL JS) et ce widget
+/// natif. Pointe vers le cap du cycliste ([headingDeg]) quand le GPS en
+/// fournit un ; sans cap (à l'arrêt), pointe vers le haut plutôt que de
+/// deviner — la carte de navigation, elle, a la boussole du téléphone en
+/// repli, que ce petit composant n'a pas de raison de répliquer.
+class _RiderArrow extends StatelessWidget {
+  const _RiderArrow({this.headingDeg, this.size = 22});
+
+  final double? headingDeg;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => Transform.rotate(
+        angle: (headingDeg ?? 0) * math.pi / 180,
+        child: CustomPaint(
+          size: Size(size, size),
+          painter: _RiderArrowPainter(),
+        ),
+      );
+}
+
+class _RiderArrowPainter extends CustomPainter {
+  static const _fill = Color(0xFF4285F4);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final scale = size.width / 24;
+    final path = Path()
+      ..moveTo(12 * scale, 2 * scale)
+      ..lineTo(20 * scale, 21 * scale)
+      ..lineTo(12 * scale, 16 * scale)
+      ..lineTo(4 * scale, 21 * scale)
+      ..close();
+
+    canvas.drawShadow(path, Colors.black.withValues(alpha: 0.4), 2, false);
+    canvas.drawPath(path, Paint()..color = _fill);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.6 * scale
+        ..strokeJoin = StrokeJoin.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _RiderArrowPainter oldDelegate) => false;
+}
+
 /// Récupère le catalogue et anime la frame courante, pour le compte d'une
 /// vue — factorisé parce que la case de grille ([PrecipRadarBlockView]) et la
 /// vue plein écran ([_PrecipRadarDetailPage]) en ont chacune besoin, avec le
@@ -307,6 +361,11 @@ class RadarCanvas extends StatelessWidget {
   /// contrainte) — un carré raisonnable plutôt qu'une exception.
   static const _fallbackPx = 200.0;
 
+  /// Taille de la flèche du cycliste — plus petite que les 34 px de la
+  /// carte de navigation (`RouteNavigation.vue`) : cette case est souvent
+  /// bien plus petite que l'écran plein d'une navigation.
+  static const _riderSize = 20.0;
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -332,27 +391,28 @@ class RadarCanvas extends StatelessWidget {
     // deux axes). La grille peut donc déborder légèrement la case ; le
     // `Stack` la coupe au bord comme toute case trop généreuse.
     const tileSize = _targetTilePx;
-    final gridWidth = tilesX * tileSize;
-    final gridHeight = tilesY * tileSize;
-    final offsetLeft = (width - gridWidth) / 2;
-    final offsetTop = (height - gridHeight) / 2;
 
     final xFrac = lonToTileX(fix.lng, zoom);
     final yFrac = latToTileY(fix.lat, zoom);
     final centerX = xFrac.floor();
     final centerY = yFrac.floor();
-    // Décalage du cycliste dans sa tuile, en fraction de tuile (0..1) —
-    // reporté en pixels sur la grille composée, pour un repère à sa position
-    // exacte plutôt qu'au centre géométrique de la grille.
-    final offsetXFrac = xFrac - centerX;
-    final offsetYFrac = yFrac - centerY;
+
+    final centerPxX = width / 2;
+    final centerPxY = height / 2;
+
+    // La position **exacte** de l'utilisateur (xFrac/yFrac, pas seulement sa
+    // tuile) tombe pile au centre de la case — pas la tuile qui la contient,
+    // qui peut être décalée jusqu'à une demi-tuile selon l'endroit où le
+    // cycliste se trouve dedans. Sans cette distinction, l'ancienne version
+    // centrait la *tuile* et laissait le repère du cycliste dériver de la
+    // case au fil de la position réelle, tantôt à gauche, tantôt à droite.
+    double screenLeft(int worldTileX, double px) => centerPxX + (worldTileX - xFrac) * px;
+    double screenTop(int worldTileY, double px) => centerPxY + (worldTileY - yFrac) * px;
 
     // La surcouche de précipitations, à son propre zoom plafonné — voir
     // `RainviewerCatalog.maxZoom`. `precipScale` dit combien de tuiles du
     // fond de carte fait une seule tuile précip (toujours un entier, `zoom`
-    // valant au moins `maxZoom` en pratique) ; `baseLeftTile`/`baseTopTile`
-    // sont l'origine du fond de carte affiché, dans le même repère « tuile
-    // du fond » que sert à positionner ses propres tuiles juste au-dessus.
+    // valant au moins `maxZoom` en pratique).
     final precipZoom = math.min(zoom, RainviewerCatalog.maxZoom);
     final zoomDiff = zoom - precipZoom;
     final precipScale = 1 << zoomDiff;
@@ -360,9 +420,9 @@ class RadarCanvas extends StatelessWidget {
     final yFracP = latToTileY(fix.lat, precipZoom);
     final centerXP = xFracP.floor();
     final centerYP = yFracP.floor();
-    final baseLeftTile = centerX - halfX;
-    final baseTopTile = centerY - halfY;
     final precipTileSize = tileSize * precipScale;
+    double screenLeftP(int worldTileX) => centerPxX + (worldTileX - xFracP) * precipTileSize;
+    double screenTopP(int worldTileY) => centerPxY + (worldTileY - yFracP) * precipTileSize;
     // Une seule tuile précip couvrant déjà `precipScale` tuiles du fond de
     // carte (16 à zoom 11), une marge fixe de ±1 suffit toujours à couvrir
     // toute la case, quelle que soit sa taille — pas besoin de la faire
@@ -379,8 +439,8 @@ class RadarCanvas extends StatelessWidget {
           for (var dy = -halfY; dy <= halfY; dy++)
             for (var dx = -halfX; dx <= halfX; dx++)
               Positioned(
-                left: offsetLeft + (dx + halfX) * tileSize,
-                top: offsetTop + (dy + halfY) * tileSize,
+                left: screenLeft(centerX + dx, tileSize),
+                top: screenTop(centerY + dy, tileSize),
                 width: tileSize,
                 height: tileSize,
                 child: Image.network(
@@ -401,8 +461,8 @@ class RadarCanvas extends StatelessWidget {
                 // couvre alors plusieurs tuiles du fond, et on la met à
                 // l'échelle et on la positionne dans le même repère écran que
                 // lui plutôt que dans sa propre grille indépendante.
-                left: offsetLeft + ((centerXP + dx) * precipScale - baseLeftTile) * tileSize,
-                top: offsetTop + ((centerYP + dy) * precipScale - baseTopTile) * tileSize,
+                left: screenLeftP(centerXP + dx),
+                top: screenTopP(centerYP + dy),
                 width: precipTileSize,
                 height: precipTileSize,
                 child: Opacity(
@@ -416,17 +476,11 @@ class RadarCanvas extends StatelessWidget {
                 ),
               ),
           Positioned(
-            left: offsetLeft + halfX * tileSize + offsetXFrac * tileSize - 5,
-            top: offsetTop + halfY * tileSize + offsetYFrac * tileSize - 5,
-            child: Container(
-              width: 10,
-              height: 10,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white,
-                border: Border.all(color: Colors.black, width: 2),
-              ),
-            ),
+            // Toujours pile au centre de la case, par construction — voir
+            // `screenLeft`/`screenTop` plus haut.
+            left: centerPxX - _riderSize / 2,
+            top: centerPxY - _riderSize / 2,
+            child: _RiderArrow(headingDeg: fix.headingDeg, size: _riderSize),
           ),
           // La même frise que la vue plein écran (voir _FrameTimeline),
           // repliée en bandeau au bas de la case plutôt qu'en ligne à part :
@@ -452,26 +506,37 @@ class RadarCanvas extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (paused && onResume != null) ...[
-                          GestureDetector(
-                            onTap: onResume,
-                            child: const Icon(Icons.play_arrow, color: Colors.white70, size: 14),
+                    // Fond propre plutôt que de compter sur le seul dégradé
+                    // du bandeau : cette ligne est la plus proche du haut de
+                    // la case, là où le dégradé est le plus transparent — et
+                    // la carte en dessous peut être claire (swisstopo).
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.55),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (paused && onResume != null) ...[
+                            GestureDetector(
+                              onTap: onResume,
+                              child: const Icon(Icons.play_arrow, color: Colors.white70, size: 14),
+                            ),
+                            const SizedBox(width: 4),
+                          ],
+                          Text(
+                            _frameClock(frame),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
                           ),
-                          const SizedBox(width: 4),
                         ],
-                        Text(
-                          _frameClock(frame),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            fontFeatures: [FontFeature.tabularFigures()],
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                     const SizedBox(height: 2),
                     _FrameTimeline(
@@ -655,13 +720,28 @@ class _FrameTimeline extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(_frameClock(frames.first), style: const TextStyle(color: Colors.white38, fontSize: 10)),
-            Text(_frameClock(frames.last), style: const TextStyle(color: Colors.white38, fontSize: 10)),
+            _timeLabel(frames.first),
+            _timeLabel(frames.last),
           ],
         ),
       ],
     );
   }
+
+  /// L'heure d'une extrémité de la frise, sur un fond propre — la carte en
+  /// dessous (`RadarCanvas`) peut très bien être claire (swisstopo est un
+  /// fond blanc/gris), et le texte doit rester lisible même là.
+  Widget _timeLabel(RainviewerFrame frame) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          _frameClock(frame),
+          style: const TextStyle(color: Colors.white70, fontSize: 10),
+        ),
+      );
 }
 
 /// La vue plein écran ouverte au tap sur la case : une vraie carte
@@ -693,6 +773,15 @@ class _PrecipRadarDetailPageState extends State<_PrecipRadarDetailPage> {
   static const _maxZoom = 16.0;
 
   late final _FrameAnimator _animator;
+  final _mapController = MapController();
+
+  /// Vrai tant que rien n'a déplacé la carte à la main — elle recentre alors
+  /// sur chaque nouvelle position GPS, comme une navigation ordinaire.
+  /// [onPositionChanged] l'éteint dès qu'un geste (et pas notre propre
+  /// [_mapController]) déplace la carte, pour ne pas la ramener sous le
+  /// doigt de quelqu'un qui regarde ailleurs ; le bouton de recentrage la
+  /// rallume.
+  bool _following = true;
 
   @override
   void initState() {
@@ -707,7 +796,13 @@ class _PrecipRadarDetailPageState extends State<_PrecipRadarDetailPage> {
   @override
   void dispose() {
     _animator.dispose();
+    _mapController.dispose();
     super.dispose();
+  }
+
+  void _recenter(ll.LatLng center) {
+    setState(() => _following = true);
+    _mapController.move(center, _mapController.camera.zoom);
   }
 
   @override
@@ -752,45 +847,77 @@ class _PrecipRadarDetailPageState extends State<_PrecipRadarDetailPage> {
           final frame = catalog.frames[_animator.frameIndex % catalog.frames.length];
           final center = ll.LatLng(fix.lat, fix.lng);
 
+          // En suivi, chaque nouvelle position recentre la carte — après
+          // cette frame plutôt que pendant qu'elle se construit, `move`
+          // touchant l'arbre de widgets via le contrôleur.
+          if (_following) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && _following) {
+                _mapController.move(center, _mapController.camera.zoom);
+              }
+            });
+          }
+
           return Column(
             children: [
               Expanded(
-                child: FlutterMap(
-                  options: MapOptions(
-                    initialCenter: center,
-                    initialZoom: _initialZoom,
-                    minZoom: _minZoom,
-                    maxZoom: _maxZoom,
-                  ),
+                child: Stack(
                   children: [
-                    TileLayer(
-                      urlTemplate: basemapTileUrlTemplate,
-                      userAgentPackageName: 'ch.logicraft.sports.companion',
-                    ),
-                    Opacity(
-                      opacity: 0.85,
-                      child: TileLayer(
-                        urlTemplate: catalog.tileUrlTemplate(frame),
-                        maxNativeZoom: RainviewerCatalog.maxZoom,
-                        userAgentPackageName: 'ch.logicraft.sports.companion',
+                    FlutterMap(
+                      mapController: _mapController,
+                      options: MapOptions(
+                        initialCenter: center,
+                        initialZoom: _initialZoom,
+                        minZoom: _minZoom,
+                        maxZoom: _maxZoom,
+                        onPositionChanged: (camera, hasGesture) {
+                          if (hasGesture && _following) setState(() => _following = false);
+                        },
                       ),
-                    ),
-                    MarkerLayer(
-                      markers: [
-                        Marker(
-                          point: center,
-                          width: 16,
-                          height: 16,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.white,
-                              border: Border.all(color: Colors.black, width: 2),
-                            ),
+                      children: [
+                        TileLayer(
+                          urlTemplate: basemapTileUrlTemplate,
+                          userAgentPackageName: 'ch.logicraft.sports.companion',
+                        ),
+                        Opacity(
+                          opacity: 0.85,
+                          child: TileLayer(
+                            urlTemplate: catalog.tileUrlTemplate(frame),
+                            maxNativeZoom: RainviewerCatalog.maxZoom,
+                            userAgentPackageName: 'ch.logicraft.sports.companion',
                           ),
+                        ),
+                        MarkerLayer(
+                          markers: [
+                            Marker(
+                              point: center,
+                              width: 28,
+                              height: 28,
+                              child: _RiderArrow(headingDeg: fix.headingDeg, size: 28),
+                            ),
+                          ],
                         ),
                       ],
                     ),
+                    // Le bouton de recentrage — seulement une fois qu'on
+                    // s'est écarté du suivi, sans quoi il n'aurait rien à
+                    // faire et resterait juste dans le champ de vision.
+                    if (!_following)
+                      Positioned(
+                        right: 12,
+                        bottom: 12,
+                        child: GestureDetector(
+                          onTap: () => _recenter(center),
+                          child: Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.7),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.my_location, color: Colors.white, size: 20),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
