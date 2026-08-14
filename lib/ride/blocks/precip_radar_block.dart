@@ -14,6 +14,11 @@ import 'block_card.dart';
 /// vue — factorisé parce que la case de grille ([PrecipRadarBlockView]) et la
 /// vue plein écran ([_PrecipRadarDetailPage]) en ont chacune besoin, avec le
 /// même cycle de vie (un relevé, puis une boucle jusqu'à la fin de la vue).
+///
+/// Scrutable : [seekTo] fige l'animation sur une image précise — un tap ou
+/// un glissé sur [_FrameTimeline] plutôt qu'un geste qui se perdrait à la
+/// frame suivante de la boucle. [resume] reprend la lecture là où
+/// l'animation en était avant l'arrêt sur image.
 class _FrameAnimator {
   _FrameAnimator({required this.client, required this.onChanged});
 
@@ -26,6 +31,9 @@ class _FrameAnimator {
   Timer? _timer;
   int frameIndex = 0;
 
+  bool get isPaused => _paused;
+  bool _paused = false;
+
   Future<void> start() async {
     catalog = await client.catalog();
     onChanged();
@@ -34,6 +42,7 @@ class _FrameAnimator {
 
   void _restart() {
     _timer?.cancel();
+    if (_paused) return;
     final count = catalog?.frames.length ?? 0;
     if (count < 2) return;
 
@@ -41,6 +50,25 @@ class _FrameAnimator {
       frameIndex = (frameIndex + 1) % count;
       onChanged();
     });
+  }
+
+  /// Fige l'animation sur [index] — jusqu'au prochain [seekTo] ou [resume].
+  void seekTo(int index) {
+    final count = catalog?.frames.length ?? 0;
+    if (count == 0) return;
+
+    _paused = true;
+    _timer?.cancel();
+    frameIndex = index.clamp(0, count - 1);
+    onChanged();
+  }
+
+  /// Reprend la boucle après un [seekTo].
+  void resume() {
+    if (!_paused) return;
+    _paused = false;
+    _restart();
+    onChanged();
   }
 
   void dispose() => _timer?.cancel();
@@ -177,6 +205,9 @@ class _PrecipRadarBlockViewState extends State<PrecipRadarBlockView> {
               fix: fix,
               zoom: _zoom,
               showClock: true,
+              paused: _animator.isPaused,
+              onScrub: _animator.seekTo,
+              onResume: _animator.resume,
             ),
           ),
         );
@@ -237,6 +268,9 @@ class RadarCanvas extends StatelessWidget {
     required this.fix,
     required this.zoom,
     this.showClock = false,
+    this.paused = false,
+    this.onScrub,
+    this.onResume,
   });
 
   final RainviewerCatalog catalog;
@@ -246,11 +280,28 @@ class RadarCanvas extends StatelessWidget {
 
   final bool showClock;
 
+  /// L'animation est-elle figée sur une image scrutée — voir [_FrameAnimator.isPaused].
+  /// Sans effet tant que [showClock] est faux : pas de frise, rien à colorer.
+  final bool paused;
+
+  /// L'index de la frame la plus proche du point touché/glissé sur la
+  /// frise — voir `_FrameAnimator.seekTo`. Ignoré tant que [showClock] est
+  /// faux, comme [paused].
+  final ValueChanged<int>? onScrub;
+
+  /// Reprend la boucle après un arrêt sur image — voir `_FrameAnimator.resume`.
+  /// N'apparaît (petite icône ▶) que si [paused] est vrai : reprendre n'a de
+  /// sens que là, pas pendant que ça défile déjà.
+  final VoidCallback? onResume;
+
   /// Taille visée d'une tuile à l'écran, en px logiques — densité de la
-  /// grille dynamique : assez petit pour ne pas sur-couvrir une grande case
-  /// de trop peu de tuiles (perte de détail géographique), assez grand pour
-  /// ne pas multiplier les requêtes réseau sur une case minuscule.
-  static const _targetTilePx = 100.0;
+  /// grille dynamique. Proche de la taille native de la tuile (256 px) :
+  /// plus loin de 256, plus une grande case a besoin de tuiles pour être
+  /// couverte (187 à 100 px sur une case de 995×1568 — bien trop de
+  /// requêtes réseau pour un simple bloc météo), sans gagner de netteté
+  /// puisque la tuile ne peut de toute façon pas afficher plus de détail
+  /// que sa résolution native.
+  static const _targetTilePx = 200.0;
 
   /// Repli quand la case ne borne pas sa taille (par ex. dans une colonne non
   /// contrainte) — un carré raisonnable plutôt qu'une exception.
@@ -272,8 +323,19 @@ class RadarCanvas extends StatelessWidget {
     final tilesY = _coverage(height);
     final halfX = tilesX ~/ 2;
     final halfY = tilesY ~/ 2;
-    final tileSizeW = width / tilesX;
-    final tileSizeH = height / tilesY;
+    // Des tuiles **carrées**, jamais étirées à la taille de la case : une
+    // tuile source est 256×256, et `BoxFit.cover` dans une case non carrée
+    // recadrerait chaque tuile différemment de sa voisine selon l'axe le
+    // plus serré — les routes ne se raccorderaient plus d'une tuile à
+    // l'autre (vérifié : les tuiles de swisstopo s'alignent parfaitement
+    // entre elles quand on les recadre soi-même à la même échelle sur les
+    // deux axes). La grille peut donc déborder légèrement la case ; le
+    // `Stack` la coupe au bord comme toute case trop généreuse.
+    const tileSize = _targetTilePx;
+    final gridWidth = tilesX * tileSize;
+    final gridHeight = tilesY * tileSize;
+    final offsetLeft = (width - gridWidth) / 2;
+    final offsetTop = (height - gridHeight) / 2;
 
     final xFrac = lonToTileX(fix.lng, zoom);
     final yFrac = latToTileY(fix.lat, zoom);
@@ -300,8 +362,7 @@ class RadarCanvas extends StatelessWidget {
     final centerYP = yFracP.floor();
     final baseLeftTile = centerX - halfX;
     final baseTopTile = centerY - halfY;
-    final precipTileW = tileSizeW * precipScale;
-    final precipTileH = tileSizeH * precipScale;
+    final precipTileSize = tileSize * precipScale;
     // Une seule tuile précip couvrant déjà `precipScale` tuiles du fond de
     // carte (16 à zoom 11), une marge fixe de ±1 suffit toujours à couvrir
     // toute la case, quelle que soit sa taille — pas besoin de la faire
@@ -318,10 +379,10 @@ class RadarCanvas extends StatelessWidget {
           for (var dy = -halfY; dy <= halfY; dy++)
             for (var dx = -halfX; dx <= halfX; dx++)
               Positioned(
-                left: (dx + halfX) * tileSizeW,
-                top: (dy + halfY) * tileSizeH,
-                width: tileSizeW,
-                height: tileSizeH,
+                left: offsetLeft + (dx + halfX) * tileSize,
+                top: offsetTop + (dy + halfY) * tileSize,
+                width: tileSize,
+                height: tileSize,
                 child: Image.network(
                   basemapTileUrl(zoom, centerX + dx, centerY + dy),
                   fit: BoxFit.cover,
@@ -340,10 +401,10 @@ class RadarCanvas extends StatelessWidget {
                 // couvre alors plusieurs tuiles du fond, et on la met à
                 // l'échelle et on la positionne dans le même repère écran que
                 // lui plutôt que dans sa propre grille indépendante.
-                left: ((centerXP + dx) * precipScale - baseLeftTile) * tileSizeW,
-                top: ((centerYP + dy) * precipScale - baseTopTile) * tileSizeH,
-                width: precipTileW,
-                height: precipTileH,
+                left: offsetLeft + ((centerXP + dx) * precipScale - baseLeftTile) * tileSize,
+                top: offsetTop + ((centerYP + dy) * precipScale - baseTopTile) * tileSize,
+                width: precipTileSize,
+                height: precipTileSize,
                 child: Opacity(
                   opacity: 0.85,
                   child: Image.network(
@@ -355,8 +416,8 @@ class RadarCanvas extends StatelessWidget {
                 ),
               ),
           Positioned(
-            left: halfX * tileSizeW + offsetXFrac * tileSizeW - 5,
-            top: halfY * tileSizeH + offsetYFrac * tileSizeH - 5,
+            left: offsetLeft + halfX * tileSize + offsetXFrac * tileSize - 5,
+            top: offsetTop + halfY * tileSize + offsetYFrac * tileSize - 5,
             child: Container(
               width: 10,
               height: 10,
@@ -367,11 +428,61 @@ class RadarCanvas extends StatelessWidget {
               ),
             ),
           ),
+          // La même frise que la vue plein écran (voir _FrameTimeline),
+          // repliée en bandeau au bas de la case plutôt qu'en ligne à part :
+          // une case peut être minuscule, il n'y a pas la place d'une
+          // seconde rangée sous la carte comme dans la vue plein écran. Le
+          // dégradé fait lire le texte blanc sur n'importe quelle tuile en
+          // dessous, précipitations ou pas.
           if (showClock)
             Positioned(
-              left: 6,
-              bottom: 6,
-              child: _ClockChip(frame: frame),
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(8, 20, 8, 6),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [Color(0xCC000000), Colors.transparent],
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (paused && onResume != null) ...[
+                          GestureDetector(
+                            onTap: onResume,
+                            child: const Icon(Icons.play_arrow, color: Colors.white70, size: 14),
+                          ),
+                          const SizedBox(width: 4),
+                        ],
+                        Text(
+                          _frameClock(frame),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            fontFeatures: [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    _FrameTimeline(
+                      frames: catalog.frames,
+                      currentFrame: frame,
+                      paused: paused,
+                      onScrub: onScrub ?? (_) {},
+                    ),
+                  ],
+                ),
+              ),
             ),
         ],
       ),
@@ -380,36 +491,177 @@ class RadarCanvas extends StatelessWidget {
 
   /// Combien de tuiles il faut pour couvrir [px] px à [_targetTilePx] chacune
   /// — au moins une, toujours impair (une tuile centrale exacte plutôt qu'une
-  /// frontière entre deux), plafonné à 7 pour ne pas multiplier les requêtes
-  /// réseau si jamais une case se retrouvait sans borne réaliste.
+  /// frontière entre deux). Plafonné large (15 tuiles, 3000 px à
+  /// [_targetTilePx]) : la taille de tuile est fixe et non déformée (voir
+  /// [_grid]), donc contrairement à une taille dérivée qui s'étirerait pour
+  /// remplir la case, un plafond trop bas laisserait une marge vide sur une
+  /// grande case plutôt que de simplement demander plus de tuiles. Ce
+  /// plafond ne sert donc plus qu'à borner le cas pathologique d'une case
+  /// sans contrainte réaliste ([_fallbackPx]), pas les grandes cases
+  /// ordinaires — aucune case réelle du tableau de bord n'approche 3000 px.
   static int _coverage(double px) {
-    final raw = (px / _targetTilePx).ceil().clamp(1, 7);
+    final raw = (px / _targetTilePx).ceil().clamp(1, 15);
     return raw | 1;
   }
 }
 
-class _ClockChip extends StatelessWidget {
-  const _ClockChip({required this.frame});
+/// La frise du temps couvert par [frames] — passé récent puis prévision
+/// courte, dans l'ordre où [RainviewerClient] les renvoie — avec un repère
+/// fixe pour « maintenant » et un curseur qui glisse jusqu'à [currentFrame]
+/// à mesure que l'animation avance. Répond à « c'est quand, cette image, par
+/// rapport à maintenant ? » d'un coup d'œil plutôt qu'en lisant l'heure.
+///
+/// **Scrutable** : taper ou glisser dessus fige l'animation ([onScrub]) sur
+/// l'image la plus proche du point touché — un arrêt sur image explicite,
+/// pas un geste qui se perdrait à la frame suivante de la boucle. [paused]
+/// recolore alors le curseur pour le dire.
+class _FrameTimeline extends StatelessWidget {
+  const _FrameTimeline({
+    required this.frames,
+    required this.currentFrame,
+    required this.onScrub,
+    this.paused = false,
+  });
 
-  final RainviewerFrame frame;
+  final List<RainviewerFrame> frames;
+  final RainviewerFrame currentFrame;
+
+  /// L'index de la frame la plus proche du point touché ou glissé.
+  final ValueChanged<int> onScrub;
+
+  final bool paused;
+
+  /// Le vert-bleu des boutons d'action de l'appli (`action_button.dart`) —
+  /// le curseur est une commande de lecture au même titre, pas une donnée.
+  static const _cursorColor = Color(0xFF006A60);
+
+  /// Ambre plutôt que teal une fois figé : même langage que les autres
+  /// états d'alerte de l'appli (radar arrière qui approche) pour dire
+  /// « ce n'est pas ce qui se passe maintenant », sans texte.
+  static const _pausedColor = Color(0xFFFFA726);
 
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(6),
+  Widget build(BuildContext context) {
+    final earliest = frames.first.time;
+    final latest = frames.last.time;
+    final range = (latest - earliest).toDouble();
+
+    double fractionOf(int time) => range <= 0 ? 0 : ((time - earliest) / range).clamp(0.0, 1.0);
+
+    int nearestIndex(double fraction) {
+      final targetTime = earliest + fraction * range;
+      var closest = 0;
+      var closestDelta = (frames[0].time - targetTime).abs();
+      for (var i = 1; i < frames.length; i++) {
+        final delta = (frames[i].time - targetTime).abs();
+        if (delta < closestDelta) {
+          closest = i;
+          closestDelta = delta;
+        }
+      }
+      return closest;
+    }
+
+    final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final nowFraction = fractionOf(nowSeconds);
+    final frameFraction = fractionOf(currentFrame.time);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final width = constraints.maxWidth;
+
+            void scrubAt(double dx) {
+              if (width <= 0) return;
+              onScrub(nearestIndex((dx / width).clamp(0.0, 1.0)));
+            }
+
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (details) => scrubAt(details.localPosition.dx),
+              onHorizontalDragUpdate: (details) => scrubAt(details.localPosition.dx),
+              child: SizedBox(
+                height: 20,
+                width: double.infinity,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    // La piste : tout l'intervalle couvert par le catalogue.
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      top: 8,
+                      child: Container(
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    // Le passé déjà écoulé, de l'image la plus ancienne à
+                    // maintenant — plus clair que la prévision qui suit,
+                    // qu'on n'a pas encore vécue.
+                    Positioned(
+                      left: 0,
+                      width: nowFraction * width,
+                      top: 8,
+                      child: Container(
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    // Le repère « maintenant » — fixe le temps de l'animation,
+                    // il ne bouge qu'au fil des minutes réelles.
+                    Positioned(
+                      left: (nowFraction * width - 1).clamp(0.0, width - 2),
+                      top: 3,
+                      child: Container(
+                        width: 2,
+                        height: 14,
+                        color: Colors.white70,
+                      ),
+                    ),
+                    // Le curseur de l'image affichée — glisse d'une frame à
+                    // l'autre plutôt que de sauter, pour que l'œil suive
+                    // l'animation sur la carte au-dessus sans la chercher.
+                    AnimatedPositioned(
+                      duration: const Duration(milliseconds: 600),
+                      curve: Curves.easeInOut,
+                      left: (frameFraction * width - 6).clamp(0.0, width - 12),
+                      top: 2,
+                      child: Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: paused ? _pausedColor : _cursorColor,
+                          border: Border.all(color: Colors.white, width: 2),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         ),
-        child: Text(
-          _frameClock(frame),
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            fontFeatures: [FontFeature.tabularFigures()],
-          ),
+        const SizedBox(height: 4),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(_frameClock(frames.first), style: const TextStyle(color: Colors.white38, fontSize: 10)),
+            Text(_frameClock(frames.last), style: const TextStyle(color: Colors.white38, fontSize: 10)),
+          ],
         ),
-      );
+      ],
+    );
+  }
 }
 
 /// La vue plein écran ouverte au tap sur la case : une vraie carte
@@ -543,13 +795,36 @@ class _PrecipRadarDetailPageState extends State<_PrecipRadarDetailPage> {
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+                child: _FrameTimeline(
+                  frames: catalog.frames,
+                  currentFrame: frame,
+                  paused: _animator.isPaused,
+                  onScrub: _animator.seekTo,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      '${_frameClock(frame)} · ${_frameCaption(frame)}',
-                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Seulement visible en arrêt sur image — reprendre
+                        // n'a de sens que là, pas pendant que ça défile déjà.
+                        if (_animator.isPaused) ...[
+                          GestureDetector(
+                            onTap: _animator.resume,
+                            child: const Icon(Icons.play_arrow, color: Colors.white70, size: 18),
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                        Text(
+                          '${_frameClock(frame)} · ${_frameCaption(frame)}',
+                          style: const TextStyle(color: Colors.white, fontSize: 14),
+                        ),
+                      ],
                     ),
                     const Text(
                       '© swisstopo, © RainViewer',
