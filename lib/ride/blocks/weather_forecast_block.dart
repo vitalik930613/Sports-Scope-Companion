@@ -145,6 +145,29 @@ class _WeatherForecastCard extends StatelessWidget {
             painter: _WeatherChartPainter(steps: forecast.steps),
             size: Size.infinite,
           );
+
+          // Le budget vertical du contenu fixe hors légende : rembourrage,
+          // titre, phrase de tête, labels « Maintenant »/« +Nh ». Le
+          // graphique n'y entre pas, il absorbe le reste via `Expanded` et
+          // peut se réduire jusqu'à zéro sans déborder. `titleHeight`/
+          // `lineHeight` incluent déjà leur propre interligne
+          // (`BlockMetrics`, même valeurs recopiées côté éditeur).
+          final chromeHeight = metrics.padding * 2 +
+              metrics.titleHeight +
+              metrics.gap +
+              metrics.lineHeight +
+              metrics.gap +
+              2 +
+              metrics.lineHeight;
+          // La légende ajoute une ligne de plus : sous ce budget, une case
+          // aussi basse qu'une seule ligne de grille n'a plus la place de
+          // l'afficher en plus du graphique sans déborder de la carte
+          // (`RenderFlex overflowed`). Elle disparaît alors plutôt que de
+          // pousser la carte hors de sa case — le titre et les couleurs du
+          // graphique restent lisibles sans elle.
+          final showLegend =
+              !constraints.hasBoundedHeight || constraints.maxHeight >= chromeHeight + metrics.gap / 2 + metrics.lineHeight;
+
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: constraints.hasBoundedHeight ? MainAxisSize.max : MainAxisSize.min,
@@ -174,16 +197,23 @@ class _WeatherForecastCard extends StatelessWidget {
                       style: TextStyle(color: ink.withValues(alpha: 0.6), fontSize: metrics.lineSize * 0.75)),
                 ],
               ),
-              SizedBox(height: metrics.gap / 2),
-              Wrap(
-                spacing: 8,
-                runSpacing: 2,
-                children: [
-                  _legendChip('Température', _tempColor, ink, metrics),
-                  _legendChip('Vent', _windColor, ink, metrics),
-                  _legendChip('Précipitations', _precipColor, ink, metrics),
-                ],
-              ),
+              if (showLegend) ...[
+                SizedBox(height: metrics.gap / 2),
+                // Un `Row` à trois tiers égaux et non un `Wrap` : une case
+                // étroite (une colonne d'une grille à plusieurs colonnes) ne
+                // doit jamais faire passer la légende sur une deuxième
+                // ligne — ce serait une hauteur de plus, non comptée dans
+                // `showLegend`, et donc un débordement. Chaque libellé se
+                // tronque plutôt (`_legendChip`), la légende reste toujours
+                // exactement une ligne.
+                Row(
+                  children: [
+                    Expanded(child: _legendChip('Température', _tempColor, ink, metrics)),
+                    Expanded(child: _legendChip('Vent', _windColor, ink, metrics)),
+                    Expanded(child: _legendChip('Précipitations', _precipColor, ink, metrics)),
+                  ],
+                ),
+              ],
             ],
           );
         },
@@ -192,11 +222,17 @@ class _WeatherForecastCard extends StatelessWidget {
   }
 
   Widget _legendChip(String label, Color dot, Color ink, BlockMetrics metrics) => Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
           Container(width: 8, height: 8, decoration: BoxDecoration(color: dot, shape: BoxShape.circle)),
           const SizedBox(width: 4),
-          Text(label, style: TextStyle(color: ink.withValues(alpha: 0.75), fontSize: metrics.lineSize * 0.7)),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: ink.withValues(alpha: 0.75), fontSize: metrics.lineSize * 0.7),
+            ),
+          ),
         ],
       );
 
