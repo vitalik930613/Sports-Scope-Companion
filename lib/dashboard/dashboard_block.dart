@@ -105,6 +105,7 @@ sealed class DashboardBlock {
           color: color,
           textColor: textColor,
         ),
+      'precip_radar' => PrecipRadarBlock(color: color, textColor: textColor),
       'training_budget' => TrainingBudgetBlock(
           mode: _modeOf(raw['mode'], TrainingBudgetMode.values),
           color: color,
@@ -1067,6 +1068,28 @@ enum RadarMode with BlockMode {
 
   @override
   final String key;
+}
+
+/// L'animation radar des précipitations (RainViewer), centrée sur la position
+/// GPS courante : passé récent puis prévision courte ("nowcast"), en boucle.
+///
+/// Un seul mode — rien à faire varier, le dessin (tuiles + repère central) ne
+/// change pas selon la case, seule son échelle. Contrairement à
+/// [TrainingBudgetBlock]/[ClimbListBlock], la donnée ne dépend pas de la page
+/// de navigation : le GPS suffit ([GpsSource], via [MetricSources.recorder]),
+/// donc un profil de home-trainer sans WebView peut quand même le poser — il
+/// affichera simplement l'état "pas de GPS" sans capteur de position.
+class PrecipRadarBlock extends DashboardBlock {
+  const PrecipRadarBlock({super.color, super.textColor});
+
+  @override
+  bool operator ==(Object other) =>
+      other is PrecipRadarBlock &&
+      other.color == color &&
+      other.textColor == textColor;
+
+  @override
+  int get hashCode => Object.hash(color, textColor);
 }
 
 /// L'heure courante.

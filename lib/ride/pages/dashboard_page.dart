@@ -12,6 +12,7 @@ import '../blocks/clock_block.dart';
 import '../blocks/mark_lap_block.dart';
 import '../blocks/metric_view.dart';
 import '../blocks/nav_state_block.dart';
+import '../blocks/precip_radar_block.dart';
 import '../blocks/radar_block.dart';
 import '../blocks/recording_block.dart';
 import '../blocks/route_block.dart';
@@ -297,6 +298,11 @@ class DashboardPage extends StatelessWidget {
             radar: radar,
             mode: radarBlock.mode,
             color: radarBlock.color,
+          ),
+        final PrecipRadarBlock precip => PrecipRadarBlockView(
+            recorder: sources.recorder,
+            color: precip.color,
+            textColor: precip.textColor,
           ),
         final TrainingBudgetBlock budget => TrainingBudgetCard(
             budgets: sources.trainingBudget,

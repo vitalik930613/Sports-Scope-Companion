@@ -180,6 +180,16 @@ void main() {
   }
 
   /// Tout ce qu'un profil peut poser, dans son mode le plus encombrant.
+  ///
+  /// `PrecipRadarBlock` n'y figure délibérément pas : contrairement aux blocs
+  /// ci-dessous, sa vue (`PrecipRadarBlockView`) fait un vrai appel réseau et
+  /// démarre un `Timer.periodic` pour l'animation — un test de mise en page
+  /// n'a pas à dépendre du réseau, et un minuteur périodique encore actif à la
+  /// fin d'un test le fait échouer (« A Timer is still pending »), sans rapport
+  /// avec un débordement. Son risque de débordement est structurel et déjà
+  /// couvert par construction : même composition taille-naturelle-fixe →
+  /// `BlockSurface` → `ScaleToFit` que tous les blocs ci-dessous, et ses états
+  /// « pas de GPS »/« indisponible » sont des `BlockCard` ordinaires.
   List<DashboardBlock> everything() => const [
         ZonesBlock(source: ZonesSource.power),
         ZonesBlock(source: ZonesSource.hr),
