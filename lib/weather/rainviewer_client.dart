@@ -28,6 +28,23 @@ class RainviewerCatalog {
   /// doc RainViewer (rainviewer.com/api.html).
   String tileUrl(RainviewerFrame frame, {required int z, required int x, required int y}) =>
       '$host${frame.path}/256/$z/$x/$y/2/1_1.png';
+
+  /// Le même gabarit, en template `{z}/{x}/{y}` littéral — ce qu'attend
+  /// `TileLayer.urlTemplate` (`package:flutter_map`) dans la vue plein écran
+  /// de `precip_radar_block.dart`, qui résout elle-même les coordonnées à
+  /// chaque geste de zoom/pan plutôt que de recevoir des tuiles déjà
+  /// résolues comme le fait la case de grille ([tileUrl]).
+  String tileUrlTemplate(RainviewerFrame frame) => '$host${frame.path}/256/{z}/{x}/{y}/2/1_1.png';
+
+  /// Le zoom XYZ maximal que sert vraiment RainViewer — **vérifié en
+  /// regardant le contenu des tuiles**, pas seulement leur code HTTP : au-delà
+  /// de 7, le serveur répond 200 avec un PNG parfaitement valide qui affiche
+  /// littéralement « Zoom Level Not Supported » en pixels plutôt que de
+  /// refuser la requête. Une case de grille qui veut un fond de carte plus
+  /// serré (voir `precip_radar_block.dart`) doit donc composer sa surcouche
+  /// de précipitations à ce zoom-ci, mise à l'échelle et alignée sur le repère
+  /// écran du fond de carte — jamais lui demander directement le zoom du fond.
+  static const maxZoom = 7;
 }
 
 /// Récupère et garde en cache le catalogue de frames RainViewer, via notre
@@ -124,22 +141,32 @@ class RainviewerClient {
 
 /// Le fond de carte sous les tuiles de précipitations — RainViewer ne fournit
 /// que la précipitation, sur fond transparent : sans lui, les taches flottent
-/// sans aucun repère (route, ville, relief) pour les situer. CartoDB Dark
-/// Matter sans étiquettes : gratuit, sans clé, et déjà sombre comme le reste
-/// du tableau de bord. Attribution requise : « © OpenStreetMap contributors,
-/// © CARTO » (affichée dans la vue plein écran, voir `precip_radar_block.dart`
-/// — pas dans la case de grille, trop petite pour la porter lisiblement).
+/// sans aucun repère (route, ville, relief) pour les situer.
 ///
-/// Sous-domaines tournants (`a`–`d`), le gabarit officiellement documenté par
-/// CartoDB — pas le domaine nu, dont le comportement s'est avéré moins fiable
-/// en usage réel (tuile d'erreur reçue par endroits) alors que ce gabarit-ci
-/// est celui que tous les clients de carte utilisent.
-const _cartoSubdomains = ['a', 'b', 'c', 'd'];
+/// swisstopo (`wmts.geo.admin.ch`) plutôt qu'un fournisseur tiers gratuit
+/// générique : gratuit, sans clé, et surtout un vrai service public pensé
+/// pour être intégré — un premier essai avec les tuiles CartoDB anonymes a
+/// servi une tuile d'erreur (« Zoom Level Not Supported ») en usage réel
+/// alors qu'un appel isolé passait, signe d'un plan gratuit qui tolère la
+/// consultation occasionnelle mais pas l'intégration dans une appli. Même
+/// gabarit WMTS que `app/javascript/mapStyles.ts` côté site
+/// (`ch.swisstopo.pixelkarte-grau`) : gris plutôt que couleur, pour ne pas
+/// concurrencer les teintes des précipitations par-dessus.
+///
+/// Couverture Suisse + abords seulement — même périmètre que les autres
+/// données auto-hébergées du projet (BRouter, POI). Hors de cette zone, le
+/// service renvoie une vraie erreur HTTP (pas une image trompeuse comme
+/// CartoDB), et `errorBuilder` (`precip_radar_block.dart`) retombe sur un
+/// fond uni. Attribution requise : « © swisstopo » (affichée dans la vue
+/// plein écran — pas dans la case de grille, trop petite pour la porter
+/// lisiblement).
+String basemapTileUrl(int z, int x, int y) =>
+    'https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-grau/default/current/3857/$z/$x/$y.jpeg';
 
-String basemapTileUrl(int z, int x, int y) {
-  final subdomain = _cartoSubdomains[(x + y).abs() % _cartoSubdomains.length];
-  return 'https://$subdomain.basemaps.cartocdn.com/dark_nolabels/$z/$x/$y.png';
-}
+/// Le même gabarit, en template `{z}/{x}/{y}` littéral pour `TileLayer` —
+/// voir [RainviewerCatalog.tileUrlTemplate], même raison.
+const basemapTileUrlTemplate =
+    'https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-grau/default/current/3857/{z}/{x}/{y}.jpeg';
 
 /// Calcul de tuile Web Mercator (slippy map), en coordonnées fractionnaires —
 /// la partie entière donne la tuile, la partie décimale la position exacte du

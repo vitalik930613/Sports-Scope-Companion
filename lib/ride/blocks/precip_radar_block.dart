@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart' as ll;
 
 import '../../recording/gps_fix.dart';
 import '../../recording/ride_recorder.dart';
@@ -113,9 +116,12 @@ class PrecipRadarBlockView extends StatefulWidget {
 }
 
 class _PrecipRadarBlockViewState extends State<PrecipRadarBlockView> {
-  /// Niveau de zoom des tuiles (256 px). Choix visuel pour la v1 : à ajuster
-  /// si la couverture affichée s'avère trop large ou trop étroite.
-  static const _zoom = 8;
+  /// Niveau de zoom des tuiles (256 px). 8 montrait presque toute la Suisse
+  /// dans la case — chaque tuile y fait ~107 km de large à cette latitude ;
+  /// 11 en fait ~13 km, une échelle cohérente avec l'horizon de la prévision
+  /// RainViewer (nowcast : ~30-60 min, donc un système qui approche vient de
+  /// quelques dizaines de km, pas de tout le pays).
+  static const _zoom = 11;
 
   late final _FrameAnimator _animator;
 
@@ -213,15 +219,16 @@ class _FillCard extends StatelessWidget {
 }
 
 /// La grille de tuiles composée : fond de carte, précipitations par-dessus,
-/// repère du cycliste, et — en option — l'heure de la frame affichée.
+/// repère du cycliste, et — en option — l'heure de la frame affichée. Sert
+/// uniquement la case de grille ([PrecipRadarBlockView]) — la vue plein
+/// écran ([_PrecipRadarDetailPage]) affiche une vraie carte interactive
+/// (`package:flutter_map`) plutôt que ce composite figé.
 ///
-/// **Se dimensionne sur sa case, pas l'inverse.** Sans [size], elle mesure
-/// l'espace que [LayoutBuilder] lui donne et choisit combien de tuiles il
-/// faut pour le couvrir ([_coverage]) — c'est ce qui fait qu'une case posée
-/// en 3×3 se retrouve couverte de tuiles plutôt que d'un unique carré minuscule
-/// centré dedans. Avec [size] (la vue plein écran, dans un [InteractiveViewer]
-/// qui a besoin d'un enfant de taille connue pour le transformer), la même
-/// logique s'applique à cette taille fixe.
+/// **Se dimensionne sur sa case, pas l'inverse.** Elle mesure l'espace que
+/// [LayoutBuilder] lui donne et choisit combien de tuiles il faut pour le
+/// couvrir ([_coverage]) — c'est ce qui fait qu'une case posée en 3×3 se
+/// retrouve couverte de tuiles plutôt que d'un unique carré minuscule centré
+/// dedans.
 class RadarCanvas extends StatelessWidget {
   const RadarCanvas({
     super.key,
@@ -229,7 +236,6 @@ class RadarCanvas extends StatelessWidget {
     required this.frame,
     required this.fix,
     required this.zoom,
-    this.size,
     this.showClock = false,
   });
 
@@ -237,11 +243,6 @@ class RadarCanvas extends StatelessWidget {
   final RainviewerFrame frame;
   final GpsFix fix;
   final int zoom;
-
-  /// `null` : remplit l'espace disponible ([LayoutBuilder]) — le cas de la
-  /// case de grille. Fixe : la vue plein écran, dont l'[InteractiveViewer]
-  /// a besoin d'un enfant borné à transformer.
-  final Size? size;
 
   final bool showClock;
 
@@ -257,11 +258,6 @@ class RadarCanvas extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fixedSize = size;
-    if (fixedSize != null) {
-      return _grid(fixedSize.width, fixedSize.height);
-    }
-
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.hasBoundedWidth ? constraints.maxWidth : _fallbackPx;
@@ -289,6 +285,29 @@ class RadarCanvas extends StatelessWidget {
     final offsetXFrac = xFrac - centerX;
     final offsetYFrac = yFrac - centerY;
 
+    // La surcouche de précipitations, à son propre zoom plafonné — voir
+    // `RainviewerCatalog.maxZoom`. `precipScale` dit combien de tuiles du
+    // fond de carte fait une seule tuile précip (toujours un entier, `zoom`
+    // valant au moins `maxZoom` en pratique) ; `baseLeftTile`/`baseTopTile`
+    // sont l'origine du fond de carte affiché, dans le même repère « tuile
+    // du fond » que sert à positionner ses propres tuiles juste au-dessus.
+    final precipZoom = math.min(zoom, RainviewerCatalog.maxZoom);
+    final zoomDiff = zoom - precipZoom;
+    final precipScale = 1 << zoomDiff;
+    final xFracP = lonToTileX(fix.lng, precipZoom);
+    final yFracP = latToTileY(fix.lat, precipZoom);
+    final centerXP = xFracP.floor();
+    final centerYP = yFracP.floor();
+    final baseLeftTile = centerX - halfX;
+    final baseTopTile = centerY - halfY;
+    final precipTileW = tileSizeW * precipScale;
+    final precipTileH = tileSizeH * precipScale;
+    // Une seule tuile précip couvrant déjà `precipScale` tuiles du fond de
+    // carte (16 à zoom 11), une marge fixe de ±1 suffit toujours à couvrir
+    // toute la case, quelle que soit sa taille — pas besoin de la faire
+    // dépendre de [tilesX]/[tilesY].
+    const precipHalf = 1;
+
     return SizedBox(
       width: width,
       height: height,
@@ -311,17 +330,24 @@ class RadarCanvas extends StatelessWidget {
                       const ColoredBox(color: Color(0xFF10151C)),
                 ),
               ),
-          for (var dy = -halfY; dy <= halfY; dy++)
-            for (var dx = -halfX; dx <= halfX; dx++)
+          for (var dy = -precipHalf; dy <= precipHalf; dy++)
+            for (var dx = -precipHalf; dx <= precipHalf; dx++)
               Positioned(
-                left: (dx + halfX) * tileSizeW,
-                top: (dy + halfY) * tileSizeH,
-                width: tileSizeW,
-                height: tileSizeH,
+                // RainViewer ne sert ses tuiles qu'à `RainviewerCatalog.maxZoom`
+                // (vérifié en pixels, pas juste au code HTTP — au-delà, un PNG
+                // 200 qui affiche « Zoom Level Not Supported »). Bien plus
+                // grossier qu'un fond de carte serré : chaque tuile précip
+                // couvre alors plusieurs tuiles du fond, et on la met à
+                // l'échelle et on la positionne dans le même repère écran que
+                // lui plutôt que dans sa propre grille indépendante.
+                left: ((centerXP + dx) * precipScale - baseLeftTile) * tileSizeW,
+                top: ((centerYP + dy) * precipScale - baseTopTile) * tileSizeH,
+                width: precipTileW,
+                height: precipTileH,
                 child: Opacity(
                   opacity: 0.85,
                   child: Image.network(
-                    catalog.tileUrl(frame, z: zoom, x: centerX + dx, y: centerY + dy),
+                    catalog.tileUrl(frame, z: precipZoom, x: centerXP + dx, y: centerYP + dy),
                     fit: BoxFit.cover,
                     gaplessPlayback: true,
                     errorBuilder: (context, error, stackTrace) => const SizedBox(),
@@ -386,9 +412,19 @@ class _ClockChip extends StatelessWidget {
       );
 }
 
-/// La vue plein écran ouverte au tap sur la case : un canevas plus large, et
-/// un vrai zoom/pan ([InteractiveViewer], natif Flutter — rien à ajouter au
-/// projet) puisque rien ici ne dispute le geste à une navigation entre pages.
+/// La vue plein écran ouverte au tap sur la case : une vraie carte
+/// interactive ([FlutterMap], `package:flutter_map` — pur Dart, aucun code
+/// natif à configurer) plutôt que le composite figé de [RadarCanvas]. Rien
+/// ici ne dispute le geste de pincement/glissé à une navigation entre pages
+/// (contrairement à la case, voir la note de classe de [PrecipRadarBlockView]),
+/// donc rien n'empêche un vrai zoom qui recharge des tuiles plus détaillées.
+///
+/// Le fond de carte suit le zoom librement ; la surcouche de précipitations
+/// est plafonnée à [RainviewerCatalog.maxZoom] via `maxNativeZoom` — au-delà,
+/// `TileLayer` réutilise et agrandit les tuiles de ce zoom plutôt que d'en
+/// redemander à un service qui ne les sert pas (voir la note sur
+/// [RainviewerCatalog.maxZoom] : servies quand même, elles affichent
+/// littéralement « Zoom Level Not Supported » en pixels).
 class _PrecipRadarDetailPage extends StatefulWidget {
   const _PrecipRadarDetailPage({required this.recorder, required this.client});
 
@@ -400,12 +436,9 @@ class _PrecipRadarDetailPage extends StatefulWidget {
 }
 
 class _PrecipRadarDetailPageState extends State<_PrecipRadarDetailPage> {
-  /// Un canevas plus large qu'en case de grille, à la même échelle de tuile
-  /// (même [_zoom] que [_PrecipRadarBlockViewState]) : plus de contexte
-  /// autour du cycliste, le zoom optique de [InteractiveViewer] fait le
-  /// reste pour regarder de plus près.
-  static const _canvasSize = 700.0;
-  static const _zoom = 8;
+  static const _initialZoom = 11.0;
+  static const _minZoom = 5.0;
+  static const _maxZoom = 16.0;
 
   late final _FrameAnimator _animator;
 
@@ -429,9 +462,25 @@ class _PrecipRadarDetailPageState extends State<_PrecipRadarDetailPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
+      // `foregroundColor` explicite : sans lui le titre et la flèche retour
+      // héritent d'un contraste indéterminé sur fond noir, au lieu du blanc
+      // du reste de cette page. Tout l'en-tête ferme la vue au tap — pas
+      // seulement la flèche retour, minuscule et donc facile à manquer sur
+      // un fond aussi peu contrasté.
       appBar: AppBar(
         backgroundColor: Colors.black,
-        title: const Text('Précipitations'),
+        foregroundColor: Colors.white,
+        title: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => Navigator.of(context).maybePop(),
+          child: const SizedBox(
+            height: kToolbarHeight,
+            width: double.infinity,
+            child: Center(
+              child: Text('Précipitations'),
+            ),
+          ),
+        ),
       ),
       body: ListenableBuilder(
         listenable: widget.recorder,
@@ -449,24 +498,48 @@ class _PrecipRadarDetailPageState extends State<_PrecipRadarDetailPage> {
           }
 
           final frame = catalog.frames[_animator.frameIndex % catalog.frames.length];
+          final center = ll.LatLng(fix.lat, fix.lng);
+
           return Column(
             children: [
               Expanded(
-                child: Center(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: InteractiveViewer(
-                      minScale: 1,
-                      maxScale: 4,
-                      child: RadarCanvas(
-                        catalog: catalog,
-                        frame: frame,
-                        fix: fix,
-                        zoom: _zoom,
-                        size: const Size(_canvasSize, _canvasSize),
+                child: FlutterMap(
+                  options: MapOptions(
+                    initialCenter: center,
+                    initialZoom: _initialZoom,
+                    minZoom: _minZoom,
+                    maxZoom: _maxZoom,
+                  ),
+                  children: [
+                    TileLayer(
+                      urlTemplate: basemapTileUrlTemplate,
+                      userAgentPackageName: 'ch.logicraft.sports.companion',
+                    ),
+                    Opacity(
+                      opacity: 0.85,
+                      child: TileLayer(
+                        urlTemplate: catalog.tileUrlTemplate(frame),
+                        maxNativeZoom: RainviewerCatalog.maxZoom,
+                        userAgentPackageName: 'ch.logicraft.sports.companion',
                       ),
                     ),
-                  ),
+                    MarkerLayer(
+                      markers: [
+                        Marker(
+                          point: center,
+                          width: 16,
+                          height: 16,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white,
+                              border: Border.all(color: Colors.black, width: 2),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
               Padding(
@@ -479,7 +552,7 @@ class _PrecipRadarDetailPageState extends State<_PrecipRadarDetailPage> {
                       style: const TextStyle(color: Colors.white, fontSize: 14),
                     ),
                     const Text(
-                      '© OpenStreetMap, © CARTO, © RainViewer',
+                      '© swisstopo, © RainViewer',
                       style: TextStyle(color: Colors.white38, fontSize: 10),
                     ),
                   ],
