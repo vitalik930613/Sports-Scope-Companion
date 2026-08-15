@@ -1035,6 +1035,13 @@ class _RideShellPageState extends State<RideShellPage>
         }
       case 'climb_profile':
         _climbProfile.accept(message);
+        // Le tour que le front montant vient d'ouvrir sur la série `cols` est
+        // forcément celui de ce col-ci — voir `RideRecorder.tagClimb`. C'est
+        // ce qui permet à la page Tours de nommer le tour comme le composant
+        // Cols du tracé plutôt que « Tour N ».
+        if (_climbProfile.value case final profile?) {
+          widget.recorder.tagClimb(climbLapSeries, profile.id);
+        }
       case 'route_climbs':
         _routeClimbs.accept(message);
       case 'route_profile':

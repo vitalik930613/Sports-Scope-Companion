@@ -281,6 +281,21 @@ class RideRecorder extends ChangeNotifier {
     _notify();
   }
 
+  /// Étiquette le tour courant de [series] avec l'identifiant d'un col — voir
+  /// [RideLap.climbId]. Toujours le **dernier** tour de la série : un profil
+  /// de col arrive juste après le tour que le front montant du col vient
+  /// d'ouvrir (`RideShellPage._onPageMessage`), jamais avant, donc jamais sur
+  /// un tour déjà clos.
+  ///
+  /// Sans effet — jamais une exception — si [series] n'a pas été déclarée ou
+  /// si rien n'est enregistré, même garde que [markLap].
+  void tagClimb(String series, int climbId) {
+    final laps = _series[series];
+    if (!isActive || laps == null || laps.isEmpty) return;
+    laps.last.climbId = climbId;
+    _notify();
+  }
+
   /// Termine la sortie et renvoie son résumé, prêt à être exporté.
   Future<RideSession?> stop() async {
     final session = _session;

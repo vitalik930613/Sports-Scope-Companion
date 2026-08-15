@@ -9,6 +9,8 @@ import '../blocks/lap_summary_block.dart';
 import '../blocks/mark_lap_block.dart';
 import '../blocks/metric_view.dart';
 import '../blocks/zones_block.dart';
+import '../climb_profile.dart' show climbLapSeries;
+import '../route_climbs.dart';
 import '../widgets/dashboard_grid.dart';
 
 /// Le corps d'une page de tours : ses composants, dont le sélecteur de tour
@@ -122,14 +124,15 @@ class _LapListBodyState extends State<LapListBody> {
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () => _pickLap(laps.length, selected),
+        onTap: () => _pickLap(laps, selected),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             children: [
               Expanded(
                 child: Text(
-                  _lapLabel(laps.length, selected),
+                  _lapLabel(laps, selected, series: widget.spec.series,
+                      routeClimbs: widget.sources.routeClimbs?.value),
                   style: TextStyle(color: ink, fontSize: 16),
                 ),
               ),
@@ -141,11 +144,16 @@ class _LapListBodyState extends State<LapListBody> {
     );
   }
 
-  Future<void> _pickLap(int lapCount, int selected) async {
+  Future<void> _pickLap(List<RideLap> laps, int selected) async {
+    final routeClimbs = widget.sources.routeClimbs?.value;
+    final labels = [
+      for (var i = 0; i < laps.length; i++)
+        _lapLabel(laps, i, series: widget.spec.series, routeClimbs: routeClimbs),
+    ];
     final picked = await Navigator.of(context).push<int>(
       MaterialPageRoute(
         fullscreenDialog: true,
-        builder: (_) => _LapPickerPage(lapCount: lapCount, selected: selected),
+        builder: (_) => _LapPickerPage(labels: labels, selected: selected),
       ),
     );
     if (picked == null || !mounted) return;
@@ -238,8 +246,35 @@ class _LapListBodyState extends State<LapListBody> {
 /// Le libellé d'un tour : « en cours » pour le dernier, seul encore ouvert.
 /// Partagé entre le contrôle fermé et la page de choix, pour qu'ils ne
 /// disent jamais deux choses différentes du même tour.
-String _lapLabel(int lapCount, int index) =>
-    index == lapCount - 1 ? 'Tour ${index + 1} (en cours)' : 'Tour ${index + 1}';
+///
+/// Sur la série `cols` (`climbLapSeries`), un tour qui couvre une montée
+/// ([RideLap.climbId] posé) reprend **le nom du col**, comme le composant
+/// Cols du tracé ([ClimbListCard]) — même repli « Col N » quand il n'a jamais
+/// été renommé côté site, et le même N : la position du col dans
+/// [RouteClimbs.climbs], pas l'index du tour. Un tracé entre deux cols, sans
+/// [RideLap.climbId], garde « Tour N » — nommer aussi ces tours-là suggérerait
+/// une montée qui n'existe pas.
+String _lapLabel(
+  List<RideLap> laps,
+  int index, {
+  required String series,
+  RouteClimbs? routeClimbs,
+}) {
+  final suffix = index == laps.length - 1 ? ' (en cours)' : '';
+
+  if (series == climbLapSeries && routeClimbs != null) {
+    final climbId = laps[index].climbId;
+    final climbIndex = climbId == null
+        ? -1
+        : routeClimbs.climbs.indexWhere((climb) => climb.id == climbId);
+    if (climbIndex != -1) {
+      final climb = routeClimbs.climbs[climbIndex];
+      return '${climb.name ?? 'Col ${climbIndex + 1}'}$suffix';
+    }
+  }
+
+  return 'Tour ${index + 1}$suffix';
+}
 
 /// Le choix d'un tour en plein écran.
 ///
@@ -248,9 +283,11 @@ String _lapLabel(int lapCount, int index) =>
 /// doigt qui vise mal sur une route bosselée. Ici chaque tour occupe toute la
 /// largeur de l'écran : une seule cible possible, impossible à manquer.
 class _LapPickerPage extends StatelessWidget {
-  const _LapPickerPage({required this.lapCount, required this.selected});
+  const _LapPickerPage({required this.labels, required this.selected});
 
-  final int lapCount;
+  /// Un libellé par tour, déjà résolu ([_lapLabel]) — cette page n'a pas
+  /// besoin de connaître les cols du tracé pour se contenter de les afficher.
+  final List<String> labels;
   final int selected;
 
   @override
@@ -267,8 +304,8 @@ class _LapPickerPage extends StatelessWidget {
         // Du dernier tour au premier : c'est celui qu'on vient de rouler
         // qu'on cherche le plus souvent, autant l'avoir sous le pouce sans
         // faire défiler toute la sortie.
-        itemCount: lapCount,
-        itemBuilder: (context, i) => _tile(context, lapCount - 1 - i),
+        itemCount: labels.length,
+        itemBuilder: (context, i) => _tile(context, labels.length - 1 - i),
       ),
     );
   }
@@ -291,7 +328,7 @@ class _LapPickerPage extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    _lapLabel(lapCount, index),
+                    labels[index],
                     style: const TextStyle(color: Colors.white, fontSize: 18),
                   ),
                 ),
