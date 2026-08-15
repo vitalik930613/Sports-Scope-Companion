@@ -8,6 +8,7 @@ import '../blocks/averages_block.dart';
 import '../blocks/change_route_block.dart';
 import '../blocks/clear_route_block.dart';
 import '../blocks/climb_list_block.dart';
+import '../blocks/climb_profile_block.dart';
 import '../blocks/clock_block.dart';
 import '../blocks/mark_lap_block.dart';
 import '../blocks/metric_view.dart';
@@ -330,6 +331,12 @@ class DashboardPage extends StatelessWidget {
             mode: climbs.mode,
             color: climbs.color,
             textColor: climbs.textColor,
+          ),
+        final ClimbProfileBlock climbProfile => ClimbProfileCard(
+            climbProfile: sources.climbProfile,
+            nav: sources.nav,
+            color: climbProfile.color,
+            textColor: climbProfile.textColor,
           ),
         final ClockBlock clock => ClockCard(
             mode: clock.mode,

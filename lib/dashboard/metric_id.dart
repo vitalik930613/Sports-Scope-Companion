@@ -7,6 +7,7 @@ import '../ble/sensor_hub.dart';
 import '../drivetrain.dart';
 import '../recording/ride_recorder.dart';
 import '../recording/ride_stats.dart';
+import '../ride/climb_profile.dart';
 import '../ride/nav_state.dart';
 import '../ride/route_climbs.dart';
 import '../training/ride_load.dart';
@@ -577,6 +578,7 @@ class MetricSources {
     this.drivetrain = Drivetrain.road,
     this.nav,
     this.routeClimbs,
+    this.climbProfile,
   });
 
   final SensorHub hub;
@@ -604,6 +606,11 @@ class MetricSources {
   /// La liste des cols du tracé en cours, poussée par la page. **Nulle dans un
   /// profil sans carte**, même raison que [nav] — voir [ClimbListBlock].
   final ValueListenable<RouteClimbs?>? routeClimbs;
+
+  /// Le profil gradué du col en cours, poussé une fois par col. **Nul dans un
+  /// profil sans carte**, même raison que [routeClimbs] — voir
+  /// [ClimbProfileBlock].
+  final ValueListenable<ClimbProfile?>? climbProfile;
 }
 
 /// Une mesure prête à peindre : son texte, et la zone qui la colore.

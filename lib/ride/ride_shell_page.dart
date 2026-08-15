@@ -434,6 +434,7 @@ class _RideShellPageState extends State<RideShellPage>
       // dépendent s'abstiennent au lieu d'attendre pour toujours.
       nav: _preset.hasMap ? _nav : null,
       routeClimbs: _preset.hasMap ? _routeClimbs : null,
+      climbProfile: _preset.hasMap ? _climbProfile : null,
     );
 
     // Deux déclencheurs pour une seule décision : le pont pour les fronts, le

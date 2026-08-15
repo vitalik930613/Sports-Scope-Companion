@@ -118,6 +118,7 @@ sealed class DashboardBlock {
           color: color,
           textColor: textColor,
         ),
+      'climb_profile' => ClimbProfileBlock(color: color, textColor: textColor),
       'clock' => ClockBlock.parse(raw),
       'sleep' => SleepBlock(
           mode: _modeOf(raw['mode'], SleepMode.values),
@@ -1303,6 +1304,30 @@ enum ClimbListMode with BlockMode {
 
   @override
   final String key;
+}
+
+/// Le profil gradué du col en cours, en graphique — même dessin que
+/// [ClimbProfileOverlay] (posé sur la carte, sur tap du badge de col), mais
+/// composable comme un bloc de page ordinaire.
+///
+/// Un seul mode, même raison que [PrecipRadarBlock]/[WeatherForecastBlock] :
+/// le graphique remplit toute la case, rien à faire varier selon le mode.
+///
+/// Vient de la page comme [ClimbListBlock]/[TrainingBudgetBlock], pas d'un
+/// capteur — donc absent sans carte dans le profil (voir `climb_profile.dart`
+/// : sans carte, personne n'alimente le profil). Hors col en cours, la carte
+/// le dit plutôt que de garder le graphique d'un col déjà terminé.
+class ClimbProfileBlock extends DashboardBlock {
+  const ClimbProfileBlock({super.color, super.textColor});
+
+  @override
+  bool operator ==(Object other) =>
+      other is ClimbProfileBlock &&
+      other.color == color &&
+      other.textColor == textColor;
+
+  @override
+  int get hashCode => Object.hash(color, textColor);
 }
 
 /// Une cellule volontairement vide.
