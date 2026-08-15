@@ -18,8 +18,12 @@ import 'elevation_profile_surface.dart';
 /// - un tracé chargé et en cours ([routeProfile] exploitable, [nav] sur
 ///   trace) donne le profil du parcours entier, fait/restant — même dessin
 ///   que `ClimbProfileCard`, sur toute la distance — ou, si [windowKm] est
-///   réglé, une fenêtre « roulante » des prochains kilomètres seulement (voir
-///   [_rollingCard]) ;
+///   réglé, un **graphique** recadré sur les prochains kilomètres seulement
+///   (voir [_routeCard]/[_sliceProfile]). Le D+ restant et la distance
+///   restante de l'en-tête, eux, **ne se recadrent jamais** : ils restent
+///   ceux de tout le tracé, sous peine de lire « +12 m, 800 m » à l'approche
+///   d'un col alors qu'il en reste dix kilomètres — ce que la fenêtre, à elle
+///   seule, ne distinguerait pas d'une arrivée toute proche ;
 /// - sinon, la sortie enregistrée (`recorder.elevationTrack`) donne le profil
 ///   de ce qui a été effectivement parcouru, sans portion « restante » —
 ///   [windowKm] n'y a aucun effet, il n'y a rien « à venir » à montrer sans
@@ -89,56 +93,60 @@ class AltitudeProfileCard extends StatelessWidget {
   }
 
   Widget _routeCard(RouteProfile profile, double ratio) {
-    final windowKm = this.windowKm;
-    if (windowKm != null) return _rollingCard(profile, ratio, windowKm);
-
-    final cursorIdx = _cursorIndex(profile.points, ratio * profile.totalDistM);
-    final remainingGainM = _remainingGainM(profile.points, cursorIdx);
-    final grade = _gradeNear(profile.segmentGrades, cursorIdx);
-    return ElevationProfileSurface(
-      title: _title,
-      headline: '+${remainingGainM.round()} m',
-      aside: formatDistance(profile.totalDistM * (1 - ratio)),
-      grade: grade,
-      points: profile.points,
-      segmentGrades: profile.segmentGrades,
-      ratio: ratio,
-      color: color,
-      textColor: textColor,
-    );
-  }
-
-  /// La fenêtre roulante : au lieu du tracé entier, seuls les [windowKm]
-  /// prochains kilomètres depuis la position courante — recadrés à l'origine
-  /// ([_sliceProfile]) pour que le graphique remplisse toute sa largeur, comme
-  /// s'il ne connaissait rien du tracé déjà parcouru. Le curseur et l'aire
-  /// « déjà fait » n'ont plus lieu d'être : tout ce qui se dessine est « à
-  /// venir » ([ElevationProfileSurface.ratio] à `null`, comme la sortie libre
-  /// sans tracé).
-  Widget _rollingCard(RouteProfile profile, double ratio, double windowKm) {
     final traveledM = ratio * profile.totalDistM;
-    final endM = math.min(traveledM + windowKm * 1000, profile.totalDistM);
-    final sliced = _sliceProfile(profile.points, profile.segmentGrades, traveledM, endM);
+    final cursorIdx = _cursorIndex(profile.points, traveledM);
+    // Toujours ceux de tout le tracé, même avec une fenêtre réglée : c'est le
+    // graphique qui se recadre plus bas, pas ces deux chiffres — voir la doc
+    // de la classe.
+    final headline = '+${_remainingGainM(profile.points, cursorIdx).round()} m';
+    final aside = formatDistance(profile.totalDistM - traveledM);
+    final grade = _gradeNear(profile.segmentGrades, cursorIdx);
 
-    if (sliced.points.length < 2) {
-      return BlockCard(
+    final windowKm = this.windowKm;
+    if (windowKm != null) {
+      final endM = math.min(traveledM + windowKm * 1000, profile.totalDistM);
+      final sliced = _sliceProfile(profile.points, profile.segmentGrades, traveledM, endM);
+      if (sliced.points.length < 2) {
+        // Arrivée à moins d'un échantillon : rien à recadrer, mais le D+ et
+        // la distance restants ci-dessus restent vrais — pas de repli
+        // « Arrivée toute proche » qui les cacherait pour un chiffre qui
+        // approche zéro tout seul.
+        return ElevationProfileSurface(
+          title: _title,
+          headline: headline,
+          aside: aside,
+          grade: grade,
+          points: profile.points,
+          segmentGrades: profile.segmentGrades,
+          ratio: ratio,
+          color: color,
+          textColor: textColor,
+        );
+      }
+      // Le curseur et l'aire « déjà fait » n'ont plus lieu d'être sur une
+      // fenêtre qui ne montre que de l'« à venir » — [ratio] à `null`, comme
+      // la sortie libre sans tracé.
+      return ElevationProfileSurface(
         title: _title,
-        lines: const ['Arrivée toute proche.'],
+        headline: headline,
+        aside: aside,
+        grade: grade,
+        points: sliced.points,
+        segmentGrades: sliced.grades,
+        ratio: null,
         color: color,
         textColor: textColor,
       );
     }
 
-    final windowGainM = _remainingGainM(sliced.points, 0);
-    final grade = _gradeNear(sliced.grades, 0);
     return ElevationProfileSurface(
       title: _title,
-      headline: '+${windowGainM.round()} m',
-      aside: formatDistance(endM - traveledM),
+      headline: headline,
+      aside: aside,
       grade: grade,
-      points: sliced.points,
-      segmentGrades: sliced.grades,
-      ratio: null,
+      points: profile.points,
+      segmentGrades: profile.segmentGrades,
+      ratio: ratio,
       color: color,
       textColor: textColor,
     );
