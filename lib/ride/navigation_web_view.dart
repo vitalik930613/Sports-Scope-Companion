@@ -7,10 +7,12 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../account/site_session.dart';
 import '../ble/sensor_hub.dart';
+import '../dashboard/ride_preset.dart' show TraveledPathSettings;
 import '../navigation/navigation_target.dart';
 import '../navigation/sensor_bridge.dart';
 import '../phone/debug_log.dart';
 import '../phone/rider_compass.dart';
+import '../recording/ride_recorder.dart';
 
 /// La page de navigation du site, et rien d'autre.
 ///
@@ -33,6 +35,8 @@ class NavigationWebController {
   NavigationWebController({
     required this.hub,
     this.compass,
+    required this.recorder,
+    this.traveledPath = const TraveledPathSettings(),
     required NavigationTarget target,
     required this.baseUrl,
     required this.onMessage,
@@ -49,6 +53,14 @@ class NavigationWebController {
   /// Passée telle quelle au pont : le cap à l'arrêt est une mesure de plus à
   /// pousser dans la page, au même titre qu'un cardio.
   final RiderCompass? compass;
+
+  /// Seulement pour sa dernière position et l'identifiant de la sortie en
+  /// cours : c'est ce que le pont pousse comme trajet réellement parcouru.
+  final RideRecorder recorder;
+
+  /// Couleur, largeur, opacité de la ligne du trajet parcouru — vient du
+  /// profil de sortie.
+  final TraveledPathSettings traveledPath;
 
   final String baseUrl;
 
@@ -84,8 +96,9 @@ class NavigationWebController {
         onProgress: (value) => progress.value = value,
         onPageFinished: (_) {
           // La page peut avoir été rechargée (retour de veille, perte de
-          // réseau) : on republie l'état plutôt que d'attendre une trame.
-          bridge.pushNow();
+          // réseau) : on republie l'état plutôt que d'attendre une trame, et
+          // le trajet parcouru repart à neuf puisque son état JS l'est aussi.
+          bridge.notifyPageReloaded();
           // Les cartes hors-ligne (OPFS) sont un stockage « best-effort » côté
           // Android : sans cet appel, l'OS peut les évincer sous pression
           // disque — silencieusement, précisément le jour où il n'y a plus de
@@ -116,6 +129,9 @@ class NavigationWebController {
       hub: hub,
       compass: compass,
       send: webView.runJavaScript,
+      latestFix: () => recorder.lastFix,
+      rideSessionId: () => recorder.session?.id,
+      traveledPath: traveledPath,
     )..start();
 
     _configureAndroid();

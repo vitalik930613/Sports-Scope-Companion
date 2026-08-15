@@ -155,8 +155,25 @@ en mémoire — soit un rechargement complet en pleine sortie.
 
 | Sens | Mécanisme |
 |---|---|
-| appli → page | JavaScript injecté : `window.sportsScopeCompanion.push(…)`, `.setOccluded(…)` |
+| appli → page | JavaScript injecté : `window.sportsScopeCompanion.push(…)`, `.setOccluded(…)`, `.configureTraveledPath(…)` |
 | page → appli | canal `SportsScopeCompanion`, un JSON par message |
+
+`push()` porte, en plus des mesures de capteurs, une clé optionnelle
+`traveledPath: {points: [{lat, lng}], reset}` — le trajet réellement parcouru,
+tel qu'accumulé par `TraveledPathTracker` (`lib/navigation/traveled_path_tracker.dart`)
+à partir de `RideRecorder.lastFix`. Contrairement au reste de `push()`, ce n'est
+**pas** un instantané complet à chaque tic : seuls les points nouveaux depuis le
+dernier envoi partent, sous peine de réexpédier une sortie de plusieurs heures
+chaque seconde. `reset: true` (et alors `points` porte tout l'historique) marque
+les envois qui suivent un rechargement de page (`SensorBridge.notifyPageReloaded`,
+appelé sur `onPageFinished` et sur le message `ready` — jamais par un `pushNow()`
+ordinaire, qui n'a aucune raison de tout réexpédier pour un simple capteur qui se
+reconnecte). `.configureTraveledPath({color, width, opacity})` transporte le style
+du profil de sortie (`RidePreset.traveledPath`), envoyé une fois au démarrage du
+pont et re-envoyé avec chaque renvoi complet. Coordonnées en objets `{lat, lng}`
+nommés et non en tuple : GeoJSON attend `[lng, lat]`, l'inverse de l'ordre GPS
+habituel, et c'est côté Rails (le seul endroit qui construit le `LineString`)
+que se fait la conversion.
 
 Messages reçus, triés dans `_onPageMessage` (`ride_shell_page.dart`) :
 

@@ -31,6 +31,7 @@ class RidePreset {
     this.radar = const RadarSettings(),
     this.lighting = const LightingSettings(),
     this.screen = const ScreenSettings(),
+    this.traveledPath = const TraveledPathSettings(),
   });
 
   /// Le tableau de bord d'aujourd'hui, mot pour mot.
@@ -99,6 +100,12 @@ class RidePreset {
   final RadarSettings radar;
   final LightingSettings lighting;
   final ScreenSettings screen;
+
+  /// Style du trajet réellement parcouru, tel que dessiné par la page — voir
+  /// `TraveledPathTracker` (`lib/navigation/traveled_path_tracker.dart`) côté
+  /// appli. L'appli ne dessine rien elle-même, elle ne fait que transmettre
+  /// ces valeurs telles quelles au pont.
+  final TraveledPathSettings traveledPath;
 
   /// Les pages qu'on fait défiler, dans l'ordre.
   List<RidePageSpec> get ridePages {
@@ -236,6 +243,7 @@ class RidePreset {
       radar: RadarSettings.parse(raw['radar']),
       lighting: LightingSettings.parse(raw['lighting']),
       screen: ScreenSettings.parse(raw['screen']),
+      traveledPath: TraveledPathSettings.parse(raw['traveled_path']),
     );
   }
 
@@ -874,6 +882,44 @@ class ScreenSettings {
     final level = raw['dim_level'];
     if (level is! num) return const ScreenSettings();
     return ScreenSettings(dimLevel: level.toDouble().clamp(0.01, 1.0));
+  }
+}
+
+/// Couleur, largeur et opacité de la ligne du trajet parcouru, dessinée par
+/// la page — l'appli ne fait que transmettre ces trois valeurs telles
+/// quelles au pont, elle n'en a jamais besoin sous forme de `Color` Dart.
+@immutable
+class TraveledPathSettings {
+  const TraveledPathSettings({
+    this.color = '#2196F3',
+    this.width = 4.0,
+    this.opacity = 0.85,
+  });
+
+  /// Hexadécimal `#rrggbb`, jamais transformé en `Color` : seule la page le
+  /// consomme.
+  final String color;
+  final double width;
+
+  /// Borné à `[0, 1]` : une valeur hors bornes casserait le rendu MapLibre.
+  final double opacity;
+
+  static final _hexColor = RegExp(r'^#[0-9a-fA-F]{6}$');
+
+  static TraveledPathSettings parse(Object? raw) {
+    if (raw is! Map) return const TraveledPathSettings();
+    const fallback = TraveledPathSettings();
+
+    final rawColor = raw['color'];
+    final color = rawColor is String && _hexColor.hasMatch(rawColor)
+        ? rawColor
+        : fallback.color;
+
+    return TraveledPathSettings(
+      color: color,
+      width: _double(raw['width'], fallback.width),
+      opacity: _double(raw['opacity'], fallback.opacity).clamp(0.0, 1.0),
+    );
   }
 }
 

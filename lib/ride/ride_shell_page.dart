@@ -372,6 +372,8 @@ class _RideShellPageState extends State<RideShellPage>
       _web = NavigationWebController(
         hub: widget.hub,
         compass: _preset.sensors.compass ? widget.compass : null,
+        recorder: widget.recorder,
+        traveledPath: _preset.traveledPath,
         target: widget.target,
         baseUrl: widget.baseUrl,
         onMessage: _onPageMessage,
@@ -847,7 +849,7 @@ class _RideShellPageState extends State<RideShellPage>
   void _onPageMessage(Map<dynamic, dynamic> message) {
     switch (message['type']) {
       case 'ready':
-        _web?.bridge.pushNow();
+        _web?.bridge.notifyPageReloaded();
       case 'nav':
         // Front descendant du col : « il y avait un climb, il n'y en a
         // plus ». Comparé AVANT d'accepter le nouveau message, pas après —
