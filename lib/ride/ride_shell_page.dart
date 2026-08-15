@@ -647,7 +647,12 @@ class _RideShellPageState extends State<RideShellPage>
 
   bool _nearCol() {
     final nav = _nav.value;
-    if (nav?.climb != null) return true;
+    // Hors trace, la position à laquelle la page accroche le tracé (et donc le
+    // col qu'elle désigne) n'a plus rien de fiable — un GPS instable avant de
+    // rejoindre l'itinéraire peut y faire retomber n'importe où, y compris en
+    // plein milieu d'un col qu'on n'aborde pas.
+    if (nav == null || nav.offRoute) return false;
+    if (nav.climb != null) return true;
 
     final climbs = _routeClimbs.value;
     final traveled = climbs == null ? null : traveledDistM(climbs, nav);
