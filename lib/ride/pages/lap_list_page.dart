@@ -7,6 +7,7 @@ import '../../recording/ride_lap.dart';
 import '../blocks/averages_block.dart';
 import '../blocks/lap_summary_block.dart';
 import '../blocks/mark_lap_block.dart';
+import '../blocks/metric_view.dart';
 import '../blocks/zones_block.dart';
 import '../widgets/dashboard_grid.dart';
 
@@ -153,9 +154,17 @@ class _LapListBodyState extends State<LapListBody> {
 
   /// `switch` **non exhaustif** — délibérément, contrairement à celui de
   /// `DashboardPage._block()` : un composant sans intérêt sur une page de
-  /// tours (changer d'itinéraire, calories de la sortie entière…) disparaît
-  /// plutôt que d'afficher quelque chose qui n'a pas de sens ici, même
-  /// tolérance qu'une clé inconnue.
+  /// tours (changer d'itinéraire…) disparaît plutôt que d'afficher quelque
+  /// chose qui n'a pas de sens ici, même tolérance qu'une clé inconnue.
+  ///
+  /// `MetricBlock` se dessine ici comme partout ailleurs (même `MetricView`),
+  /// mais avec `sources` **borné au tour affiché**
+  /// ([MetricSources.forLap]) : une mesure cumulée (durée, distance,
+  /// dénivelé, moyenne, calories, TSS…) lit alors *ce tour*, pas la sortie
+  /// entière — c'est tout l'intérêt de la poser ici plutôt que sur une page
+  /// de mesures ordinaire. Une mesure instantanée (cardio, cadence, vitesse
+  /// du moment…) reste celle de maintenant, tour affiché ou non : voir
+  /// `MetricId.read`.
   ///
   /// `MarkLapBlock` **fait exception** et se dessine comme partout ailleurs :
   /// c'est en consultant les tours qu'on a le plus de raisons d'en marquer un
@@ -178,6 +187,18 @@ class _LapListBodyState extends State<LapListBody> {
 
     final lap = laps[selected];
     return switch (block) {
+      final MetricBlock metric => MetricView(
+          metric: metric.metric,
+          sources: widget.sources.forLap(lap),
+          layout: metric.layout,
+          format: metric.format,
+          icon: metric.icon,
+          label: metric.label,
+          min: metric.min,
+          max: metric.max,
+          color: metric.color,
+          textColor: metric.textColor,
+        ),
       final LapZonesBlock zones => ZonesCard(
           source: zones.source,
           recorder: widget.sources.recorder,

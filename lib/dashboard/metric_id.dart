@@ -5,6 +5,7 @@ import '../account/rider_profile.dart';
 import '../account/rider_profile_store.dart';
 import '../ble/sensor_hub.dart';
 import '../drivetrain.dart';
+import '../recording/ride_lap.dart';
 import '../recording/ride_recorder.dart';
 import '../recording/ride_stats.dart';
 import '../ride/climb_profile.dart';
@@ -133,7 +134,9 @@ enum MetricId {
   ///   deux mesures sont des cumuls, un min/max « observé » n'y voudrait rien
   ///   dire (le min vaudrait toujours 0, le max toujours la valeur du moment).
   (double, double)? liveRangeOf(MetricSources sources) {
-    final stats = sources.recorder.stats;
+    // Un tour a sa propre plage : le min/max observés depuis l'ouverture du
+    // tour, pas depuis le départ de la sortie — même source que [read].
+    final stats = sources.lap?.stats ?? sources.recorder.stats;
     return switch (this) {
       MetricId.cadence =>
         _bounds(stats.minCadence?.toDouble(), stats.maxCadence?.toDouble()),
@@ -235,38 +238,47 @@ enum MetricId {
     MetricSources sources, {
     DurationFormat format = DurationFormat.hm,
   }) {
-    final stats = sources.recorder.stats;
+    // Une page Tours pose ce même catalogue sur le tour choisi plutôt que sur
+    // la sortie entière (`LapListBody._block`) : `sources.lap` porte alors ce
+    // tour, et c'est lui qui fait foi pour tout ce qui est cumulé — durée,
+    // distance, moyennes, dénivelé, calories, TSS. `RideLap.stats` est nourri
+    // exactement comme celui de la sortie (même doc sur `RideLap`), donc tout
+    // ce qui se lit déjà sur `stats` ci-dessous suit sans rien changer de plus
+    // ; seules la durée et la distance n'y sont pas et gardent leur propre
+    // repli. Les mesures instantanées (cardio, cadence, vitesse, altitude…)
+    // restent celles du hub/GPS : un tour n'a pas de « cardio de l'instant »
+    // distinct de celui de la sortie.
+    final lap = sources.lap;
+    final stats = lap?.stats ?? sources.recorder.stats;
     final active = sources.recorder.isActive;
     final profile = sources.riderProfile.profile;
+    final rideDuration =
+        lap != null ? Duration(seconds: lap.pointCount) : sources.recorder.recorded;
+    final rideDistanceM = lap != null ? lap.distanceM : sources.recorder.distanceM;
     String fmt(Duration d) =>
         format == DurationFormat.hms ? formatDurationHms(d) : formatDurationHm(d);
 
     return switch (this) {
-      // Durée et distance viennent de l'enregistreur et pas de la page : hors
-      // enregistrement elles n'existent pas, et un zéro ferait croire à un
-      // compteur remis à zéro plutôt qu'à une sortie non lancée.
-      MetricId.duration => MetricReading(
-          active ? fmt(sources.recorder.recorded) : null,
-        ),
+      // Durée et distance viennent de l'enregistreur (ou du tour) et pas de la
+      // page : hors enregistrement elles n'existent pas, et un zéro ferait
+      // croire à un compteur remis à zéro plutôt qu'à une sortie non lancée.
+      MetricId.duration => MetricReading(active ? fmt(rideDuration) : null),
       MetricId.movingTime =>
         MetricReading(active ? fmt(stats.movingTime) : null),
       // Le complément de la durée en mouvement : arrêts aux feux, ravito,
       // discussion sur le bas-côté. Les deux viennent de la même horloge —
-      // `recorded` ne tourne pas non plus pendant une pause manuelle — donc la
-      // soustraction ne peut pas passer sous zéro.
+      // `rideDuration` ne tourne pas non plus pendant une pause manuelle — donc
+      // la soustraction ne peut pas passer sous zéro.
       MetricId.pauseTime => MetricReading(
-          active ? fmt(sources.recorder.recorded - stats.movingTime) : null,
+          active ? fmt(rideDuration - stats.movingTime) : null,
         ),
       // Sans GPS (home-trainer), la distance n'a pas de source : un « 0 m » se
       // lirait comme « je n'ai pas bougé », alors que la question ne se pose
       // même pas. Le tiret dit la bonne chose — on ne mesure pas ça ici.
       MetricId.distance => MetricReading(
-          active && sources.recorder.gpsEnabled
-              ? formatKm(sources.recorder.distanceM)
-              : null,
-          numericValue: active && sources.recorder.gpsEnabled
-              ? sources.recorder.distanceM / 1000
-              : null,
+          active && sources.recorder.gpsEnabled ? formatKm(rideDistanceM) : null,
+          numericValue:
+              active && sources.recorder.gpsEnabled ? rideDistanceM / 1000 : null,
         ),
       MetricId.speed => _speedReading(sources),
       // Moyenne en roulant, pas la moyenne des échantillons bruts : sans ça,
@@ -581,6 +593,7 @@ class MetricSources {
     this.routeClimbs,
     this.climbProfile,
     this.routeProfile,
+    this.lap,
   });
 
   final SensorHub hub;
@@ -619,6 +632,28 @@ class MetricSources {
   /// contrairement à lui, son absence n'empêche pas [AltitudeProfileBlock] de
   /// s'afficher : il se rabat alors sur `recorder.elevationTrack`.
   final ValueListenable<RouteProfile?>? routeProfile;
+
+  /// Le tour affiché par une page Tours ([LapListPageSpec]), `null` partout
+  /// ailleurs. Quand il est posé, [MetricId.read]/[MetricId.liveRangeOf]
+  /// lisent leurs mesures cumulées sur **ce tour** plutôt que sur la sortie
+  /// entière — voir [forLap].
+  final RideLap? lap;
+
+  /// La même source, bornée à [lap] — voir `LapListBody._block`. Rien d'autre
+  /// ne change : le hub, le GPS et la page web restent ceux de la sortie en
+  /// cours, seules les mesures cumulées ([MetricId.read]) suivent le tour.
+  MetricSources forLap(RideLap lap) => MetricSources(
+        hub: hub,
+        recorder: recorder,
+        riderProfile: riderProfile,
+        trainingBudget: trainingBudget,
+        drivetrain: drivetrain,
+        nav: nav,
+        routeClimbs: routeClimbs,
+        climbProfile: climbProfile,
+        routeProfile: routeProfile,
+        lap: lap,
+      );
 }
 
 /// Une mesure prête à peindre : son texte, et la zone qui la colore.

@@ -1,8 +1,10 @@
 import 'package:flutter/foundation.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import '../ble/sensor_profile.dart';
 import '../lighting/auto_lighting.dart';
 import '../navigation/screen_dimmer.dart';
+import 'companion_icons.dart';
 import 'dashboard_block.dart';
 import 'grid_layout.dart';
 import 'metric_id.dart';
@@ -302,9 +304,18 @@ sealed class RidePageSpec {
     this.menu = false,
     this.menuCondition,
     this.menuAutoOpen = false,
+    this.icon,
   });
 
   final String title;
+
+  /// L'icône choisie dans l'éditeur pour repérer cette page dans le menu ⋮
+  /// (`DashboardPage._menuFor`) — `null` quand la clé est absente ou inconnue
+  /// de cette version, et alors le menu retombe sur l'icône déduite du genre
+  /// de page (grille ou liste), comme avant ce réglage. Même registre que les
+  /// icônes de composant ([companionIcons]) : une seule liste blanche des deux
+  /// côtés plutôt qu'un vocabulaire de plus à tenir à jour.
+  final FaIconData? icon;
 
   /// Rangée derrière le menu d'actions plutôt que dans le défilement.
   ///
@@ -332,11 +343,13 @@ sealed class RidePageSpec {
     final menu = raw['menu'] == true;
     final menuCondition = PageMenuCondition.parse(raw['menu_condition']);
     final menuAutoOpen = raw['menu_auto_open'] == true;
+    final icon = companionIconFor(raw['icon'] is String ? raw['icon'] as String : null);
 
     return switch (raw['kind']) {
       // Jamais derrière le menu, et pas par oubli : la carte est le WebView
       // peint au fond de la pile pour toute la sortie, pas une page qu'on ouvre
-      // et qu'on referme.
+      // et qu'on referme. Elle ne paraît donc jamais dans le menu ⋮ et n'a pas
+      // besoin de son icône.
       'map' => const MapPageSpec(),
       'grid' => GridPageSpec.parse(
           raw,
@@ -344,6 +357,7 @@ sealed class RidePageSpec {
           menu: menu,
           menuCondition: menuCondition,
           menuAutoOpen: menuAutoOpen,
+          icon: icon,
         ),
       'list' => ListPageSpec.parse(
           raw,
@@ -351,6 +365,7 @@ sealed class RidePageSpec {
           menu: menu,
           menuCondition: menuCondition,
           menuAutoOpen: menuAutoOpen,
+          icon: icon,
         ),
       'laps' => LapListPageSpec.parse(
           raw,
@@ -358,6 +373,7 @@ sealed class RidePageSpec {
           menu: menu,
           menuCondition: menuCondition,
           menuAutoOpen: menuAutoOpen,
+          icon: icon,
         ),
       _ => null,
     };
@@ -413,6 +429,7 @@ class GridPageSpec extends RidePageSpec {
     super.menu,
     super.menuCondition,
     super.menuAutoOpen,
+    super.icon,
   });
 
   final int rows;
@@ -436,6 +453,7 @@ class GridPageSpec extends RidePageSpec {
     bool menu = false,
     PageMenuCondition? menuCondition,
     bool menuAutoOpen = false,
+    FaIconData? icon,
   }) {
     final rows = _gridSide(raw['rows']);
     final cols = _gridSide(raw['cols']);
@@ -455,6 +473,7 @@ class GridPageSpec extends RidePageSpec {
       menu: menu,
       menuCondition: menuCondition,
       menuAutoOpen: menuAutoOpen,
+      icon: icon,
     );
   }
 }
@@ -526,6 +545,7 @@ class ListPageSpec extends RidePageSpec {
     super.menu,
     super.menuCondition,
     super.menuAutoOpen,
+    super.icon,
   });
 
   final List<DashboardBlock> blocks;
@@ -536,6 +556,7 @@ class ListPageSpec extends RidePageSpec {
     bool menu = false,
     PageMenuCondition? menuCondition,
     bool menuAutoOpen = false,
+    FaIconData? icon,
   }) {
     final blocks = [
       for (final entry in (raw['blocks'] is List ? raw['blocks'] as List : []))
@@ -548,6 +569,7 @@ class ListPageSpec extends RidePageSpec {
       menu: menu,
       menuCondition: menuCondition,
       menuAutoOpen: menuAutoOpen,
+      icon: icon,
     );
   }
 }
@@ -569,6 +591,7 @@ class LapListPageSpec extends RidePageSpec {
     super.menu,
     super.menuCondition,
     super.menuAutoOpen,
+    super.icon,
   });
 
   final String series;
@@ -584,6 +607,7 @@ class LapListPageSpec extends RidePageSpec {
     bool menu = false,
     PageMenuCondition? menuCondition,
     bool menuAutoOpen = false,
+    FaIconData? icon,
   }) {
     final layout = LapPageLayout.parse(raw);
     // Une page de tours sans le moindre composant n'a rien à montrer une fois
@@ -596,6 +620,7 @@ class LapListPageSpec extends RidePageSpec {
       menu: menu,
       menuCondition: menuCondition,
       menuAutoOpen: menuAutoOpen,
+      icon: icon,
     );
   }
 }

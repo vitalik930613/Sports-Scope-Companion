@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import '../../dashboard/dashboard_block.dart';
 import '../../dashboard/metric_id.dart';
@@ -380,6 +381,15 @@ class DashboardPage extends StatelessWidget {
   Widget _header() {
     return Row(
       children: [
+        // La même icône que celle du menu ⋮ — on l'a choisie pour repérer la
+        // page, autant qu'elle serve aussi une fois dessus et pas seulement
+        // avant d'y arriver. Même gris discret que le titre qu'elle précède,
+        // pour la même raison : on sait déjà sur quelle page on vient de
+        // glisser, elle ne fait que la nommer.
+        if (page.icon case final icon?) ...[
+          FaIcon(icon, size: 16, color: Colors.white70),
+          const SizedBox(width: 8),
+        ],
         Expanded(
           child: Text(
             page.title,
@@ -459,14 +469,21 @@ class DashboardPage extends StatelessWidget {
                 value: () => open(index),
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(
-                    switch (menuPage) {
-                      GridPageSpec() => Icons.grid_view,
-                      LapListPageSpec(layout: LapGridLayout()) =>
-                        Icons.grid_view,
-                      _ => Icons.view_agenda_outlined,
-                    },
-                  ),
+                  // L'icône choisie dans l'éditeur l'emporte — c'est elle qui
+                  // laisse retrouver une page au coup d'œil quand plusieurs
+                  // partagent le même genre (deux grilles, par exemple).
+                  // Sans elle, on retombe sur l'icône déduite du genre, comme
+                  // avant ce réglage.
+                  leading: menuPage.icon != null
+                      ? FaIcon(menuPage.icon)
+                      : Icon(
+                          switch (menuPage) {
+                            GridPageSpec() => Icons.grid_view,
+                            LapListPageSpec(layout: LapGridLayout()) =>
+                              Icons.grid_view,
+                            _ => Icons.view_agenda_outlined,
+                          },
+                        ),
                   title: Text(menuPage.title),
                 ),
               ),
