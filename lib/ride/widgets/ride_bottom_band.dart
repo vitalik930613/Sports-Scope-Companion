@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../../dashboard/dashboard_block.dart' show BellMode, RadarMode, SleepMode;
+import '../../dashboard/dashboard_block.dart' show BellMode, BellSound, RadarMode, SleepMode;
 import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
 import '../blocks/bell_block.dart';
@@ -149,6 +149,7 @@ class _RideBottomBandState extends State<RideBottomBand> {
     return switch (slot) {
       BandMetricSlot(:final metric) => _metric(metric, index),
       BandActionSlot(:final action) => _action(action),
+      BandBellSlot(:final sound) => _bell(sound),
       BandRadarSlot(:final mode) => _radar(mode),
     };
   }
@@ -160,11 +161,12 @@ class _RideBottomBandState extends State<RideBottomBand> {
             padding: const EdgeInsets.fromLTRB(2, 3, 2, 3),
             child: SleepControl(onSleep: widget.onSleep, mode: SleepMode.compact),
           ),
-        BandAction.bell => const Padding(
-            padding: EdgeInsets.fromLTRB(2, 3, 2, 3),
-            child: BellControl(mode: BellMode.compact),
-          ),
       };
+
+  Widget _bell(BellSound sound) => Padding(
+        padding: const EdgeInsets.fromLTRB(2, 3, 2, 3),
+        child: BellControl(mode: BellMode.compact, sound: sound),
+      );
 
   // Pas de marge supplémentaire : [BlockSurface] (`block_card.dart`) porte
   // déjà son propre padding, comme dans une case de grille.

@@ -145,6 +145,7 @@ class _NotchBandState extends State<NotchBand> {
     return switch (slot) {
       BandMetricSlot(:final metric) => _metric(metric),
       BandActionSlot(:final action) => _action(action),
+      BandBellSlot(:final sound) => BellControl(mode: BellMode.compact, sound: sound),
       BandRadarSlot(:final mode) => _radar(mode),
     };
   }
@@ -176,6 +177,5 @@ class _NotchBandState extends State<NotchBand> {
 
   Widget _action(BandAction action) => switch (action) {
         BandAction.sleep => SleepControl(onSleep: widget.onSleep, mode: SleepMode.compact),
-        BandAction.bell => const BellControl(mode: BellMode.compact),
       };
 }

@@ -689,11 +689,11 @@ class LapGridLayout extends LapPageLayout {
 }
 
 /// Ce qu'une case du bandeau ou de la bande de l'encoche peut porter : une
-/// mesure comme avant, une commande — pour l'instant, seule « mettre en
-/// veille » — ou le radar. Une clé de site unique (`MetricId.fromKey` +
-/// `'sleep'`) resterait ambiguë le jour où les catalogues se recouperaient ;
-/// `BandSlot` tranche une fois à l'analyse plutôt qu'à chaque lecture par les
-/// deux bandes.
+/// mesure comme avant, une commande sans réglage (« mettre en veille »), la
+/// sonnette avec son son, ou le radar. Une clé de site unique
+/// (`MetricId.fromKey` + `'sleep'`) resterait ambiguë le jour où les
+/// catalogues se recouperaient ; `BandSlot` tranche une fois à l'analyse
+/// plutôt qu'à chaque lecture par les deux bandes.
 @immutable
 sealed class BandSlot {
   const BandSlot();
@@ -703,13 +703,25 @@ sealed class BandSlot {
   /// document plus récent que l'appli ne doit rien faire échouer.
   static BandSlot? parse(Object? raw) {
     if (raw == 'sleep') return const BandActionSlot(BandAction.sleep);
-    if (raw == 'bell') return const BandActionSlot(BandAction.bell);
+    if (raw is String && raw.startsWith('bell_')) {
+      return BandBellSlot(_bellSoundOf(raw.substring('bell_'.length)));
+    }
     if (raw is String && raw.startsWith('radar_')) {
       return BandRadarSlot(_radarModeOf(raw.substring('radar_'.length)));
     }
     final metric = MetricId.fromKey(raw);
     return metric == null ? null : BandMetricSlot(metric);
   }
+}
+
+/// Le son nommé, ou [BellSound.bell] — le son par défaut, pour un son de
+/// bande que cette version de l'appli ne connaît pas encore. Même repli
+/// qu'un mode de radar de bande ([_radarModeOf]).
+BellSound _bellSoundOf(String key) {
+  for (final sound in BellSound.values) {
+    if (sound.key == key) return sound;
+  }
+  return BellSound.bell;
 }
 
 /// Le mode nommé, ou [RadarMode.distance] — le mode par défaut, pour un mode
@@ -731,14 +743,16 @@ class BandMetricSlot extends BandSlot {
   final MetricId metric;
 }
 
-/// Les commandes qu'une case peut porter. Un `enum` et non un simple bool sur
-/// [BandActionSlot], pour qu'une deuxième commande n'ait un jour rien à
-/// changer à [BandSlot.parse] ni aux `switch` qui la dessinent.
+/// Les commandes qu'une case peut porter, sans réglage propre. Un `enum` et
+/// non un simple bool sur [BandActionSlot], pour qu'une deuxième commande
+/// n'ait un jour rien à changer à [BandSlot.parse] ni aux `switch` qui la
+/// dessinent.
 ///
-/// `bell` y garde toujours [BellSound.bell] : une case de bandeau/encoche
-/// reste une simple clé (`"bell"`), pas un objet — le choix du klaxon ne se
-/// règle que sur un bloc `bell` posé dans une page, voir [BellBlock.sound].
-enum BandAction { sleep, bell }
+/// `bell` n'y est plus : il a un réglage (le son), donc sa propre classe
+/// ([BandBellSlot]) — même raison que [BandRadarSlot] plutôt qu'un radar
+/// fondu ici, pour la même faute qu'aurait porté un `"bell"` sans dire lequel
+/// des deux sons il joue.
+enum BandAction { sleep }
 
 @immutable
 class BandActionSlot extends BandSlot {
@@ -754,6 +768,16 @@ class BandActionSlot extends BandSlot {
 class BandRadarSlot extends BandSlot {
   const BandRadarSlot(this.mode);
   final RadarMode mode;
+}
+
+/// La sonnette, en case de bandeau ou d'encoche — voir [BellControl] pour le
+/// rendu réel. Une classe à part de [BandActionSlot] plutôt qu'un `BandAction`
+/// de plus : elle porte [sound], comme [BandRadarSlot] porte son mode — voir
+/// `BAND_BELL` côté site.
+@immutable
+class BandBellSlot extends BandSlot {
+  const BandBellSlot(this.sound);
+  final BellSound sound;
 }
 
 /// Un jeu de valeurs du bandeau.
