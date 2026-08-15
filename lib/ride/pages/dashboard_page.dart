@@ -21,6 +21,7 @@ import '../blocks/weather_forecast_block.dart';
 import '../blocks/radar_block.dart';
 import '../blocks/recording_block.dart';
 import '../blocks/route_block.dart';
+import '../blocks/bell_block.dart';
 import '../blocks/sleep_block.dart';
 import '../blocks/training_budget_block.dart';
 import '../blocks/zones_block.dart';
@@ -360,6 +361,12 @@ class DashboardPage extends StatelessWidget {
             mode: sleep.mode,
             color: sleep.color,
             textColor: sleep.textColor,
+          ),
+        final BellBlock bell => BellControl(
+            mode: bell.mode,
+            sound: bell.sound,
+            color: bell.color,
+            textColor: bell.textColor,
           ),
         EmptyBlock() => const SizedBox.shrink(),
       };

@@ -4,9 +4,10 @@ import 'dart:ui' show DisplayFeature, DisplayFeatureType;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../../dashboard/dashboard_block.dart' show RadarMode, SleepMode;
+import '../../dashboard/dashboard_block.dart' show BellMode, RadarMode, SleepMode;
 import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
+import '../blocks/bell_block.dart';
 import '../blocks/radar_block.dart';
 import '../blocks/sleep_block.dart';
 import '../radar_severity.dart';
@@ -175,5 +176,6 @@ class _NotchBandState extends State<NotchBand> {
 
   Widget _action(BandAction action) => switch (action) {
         BandAction.sleep => SleepControl(onSleep: widget.onSleep, mode: SleepMode.compact),
+        BandAction.bell => const BellControl(mode: BellMode.compact),
       };
 }

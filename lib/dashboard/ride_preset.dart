@@ -703,6 +703,7 @@ sealed class BandSlot {
   /// document plus récent que l'appli ne doit rien faire échouer.
   static BandSlot? parse(Object? raw) {
     if (raw == 'sleep') return const BandActionSlot(BandAction.sleep);
+    if (raw == 'bell') return const BandActionSlot(BandAction.bell);
     if (raw is String && raw.startsWith('radar_')) {
       return BandRadarSlot(_radarModeOf(raw.substring('radar_'.length)));
     }
@@ -733,7 +734,11 @@ class BandMetricSlot extends BandSlot {
 /// Les commandes qu'une case peut porter. Un `enum` et non un simple bool sur
 /// [BandActionSlot], pour qu'une deuxième commande n'ait un jour rien à
 /// changer à [BandSlot.parse] ni aux `switch` qui la dessinent.
-enum BandAction { sleep }
+///
+/// `bell` y garde toujours [BellSound.bell] : une case de bandeau/encoche
+/// reste une simple clé (`"bell"`), pas un objet — le choix du klaxon ne se
+/// règle que sur un bloc `bell` posé dans une page, voir [BellBlock.sound].
+enum BandAction { sleep, bell }
 
 @immutable
 class BandActionSlot extends BandSlot {

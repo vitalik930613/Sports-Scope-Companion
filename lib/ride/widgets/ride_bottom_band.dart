@@ -1,9 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../../dashboard/dashboard_block.dart' show RadarMode, SleepMode;
+import '../../dashboard/dashboard_block.dart' show BellMode, RadarMode, SleepMode;
 import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
+import '../blocks/bell_block.dart';
 import '../blocks/radar_block.dart';
 import '../blocks/sleep_block.dart';
 import '../radar_severity.dart';
@@ -158,6 +159,10 @@ class _RideBottomBandState extends State<RideBottomBand> {
         BandAction.sleep => Padding(
             padding: const EdgeInsets.fromLTRB(2, 3, 2, 3),
             child: SleepControl(onSleep: widget.onSleep, mode: SleepMode.compact),
+          ),
+        BandAction.bell => const Padding(
+            padding: EdgeInsets.fromLTRB(2, 3, 2, 3),
+            child: BellControl(mode: BellMode.compact),
           ),
       };
 

@@ -3,7 +3,8 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 /// Fabrique les tonalités d'alerte dans `assets/sounds/` : celles du radar
-/// arrière, et celle du filet natif de virages (`native_turn_alerts.dart`).
+/// arrière, celle du filet natif de virages (`native_turn_alerts.dart`), et
+/// celles du composant `bell` du tableau de bord (`bell_block.dart`).
 ///
 /// Les sons sont *générés* et non téléchargés, pour trois raisons : ils pèsent
 /// quelques kilo-octets, ils n'ont aucune licence à traîner, et surtout ils
@@ -28,10 +29,20 @@ import 'dart:typed_data';
 ///   donc percer le vent mieux que les autres. Pas de mélodie à apprendre,
 ///   juste le même signal répété pour qu'on le reconnaisse même à moitié
 ///   entendu sous un casque.
+/// - **sonnette** (`bell`) : trois notes aiguës brèves, le repli du composant
+///   `bell` — un tintement de sonnette de vélo, pas une alerte de conduite,
+///   qu'on reconnaît d'un coup de pouce délibéré et non d'un capteur.
+/// - **klaxon** (`horn`) : deux tons graves joués ensemble plutôt qu'une seule
+///   fréquence, comme les avertisseurs deux tons des voitures de la caravane
+///   du Tour de France — grave et battant, à l'opposé de tous les bips aigus
+///   ci-dessus. Le but n'est pas seulement d'être fort mais de ne **jamais**
+///   se confondre avec une alerte radar ou virage entendue par erreur.
 ///
 /// Chaque note porte une deuxième harmonique : une sinusoïde pure est propre en
 /// intérieur et disparaît à 30 km/h. Et chaque note a ses fondus d'attaque et
 /// d'extinction — sans eux, la coupure nette du signal s'entend comme un clic.
+/// `bell`/`horn` jouent en boucle (`ReleaseMode.loop`) : le silence en fin de
+/// notes sert aussi de respiration entre deux tours de boucle.
 void main(List<String> args) {
   final directory = Directory('assets/sounds')..createSync(recursive: true);
 
@@ -59,6 +70,22 @@ void main(List<String> args) {
     const _Note.silence(ms: 100),
     const _Note(hz: 1600, ms: 150, gain: 1),
   ]);
+
+  _write(directory, 'bell.wav', [
+    const _Note(hz: 1760, ms: 130, gain: 1),
+    const _Note.silence(ms: 60),
+    const _Note(hz: 1760, ms: 130, gain: 1),
+    const _Note.silence(ms: 60),
+    const _Note(hz: 1760, ms: 130, gain: 1),
+    const _Note.silence(ms: 260),
+  ]);
+
+  _write(directory, 'horn.wav', [
+    const _Note(hz: 370, hz2: 440, ms: 260, gain: 1),
+    const _Note.silence(ms: 90),
+    const _Note(hz: 370, hz2: 440, ms: 260, gain: 1),
+    const _Note.silence(ms: 420),
+  ]);
 }
 
 const _sampleRate = 44100;
@@ -67,13 +94,20 @@ const _sampleRate = 44100;
 const _fadeMs = 6;
 
 class _Note {
-  const _Note({required this.hz, required this.ms, this.gain = 0.85});
+  const _Note({required this.hz, required this.ms, this.gain = 0.85, this.hz2});
 
   const _Note.silence({required this.ms})
       : hz = 0,
+        hz2 = null,
         gain = 0;
 
   final double hz;
+
+  /// Une deuxième fréquence jouée en même temps que [hz] — le battement des
+  /// deux ensemble, plus grave et plus riche qu'un ton pur, sert le klaxon
+  /// (`horn.wav`). `null` pour toutes les autres tonalités : une seule note.
+  final double? hz2;
+
   final int ms;
   final double gain;
 }
@@ -93,6 +127,7 @@ void _write(Directory directory, String name, List<_Note> notes) {
 List<double> _render(_Note note) {
   final count = _sampleRate * note.ms ~/ 1000;
   final fade = math.min(_sampleRate * _fadeMs ~/ 1000, count ~/ 2);
+  final tones = note.hz2 == null ? [note.hz] : [note.hz, note.hz2!];
 
   return [
     for (var i = 0; i < count; i++)
@@ -101,12 +136,18 @@ List<double> _render(_Note note) {
       else
         _envelope(i, count, fade) *
             note.gain *
-            // Fondamentale plus une deuxième harmonique discrète : c'est elle
-            // qui fait passer le son par-dessus le bruit du vent.
-            (0.8 * math.sin(2 * math.pi * note.hz * i / _sampleRate) +
-                0.2 * math.sin(4 * math.pi * note.hz * i / _sampleRate)),
+            // La moyenne des tons (un seul, d'habitude) : diviser par leur
+            // nombre garde `horn.wav` (deux tons) au même gabarit que les
+            // notes à un seul ton, sans écrêter.
+            (tones.map((hz) => _tone(hz, i)).reduce((a, b) => a + b) / tones.length),
   ];
 }
+
+// Fondamentale plus une deuxième harmonique discrète : c'est elle qui fait
+// passer le son par-dessus le bruit du vent.
+double _tone(double hz, int i) =>
+    0.8 * math.sin(2 * math.pi * hz * i / _sampleRate) +
+    0.2 * math.sin(4 * math.pi * hz * i / _sampleRate);
 
 double _envelope(int i, int count, int fade) {
   if (fade == 0) return 1;

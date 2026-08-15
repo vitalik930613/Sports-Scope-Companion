@@ -126,6 +126,12 @@ sealed class DashboardBlock {
           color: color,
           textColor: textColor,
         ),
+      'bell' => BellBlock(
+          mode: _modeOf(raw['mode'], BellMode.values),
+          sound: _modeOf(raw['sound'], BellSound.values),
+          color: color,
+          textColor: textColor,
+        ),
       'empty' => const EmptyBlock(),
       _ => null,
     };
@@ -988,6 +994,71 @@ enum SleepMode with BlockMode {
   compact('compact');
 
   const SleepMode(this.key);
+
+  @override
+  final String key;
+}
+
+/// Fait sonner fort le téléphone — son et vibration au flux d'alarme, pour
+/// traverser le mode silencieux/Ne pas déranger comme le ferait un réveil,
+/// plutôt que le volume média qui s'y tairait. Utile pour le retrouver dans
+/// un sac ou une poche.
+///
+/// Autonome comme [MarkLapBlock] : ni la sortie enregistrée ni la carte n'ont
+/// besoin de savoir qu'il sonne, contrairement à [SleepBlock] qui doit
+/// traverser `RideShellPage` pour ramener le cycliste sur la carte. Sonne
+/// jusqu'au prochain tap, avec un arrêt de sécurité — voir [BellControl]
+/// (`bell_block.dart`).
+class BellBlock extends DashboardBlock {
+  const BellBlock({
+    this.mode = BellMode.full,
+    this.sound = BellSound.bell,
+    super.color,
+    super.textColor,
+  });
+
+  final BellMode mode;
+
+  /// Ce que joue le bouton — voir [BellSound].
+  final BellSound sound;
+
+  @override
+  bool operator ==(Object other) =>
+      other is BellBlock &&
+      other.mode == mode &&
+      other.sound == sound &&
+      other.color == color &&
+      other.textColor == textColor;
+
+  @override
+  int get hashCode => Object.hash(mode, sound, color, textColor);
+}
+
+enum BellMode with BlockMode {
+  /// Le bouton large, à portée de pouce sur une route bosselée.
+  full('full'),
+
+  /// L'icône seule, pour une cellule de grille.
+  compact('compact');
+
+  const BellMode(this.key);
+
+  @override
+  final String key;
+}
+
+/// Ce que sonne [BellBlock] — même liste que `CompanionSettings::BELL_SOUNDS`
+/// côté site. `bell` en tête : une sonnette classique, le repli d'un document
+/// qui ne connaît pas encore `horn`.
+enum BellSound with BlockMode {
+  bell('bell'),
+
+  /// Le klaxon deux tons des voitures de la caravane du Tour de France —
+  /// choisi pour être méconnaissable avec les autres alertes de l'appli
+  /// (radar, virages), pas seulement fort.
+  horn('horn');
+
+  const BellSound(this.key);
 
   @override
   final String key;
