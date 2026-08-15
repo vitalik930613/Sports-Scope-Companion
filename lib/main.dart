@@ -25,6 +25,7 @@ import 'navigation/navigation_picker_sheet.dart';
 import 'navigation/navigation_target.dart';
 import 'navigation/route_catalog_fetch.dart';
 import 'navigation/route_catalog_store.dart';
+import 'phone/debug_log_page.dart';
 import 'phone/phone_sensors.dart';
 import 'phone/rider_compass.dart';
 import 'ride/climb_debug_page.dart';
@@ -572,6 +573,16 @@ class _HomePageState extends State<HomePage> {
     ));
   }
 
+  /// Banc d'essai temporaire, le temps de vérifier en sortie la détection de
+  /// dérive de la boussole — voir `phone/debug_log_page.dart`. Utile en
+  /// particulier loin de tout `adb` : le journal reste lisible sur le
+  /// téléphone, et se copie pour être renvoyé une fois rentré.
+  void _openDebugLog() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const DebugLogPage(),
+    ));
+  }
+
   /// L'écran Compte, et **ce qu'il faut aller chercher au retour**.
   ///
   /// La page rend `true` quand la connexion vient d'aboutir. Ça n'est pas une
@@ -746,6 +757,11 @@ class _HomePageState extends State<HomePage> {
             onPressed: _openGattSniff,
             icon: const Icon(Icons.bug_report),
             tooltip: 'Sniff GATT (D-Fly)',
+          ),
+          IconButton(
+            onPressed: _openDebugLog,
+            icon: const Icon(Icons.terminal),
+            tooltip: 'Journal',
           ),
           IconButton(
             onPressed: _openSensors,

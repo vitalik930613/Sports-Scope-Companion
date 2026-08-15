@@ -1,13 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
-
 import '../ble/samples.dart';
 import '../ble/sensor_connection.dart';
 import '../ble/sensor_hub.dart';
 import '../ble/sensor_profile.dart';
 import '../drivetrain.dart';
+import '../phone/debug_log.dart';
 import '../phone/rider_compass.dart';
 
 /// Pousse les mesures des capteurs BLE dans la page de navigation.
@@ -96,13 +95,18 @@ class SensorBridge {
     _lastSend = now;
     _dirty = false;
 
-    final payload = jsonEncode(snapshot());
+    final data = snapshot();
+    // TEMPORAIRE — diagnostic du verrouillage boussole, à retirer une fois
+    // vérifié que le cap forcé atteint bien la page.
+    DebugLog.instance.add('[bridge] envoi headingDeg=${data['headingDeg']} '
+        'headingForced=${data['headingForced']}');
+    final payload = jsonEncode(data);
     // `?.` : la page peut ne pas (encore) exposer le pont, ce n'est pas une
     // erreur. `void` évite que la valeur de retour remonte au moteur.
     send('void (window.sportsScopeCompanion?.push($payload));').catchError((e) {
       // Page en cours de rechargement, WebView détruit : sans intérêt, la
       // prochaine mesure repartira.
-      debugPrint('[bridge] envoi ignoré : $e');
+      DebugLog.instance.add('[bridge] envoi ignoré : $e');
     });
   }
 
@@ -114,15 +118,25 @@ class SensorBridge {
   Map<String, dynamic> snapshot() {
     final radar = hub.latestRadar.value;
     final gears = hub.latestGears.value;
-    // Envoyé **seulement à l'arrêt** : en roulant la page a sa propre course
-    // GPS, meilleure que n'importe quelle boussole, et lui pousser un cap
-    // concurrent ne ferait que faire vibrer la flèche entre deux sources.
-    final standstillHeading = compass?.standstillHeadingDeg;
+    // À l'arrêt, ou si le cycliste a forcé la boussole (pastille de la
+    // carte, utile sous un couvert forestier) : la boussole. Sinon en
+    // roulant, la page a sa propre course GPS, meilleure que n'importe
+    // quelle boussole, et lui pousser un cap concurrent ne ferait que faire
+    // vibrer la flèche entre deux sources.
+    final heading = compass?.pushHeadingDeg;
+    // La page a sa propre priorité GPS/déplacement (`updateBearing`, dépôt
+    // Rails) qui ne cède à `headingDeg` qu'à sa propre estimation d'arrêt —
+    // jamais nulle sous un couvert forestier, exactement le cas qu'on veut
+    // couvrir. Ce drapeau lui dit explicitement de shunter ses propres
+    // paliers : sans lui, un cap forcé mais publié en mouvement reste
+    // silencieusement ignoré.
+    final forced = compass?.forced ?? false;
 
     return {
       'at': DateTime.now().toIso8601String(),
       'source': 'sports-scope-companion',
-      if (standstillHeading != null) 'headingDeg': standstillHeading,
+      if (heading != null) 'headingDeg': heading,
+      if (heading != null && forced) 'headingForced': true,
       'heartRate': hub.latestHeartRate.value,
       'power': hub.latestPower.value,
       'cadence': hub.latestCadence.value,

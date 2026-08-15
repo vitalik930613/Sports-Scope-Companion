@@ -1,9 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
-
 import '../recording/gps_fix.dart';
 import 'compass_heading.dart';
+import 'debug_log.dart';
 import 'phone_sensors.dart';
 
 /// La boussole du cycliste : le magnétomètre du téléphone, arbitré contre les
@@ -28,21 +27,41 @@ class RiderCompass {
 
   StreamSubscription<double>? _sub;
 
-  /// Le cap à afficher **quand la page ne peut pas le calculer** — c'est-à-dire
-  /// à l'arrêt. `null` tant que la boussole n'a pas fait ses preuves contre le
-  /// GPS, ou en roulant, où la course GPS est meilleure.
-  double? get standstillHeadingDeg =>
-      _heading.isFromCompass ? _heading.headingDeg : null;
+  /// Force la priorité à la boussole, même en roulant — activé par le
+  /// cycliste (tap sur la pastille de la carte), pour s'orienter sous un
+  /// couvert (forêt) où la vitesse GPS est trop bruitée pour distinguer un
+  /// arrêt d'un mouvement, et où c'est justement l'orientation du téléphone
+  /// qu'on veut suivre. `false` par défaut, et **remis à `false` à chaque
+  /// [start]** : un forçage oublié activé ne doit pas survivre à la sortie où
+  /// il a été demandé.
+  bool forced = false;
+
+  /// Le cap à pousser vers la page, ou `null` si rien n'est exploitable.
+  ///
+  /// À l'arrêt, ou si [forced] : la boussole. En roulant sans [forced] :
+  /// `null`, la page garde sa propre course GPS — meilleure que n'importe
+  /// quelle boussole tant que rien ne dit le contraire, pas la peine de la
+  /// concurrencer.
+  double? get pushHeadingDeg {
+    if (forced) return _heading.correctedDeg;
+    return _heading.isFromCompass ? _heading.headingDeg : null;
+  }
 
   /// Décalage mesuré entre la boussole et la réalité, pour le diagnostic.
   double? get offsetDeg => _heading.offsetDeg;
 
   bool get isTrusted => _heading.isTrusted;
 
+  /// Le cap de la boussole à tout moment, pour la pastille de diagnostic —
+  /// jamais pour la page, qui utilise [pushHeadingDeg]. Voir
+  /// [CompassHeading.correctedDeg].
+  double? get correctedHeadingDeg => _heading.correctedDeg;
+
   void start() {
     if (_sub != null || phone == null) return;
+    forced = false;
     _sub = phone!.headingDeg().listen(_heading.addCompass, onError: (Object e) {
-      debugPrint('[boussole] flux en erreur : $e');
+      DebugLog.instance.add('[boussole] flux en erreur : $e');
     });
   }
 
@@ -54,6 +73,12 @@ class RiderCompass {
     final speed = fix.speedMps;
     if (course == null || speed == null) return;
     _heading.addCourse(courseDeg: course, speedMps: speed);
+    // TEMPORAIRE — à retirer après l'essai sur route de la détection de dérive.
+    DebugLog.instance.add(
+        '[boussole] offset=${_heading.offsetDeg?.toStringAsFixed(0)}° '
+        'confiance=${_heading.agreement.toStringAsFixed(2)} '
+        'trusted=${_heading.isTrusted} '
+        'échantillons=${_heading.sampleCount}');
     // La déclinaison magnétique dépend de l'endroit : on la redonne au natif
     // quand on a bougé assez pour qu'elle ait changé de façon mesurable.
     _refreshDeclination(fix);

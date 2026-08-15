@@ -9,6 +9,7 @@ import '../account/site_session.dart';
 import '../ble/sensor_hub.dart';
 import '../navigation/navigation_target.dart';
 import '../navigation/sensor_bridge.dart';
+import '../phone/debug_log.dart';
 import '../phone/rider_compass.dart';
 
 /// La page de navigation du site, et rien d'autre.
@@ -108,7 +109,7 @@ class NavigationWebController {
     // une erreur JavaScript côté navigation serait invisible : le WebView
     // afficherait juste une carte figée, sans rien dire.
     webView.setOnConsoleMessage((message) {
-      debugPrint('[web] ${message.level.name}: ${message.message}');
+      DebugLog.instance.add('[web] ${message.level.name}: ${message.message}');
     });
 
     bridge = SensorBridge(

@@ -36,6 +36,7 @@ import 'route_climbs.dart';
 import 'screen_policy.dart';
 import 'turn_proximity.dart';
 import 'widgets/climb_badge.dart';
+import 'widgets/compass_badge.dart';
 import 'widgets/climb_profile_overlay.dart';
 import 'widgets/map_edge_handle.dart';
 import 'widgets/map_swipe_zone.dart';
@@ -160,6 +161,26 @@ class _RideShellPageState extends State<RideShellPage>
   /// route_climbs.dart). Sans carte, personne ne l'alimente ni ne l'écoute —
   /// même sort que [_nav] et [_climbProfile].
   final _routeClimbs = RouteClimbsNotifier();
+
+  /// La boussole, pour la pastille de la carte — `(cap corrigé, calibrage
+  /// vérifié)`, mis à jour une fois par seconde comme [RiderCompass.addFix]
+  /// ci-dessous. `null` tant que rien n'est mesurable (pas de magnétomètre,
+  /// profil sans boussole, ou aucune trame encore reçue) : la pastille
+  /// disparaît alors plutôt que d'offrir un bouton qui ne ferait rien.
+  final _compassReading = ValueNotifier<(double, bool)?>(null);
+
+  /// Tap sur la pastille de boussole : force ou relâche sa priorité sur la
+  /// course GPS (voir [RiderCompass.forced]). Rien à faire si le profil n'a
+  /// pas de boussole — la pastille n'est de toute façon jamais montrée.
+  void _toggleCompassForced() {
+    final compass = widget.compass;
+    if (compass == null) return;
+    setState(() => compass.forced = !compass.forced);
+    // Le pont n'envoie une mise à jour que si un capteur BLE l'a marqué
+    // « sale » entre-temps (`SensorBridge._dirty`) : sans capteur connecté,
+    // le nouveau cap ne partirait jamais vers la carte tout seul.
+    _web?.bridge.pushNow();
+  }
 
   /// La pastille de col est-elle dépliée en graphique ? Un simple booléen
   /// possédé par la coquille suffit ici — pas de politique séparée comme
@@ -384,6 +405,14 @@ class _RideShellPageState extends State<RideShellPage>
       // conséquence assumée : hors enregistrement la boussole n'a aucune course
       // à laquelle se comparer, donc elle ne se validera pas.
       widget.compass?.addFix(widget.recorder.lastFix);
+      final heading = widget.compass?.correctedHeadingDeg;
+      _compassReading.value =
+          heading == null ? null : (heading, widget.compass!.isTrusted);
+      // Le pont ne se marque « sale » tout seul que sur une trame BLE
+      // (`SensorBridge._dirty`) : sans ça, le cap forcé ne partirait qu'une
+      // fois, au tap, et la flèche resterait figée sur cette valeur au lieu
+      // de suivre la boussole qui continue de tourner.
+      if (widget.compass?.forced ?? false) _web?.bridge.pushNow();
     });
   }
 
@@ -1160,6 +1189,32 @@ class _RideShellPageState extends State<RideShellPage>
                 },
               ),
             ),
+            // Pastille de boussole, en haut à gauche (la pastille de col
+            // occupe déjà le coin droit) : cap mesuré, et bouton pour forcer
+            // sa priorité sur la course GPS — utile sous un couvert
+            // forestier (voir `RiderCompass.forced`).
+            if (_onMap)
+              Positioned(
+                key: const ValueKey('boussole'),
+                top: 8,
+                left: 8,
+                child: SafeArea(
+                  bottom: false,
+                  child: ValueListenableBuilder<(double, bool)?>(
+                    valueListenable: _compassReading,
+                    builder: (context, reading, _) {
+                      if (reading == null) return const SizedBox.shrink();
+                      final (heading, trusted) = reading;
+                      return CompassBadge(
+                        headingDeg: heading,
+                        trusted: trusted,
+                        forced: widget.compass?.forced ?? false,
+                        onTap: _toggleCompassForced,
+                      );
+                    },
+                  ),
+                ),
+              ),
             // La veille par appui long n'existe plus que sur la carte, où
             // c'est le site qui la détecte et s'endort lui-même — la coquille
             // n'a donc plus de couche d'appui ni de voile à poser ici.
