@@ -10,6 +10,7 @@ import '../recording/ride_stats.dart';
 import '../ride/climb_profile.dart';
 import '../ride/nav_state.dart';
 import '../ride/route_climbs.dart';
+import '../ride/route_profile.dart';
 import '../training/ride_load.dart';
 import '../training/training_budget_store.dart';
 import '../ui/formats.dart';
@@ -579,6 +580,7 @@ class MetricSources {
     this.nav,
     this.routeClimbs,
     this.climbProfile,
+    this.routeProfile,
   });
 
   final SensorHub hub;
@@ -611,6 +613,12 @@ class MetricSources {
   /// profil sans carte**, même raison que [routeClimbs] — voir
   /// [ClimbProfileBlock].
   final ValueListenable<ClimbProfile?>? climbProfile;
+
+  /// Le profil d'altitude du tracé entier, poussé une fois par (re)chargement.
+  /// **Nul dans un profil sans carte**, même raison que [routeClimbs] — mais
+  /// contrairement à lui, son absence n'empêche pas [AltitudeProfileBlock] de
+  /// s'afficher : il se rabat alors sur `recorder.elevationTrack`.
+  final ValueListenable<RouteProfile?>? routeProfile;
 }
 
 /// Une mesure prête à peindre : son texte, et la zone qui la colore.

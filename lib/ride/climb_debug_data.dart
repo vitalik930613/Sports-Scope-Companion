@@ -1,3 +1,4 @@
+import '../recording/elevation_profile_point.dart';
 import 'climb_profile.dart';
 import 'nav_state.dart';
 
@@ -12,11 +13,11 @@ ClimbProfile debugClimbProfile() {
   const n = 28;
   const lengthM = 8400.0;
   const gainM = 560.0;
-  final points = <ClimbProfilePoint>[];
+  final points = <ElevationProfilePoint>[];
   for (var i = 0; i <= n; i++) {
     final f = i / n;
     points.add(
-      ClimbProfilePoint(distM: f * lengthM, altM: 800 + gainM * (f * f)),
+      ElevationProfilePoint(distM: f * lengthM, altM: 800 + gainM * (f * f)),
     );
   }
   final grades = <double>[

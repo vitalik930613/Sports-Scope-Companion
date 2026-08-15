@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../dashboard/dashboard_block.dart';
 import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
+import '../blocks/altitude_profile_block.dart';
 import '../blocks/averages_block.dart';
 import '../blocks/change_route_block.dart';
 import '../blocks/clear_route_block.dart';
@@ -337,6 +338,14 @@ class DashboardPage extends StatelessWidget {
             nav: sources.nav,
             color: climbProfile.color,
             textColor: climbProfile.textColor,
+          ),
+        final AltitudeProfileBlock altitudeProfile => AltitudeProfileCard(
+            routeProfile: sources.routeProfile,
+            nav: sources.nav,
+            recorder: sources.recorder,
+            windowKm: altitudeProfile.windowKm,
+            color: altitudeProfile.color,
+            textColor: altitudeProfile.textColor,
           ),
         final ClockBlock clock => ClockCard(
             mode: clock.mode,

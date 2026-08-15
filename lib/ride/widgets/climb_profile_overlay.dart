@@ -5,7 +5,7 @@ import '../../ui/grade_colors.dart';
 import '../../ui/zone_colors.dart' show foregroundOf;
 import '../climb_profile.dart';
 import '../nav_state.dart';
-import 'climb_profile_graph.dart';
+import 'elevation_profile_graph.dart';
 
 /// La carte de col dépliée : le graphique gradué en entier, curseur compris.
 /// Port de `NavClimbCard.vue` (site) — mêmes calculs (`buildClimbProfile`,
@@ -52,7 +52,11 @@ class ClimbProfileOverlay extends StatelessWidget {
                   ? const Center(
                       child: Text('Profil du col en cours de réception…'),
                     )
-                  : ClimbProfileGraph(ratio: climb.ratio, profile: profile!),
+                  : ElevationProfileGraph(
+                      points: profile!.points,
+                      segmentGrades: profile!.segmentGrades,
+                      ratio: climb.ratio,
+                    ),
             ),
           ],
         ),

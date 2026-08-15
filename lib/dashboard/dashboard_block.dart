@@ -119,6 +119,7 @@ sealed class DashboardBlock {
           textColor: textColor,
         ),
       'climb_profile' => ClimbProfileBlock(color: color, textColor: textColor),
+      'altitude_profile' => AltitudeProfileBlock.parse(raw),
       'clock' => ClockBlock.parse(raw),
       'sleep' => SleepBlock(
           mode: _modeOf(raw['mode'], SleepMode.values),
@@ -1328,6 +1329,49 @@ class ClimbProfileBlock extends DashboardBlock {
 
   @override
   int get hashCode => Object.hash(color, textColor);
+}
+
+/// Le profil d'altitude de toute la sortie, en graphique — deux allures selon
+/// le contexte, décidées par `AltitudeProfileCard` et non par ce bloc : un
+/// tracé chargé donne le profil du parcours entier (fait/restant, même dessin
+/// que [ClimbProfileBlock] sur toute la distance), sans tracé le profil de ce
+/// qui a été effectivement parcouru.
+///
+/// Un seul mode, même raison que [ClimbProfileBlock] : le graphique remplit
+/// toute la case.
+///
+/// Contrairement à [ClimbListBlock]/[ClimbProfileBlock]/[TrainingBudgetBlock],
+/// **ne dépend pas forcément d'une page web** : sans tracé, il se rabat sur
+/// `RideRecorder.elevationTrack`, alimenté par les capteurs du téléphone —
+/// voir `AltitudeProfileCard`.
+class AltitudeProfileBlock extends DashboardBlock {
+  const AltitudeProfileBlock({this.windowKm, super.color, super.textColor});
+
+  /// Largeur de la fenêtre « roulante », en km à venir depuis la position
+  /// courante — réglée dans l'éditeur (`window_km`). `null` : le profil
+  /// entier du tracé, fait/restant, comportement d'avant ce réglage. Sans
+  /// effet sur la sortie enregistrée (sans tracé), qui n'a rien « à venir » à
+  /// montrer — voir `AltitudeProfileCard`.
+  final double? windowKm;
+
+  static AltitudeProfileBlock parse(Map<dynamic, dynamic> raw) {
+    final rawWindow = _toDouble(raw['window_km']);
+    return AltitudeProfileBlock(
+      windowKm: rawWindow != null && rawWindow > 0 ? rawWindow : null,
+      color: DashboardBlock._colorOf(raw, 'color'),
+      textColor: DashboardBlock._colorOf(raw, 'text_color'),
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is AltitudeProfileBlock &&
+      other.windowKm == windowKm &&
+      other.color == color &&
+      other.textColor == textColor;
+
+  @override
+  int get hashCode => Object.hash(windowKm, color, textColor);
 }
 
 /// Une cellule volontairement vide.

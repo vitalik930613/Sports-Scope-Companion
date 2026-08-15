@@ -33,6 +33,7 @@ import 'radar_severity.dart';
 import 'radar_wake_policy.dart';
 import 'ride_pages.dart';
 import 'route_climbs.dart';
+import 'route_profile.dart';
 import 'screen_policy.dart';
 import 'turn_proximity.dart';
 import 'widgets/climb_badge.dart';
@@ -161,6 +162,13 @@ class _RideShellPageState extends State<RideShellPage>
   /// route_climbs.dart). Sans carte, personne ne l'alimente ni ne l'écoute —
   /// même sort que [_nav] et [_climbProfile].
   final _routeClimbs = RouteClimbsNotifier();
+
+  /// Le profil d'altitude du tracé en cours, poussé une fois par tracé (voir
+  /// route_profile.dart). Sans carte, personne ne l'alimente ni ne l'écoute —
+  /// même sort que [_routeClimbs]. Contrairement à eux,
+  /// `AltitudeProfileCard` reste utile même quand cette source est nulle : elle
+  /// se rabat alors sur `recorder.elevationTrack`.
+  final _routeProfile = RouteProfileNotifier();
 
   /// La boussole, pour la pastille de la carte — `(cap corrigé, calibrage
   /// vérifié)`, mis à jour une fois par seconde comme [RiderCompass.addFix]
@@ -435,6 +443,7 @@ class _RideShellPageState extends State<RideShellPage>
       nav: _preset.hasMap ? _nav : null,
       routeClimbs: _preset.hasMap ? _routeClimbs : null,
       climbProfile: _preset.hasMap ? _climbProfile : null,
+      routeProfile: _preset.hasMap ? _routeProfile : null,
     );
 
     // Deux déclencheurs pour une seule décision : le pont pour les fronts, le
@@ -992,6 +1001,8 @@ class _RideShellPageState extends State<RideShellPage>
   /// `route_climbs` : la liste ordonnée des cols du tracé entier, poussée une
   /// fois par tracé (voir route_climbs.dart) — pas par col, contrairement à
   /// `climb_profile`.
+  /// `route_profile` : le profil d'altitude du tracé entier, poussé une fois
+  /// par tracé (voir route_profile.dart) — même cadence que `route_climbs`.
   /// `rider_profile` : les seuils du cycliste, relayés depuis le site.
   /// `training_budget` : ce qu'il reste à faire aujourd'hui, et le plafond que la
   /// fatigue autorise — calculés par le site, qui seul a l'historique.
@@ -1026,6 +1037,8 @@ class _RideShellPageState extends State<RideShellPage>
         _climbProfile.accept(message);
       case 'route_climbs':
         _routeClimbs.accept(message);
+      case 'route_profile':
+        _routeProfile.accept(message);
       case 'offline':
         _offline.accept(message);
         _maybeAutoDownloadOffline();
@@ -1090,6 +1103,7 @@ class _RideShellPageState extends State<RideShellPage>
     _nav.dispose();
     _climbProfile.dispose();
     _routeClimbs.dispose();
+    _routeProfile.dispose();
     _climbExpanded.dispose();
     _offline.dispose();
     _pages.dispose();

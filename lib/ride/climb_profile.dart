@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../recording/elevation_profile_point.dart';
+
 /// Nom de la série de tours que la coquille marque toute seule, sur les
 /// fronts de [NavClimb] (montant et descendant — voir
 /// `RideShellPage._onPageMessage`, cas `'nav'`) : un profil qui pose une page
@@ -8,14 +10,6 @@ import 'package:flutter/foundation.dart';
 /// l'éditeur du site (`companionSettings.ts`), qui la propose à ce titre — un
 /// nom différent des deux côtés ferait un bouton muet.
 const climbLapSeries = 'cols';
-
-/// Un point du profil d'un col : distance depuis le départ du col, altitude.
-@immutable
-class ClimbProfilePoint {
-  const ClimbProfilePoint({required this.distM, required this.altM});
-  final double distM;
-  final double altM;
-}
 
 /// Le profil gradué d'un col, reçu une fois par col (voir la doc de
 /// [NavClimb] dans nav_state.dart : « il aura son propre message le jour où
@@ -48,7 +42,7 @@ class ClimbProfile {
   final String? category;
 
   /// Ordonnés par distance croissante, au moins 2 points.
-  final List<ClimbProfilePoint> points;
+  final List<ElevationProfilePoint> points;
 
   /// Pente lissée de chaque segment [points[i], points[i+1]] — length ==
   /// points.length - 1. Déjà lissée côté site (fenêtre par sport, réglable) :
@@ -66,13 +60,13 @@ class ClimbProfile {
     final rawGrades = raw['segmentGrades'];
     if (id is! num || rawPoints is! List || rawGrades is! List) return null;
 
-    final points = <ClimbProfilePoint>[];
+    final points = <ElevationProfilePoint>[];
     for (final p in rawPoints) {
       if (p is! Map) return null;
       final distM = _toDouble(p['distM']);
       final altM = _toDouble(p['altM']);
       if (distM == null || altM == null) return null;
-      points.add(ClimbProfilePoint(distM: distM, altM: altM));
+      points.add(ElevationProfilePoint(distM: distM, altM: altM));
     }
     final grades = <double>[];
     for (final g in rawGrades) {
