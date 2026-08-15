@@ -1188,8 +1188,25 @@ class _RideShellPageState extends State<RideShellPage>
                   page: _menuPages[index],
                   sources: _sources,
                   radar: _preset.sensors.radar ? _radar : null,
-                  // Ni liste de pages ni commandes : on referme pour retrouver
-                  // celles de la page d'où l'on vient. Cf. `DashboardPage.onClose`.
+                  // Ni liste de pages ni menu d'actions : on referme pour
+                  // retrouver ceux de la page d'où l'on vient — `onClose`
+                  // l'emporte sur `_actionsMenu()` dans `DashboardPage._header`,
+                  // quels que soient les callbacks ci-dessous.
+                  //
+                  // Ces callbacks-là, en revanche, ne nourrissent pas le menu
+                  // d'actions mais les **blocs posés sur la page**
+                  // (`route`/`change_route`/`clear_route`/`sleep`) : sans eux,
+                  // une page rangée derrière le menu qui en porte un se
+                  // retrouvait avec un bouton grisé, indistinguable d'une case
+                  // vide, une fois rouverte depuis là. Même garde `hasMap` que
+                  // `_pageAt`.
+                  onChooseRoute: _preset.hasMap ? _chooseRoute : null,
+                  onClearRoute: _preset.hasMap ? _clearRoute : null,
+                  onSleep: _preset.hasMap ? _sleep : null,
+                  offlineMap: _preset.hasMap ? _offline : null,
+                  onDownloadOffline: _preset.hasMap ? _downloadOffline : null,
+                  onCalibratePower:
+                      powerCalibrationAvailable(widget.hub) ? _calibratePower : null,
                   onClose: () => _setMenuPage(null),
                 ),
               ),
