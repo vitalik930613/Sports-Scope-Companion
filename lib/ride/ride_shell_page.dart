@@ -227,13 +227,42 @@ class _RideShellPageState extends State<RideShellPage>
 
   RidePreset get _preset => widget.preset;
 
-  /// Le défilement et le menu, séparés une fois pour toutes.
-  ///
-  /// Calculés au montage et non à chaque trame : le profil est figé pour la
-  /// durée de la sortie, et ces deux listes sont lues par le `build`, le numéro
-  /// de page et le retour automatique.
-  late final List<RidePageSpec> _ridePages;
-  late final List<RidePageSpec> _menuPages;
+  /// Le défilement et le menu, tels que le profil les décrit **structurel-
+  /// lement** — calculés au montage et non à chaque trame, comme le profil lui-
+  /// même. Une page qui porte une condition (voir [_conditionalPages]) reste
+  /// classée ici côté menu : c'est [_activeConditional] qui, en roulant, la
+  /// fait apparaître dans [_ridePages].
+  late final List<RidePageSpec> _baseRidePages;
+  late final List<RidePageSpec> _baseMenuPages;
+
+  /// Les pages du menu qui portent une condition de sortie — sous-ensemble de
+  /// [_baseMenuPages]. Vide pour l'immense majorité des profils, qui n'en
+  /// posent aucune : [_updateConditionalPages] sort alors tout de suite.
+  late final List<RidePageSpec> _conditionalPages;
+
+  /// Les pages conditionnelles actuellement actives — réévaluées à chaque tic
+  /// (voir [_updateConditionalPages]), jamais à chaque trame : ni [NavState] ni
+  /// la pente ne changent plus vite que la seconde qui sépare deux tics.
+  Set<RidePageSpec> _activeConditional = const {};
+
+  /// Le défilement du moment : les pages toujours-défilantes, puis les pages
+  /// conditionnelles actives, **toujours en fin de liste**. Cet ordre est ce
+  /// qui garde [RidePreset.mapPageIndex] valable tel quel : une page qui
+  /// apparaît ou disparaît ici ne décale jamais la carte ni les pages qui la
+  /// précèdent.
+  List<RidePageSpec> get _ridePages => [
+        ..._baseRidePages,
+        for (final page in _conditionalPages)
+          if (_activeConditional.contains(page)) page,
+      ];
+
+  /// Les pages rangées derrière le menu du moment : les pages sans condition,
+  /// et les pages conditionnelles **inactives** — une page active est dans
+  /// [_ridePages], pas ici, elle n'a donc pas besoin d'être allée chercher.
+  List<RidePageSpec> get _menuPages => [
+        for (final page in _baseMenuPages)
+          if (!_conditionalPages.contains(page) || !_activeConditional.contains(page)) page,
+      ];
 
   /// La page ouverte depuis le menu, index dans [_menuPages]. `null` la plupart
   /// du temps — c'est une page qu'on va chercher, pas une page où l'on est.
@@ -288,6 +317,13 @@ class _RideShellPageState extends State<RideShellPage>
   /// Le cycliste a-t-il changé de page de sa main depuis la dernière décision ?
   bool _userMoved = false;
 
+  /// L'état retenu de la condition `descending`, avec hystérésis — voir
+  /// [_conditionMet]. Seule des trois conditions à porter sur un échantillon
+  /// brut plutôt qu'un état déjà poussé par la page (`onRoute`, `climb`) : sans
+  /// bande morte, la page basculerait dedans et dehors à chaque tic autour du
+  /// seuil.
+  bool _descending = false;
+
   /// L'alerte vue au tic précédent — pour ne fermer la page du menu qu'au
   /// **front montant**, voir [_decideReturn].
   RideAlert _lastAlert = RideAlert.none;
@@ -330,8 +366,12 @@ class _RideShellPageState extends State<RideShellPage>
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     WidgetsBinding.instance.addObserver(this);
 
-    _ridePages = _preset.ridePages;
-    _menuPages = _preset.menuPages;
+    _baseRidePages = _preset.ridePages;
+    _baseMenuPages = _preset.menuPages;
+    _conditionalPages = [
+      for (final page in _baseMenuPages)
+        if (page.menuCondition != null) page,
+    ];
 
     _rawPage = rawPageOriginFor(_pageCount);
     _pages = PageController(initialPage: _rawPage);
@@ -403,6 +443,7 @@ class _RideShellPageState extends State<RideShellPage>
       _decideReturn();
       _updateRadarWake();
       _checkNativeTurnAlert();
+      _updateConditionalPages();
       // Même source que le chien de garde (`recorder.lastFix`) et même
       // conséquence assumée : hors enregistrement la boussole n'a aucune course
       // à laquelle se comparer, donc elle ne se validera pas.
@@ -512,6 +553,110 @@ class _RideShellPageState extends State<RideShellPage>
     _userMoved = false;
 
     if (decision.goTo case final page?) _goToPage(page, auto: true);
+  }
+
+  /// Fait rejoindre le défilement aux pages du menu dont la condition vient de
+  /// se vérifier, et en ressort celles dont la condition vient de cesser.
+  ///
+  /// Appelée au même tic que [_decideReturn] : ni [NavState] ni la pente ne
+  /// changent plus vite que la seconde qui les sépare, pas besoin d'un
+  /// écouteur de plus.
+  void _updateConditionalPages() {
+    if (_conditionalPages.isEmpty) return;
+
+    final next = <RidePageSpec>{
+      for (final page in _conditionalPages)
+        if (_conditionMet(page.menuCondition!)) page,
+    };
+    final unchanged = next.length == _activeConditional.length &&
+        next.every(_activeConditional.contains);
+    if (unchanged) return;
+
+    // Une page du menu ouverte referme d'abord : ses indices dans [_menuPages]
+    // ne veulent plus rien dire une fois l'ensemble actif changé.
+    _setMenuPage(null);
+
+    // Capturée **avant** la mutation : c'est l'identité de la page regardée,
+    // pas son index, qui doit survivre à la recomposition.
+    final currentSpec = _pageCount > 0 ? _ridePages[_page] : null;
+    // La première dans l'ordre du profil s'il y en a plusieurs — même
+    // arbitrage que partout ailleurs dans ce contrat (la première règle
+    // cohérente gagne).
+    RidePageSpec? autoOpen;
+    for (final page in _conditionalPages) {
+      if (next.contains(page) && !_activeConditional.contains(page) && page.menuAutoOpen) {
+        autoOpen = page;
+        break;
+      }
+    }
+
+    setState(() => _activeConditional = next);
+
+    if (autoOpen != null) {
+      // Anime, et ferme au passage la page du menu qu'on vient déjà de fermer
+      // — sans effet ici, mais c'est le seul chemin qui sait aussi recalculer
+      // l'index brut le plus proche.
+      _goToPage(_ridePages.indexOf(autoOpen), auto: true);
+      return;
+    }
+
+    final keepIndex = currentSpec == null ? -1 : _ridePages.indexOf(currentSpec);
+    if (keepIndex != -1) {
+      // La page regardée existe encore : on ne fait que corriger l'index brut
+      // pour la nouvelle taille du catalogue, sans la moindre animation — rien
+      // ne doit bouger à l'écran.
+      final raw = rawPageFor(keepIndex, from: _rawPage, count: _pageCount);
+      if (raw != _rawPage && _pages.hasClients) {
+        // Marquée `auto` comme `_animateTo` : c'est une correction d'index
+        // brut, pas un geste du cycliste — sans ce compteur, `_onPageChanged`
+        // lirait `_userMoved = true` alors que rien n'a bougé à l'écran.
+        _autoMoves++;
+        _pages.jumpToPage(raw);
+        _autoMoves--;
+      }
+      return;
+    }
+
+    // La page regardée vient de disparaître du défilement (sa condition a
+    // cessé pendant qu'on la lisait) : retour à la carte, comme tout autre
+    // retour automatique.
+    _goToPage(_mapPage ?? 0, auto: true);
+  }
+
+  bool _conditionMet(PageMenuCondition condition) => switch (condition) {
+        PageMenuCondition.routeActive => _nav.value?.onRoute == true,
+        PageMenuCondition.descending => _updateDescending(),
+        PageMenuCondition.nearCol => _nearCol(),
+      };
+
+  /// Entrée sous −3 %, sortie au-dessus de −1 % : la bande morte évite un
+  /// battement de page à chaque tic quand la pente instantanée traîne près
+  /// d'un seuil unique.
+  bool _updateDescending() {
+    final grade = widget.recorder.stats.gradePercent;
+    if (grade == null) return _descending;
+    if (!_descending && grade <= -3) _descending = true;
+    if (_descending && grade > -1) _descending = false;
+    return _descending;
+  }
+
+  /// Sur un col ([NavState.climb]), ou à moins de [_nearColLeadM] du départ du
+  /// prochain — réutilise [traveledDistM]/[climbStatusOf], déjà écrits pour la
+  /// liste des cols du tracé plutôt que de refaire ce calcul ici.
+  static const _nearColLeadM = 500.0;
+
+  bool _nearCol() {
+    final nav = _nav.value;
+    if (nav?.climb != null) return true;
+
+    final climbs = _routeClimbs.value;
+    final traveled = climbs == null ? null : traveledDistM(climbs, nav);
+    if (climbs == null || traveled == null) return false;
+
+    return climbs.climbs.any((climb) {
+      if (climbStatusOf(climb, traveled) != ClimbStatus.upcoming) return false;
+      return climb.startDistM - traveled <= _nearColLeadM;
+    });
   }
 
   /// Va chercher les virages du tracé auprès du site, pour le filet natif.

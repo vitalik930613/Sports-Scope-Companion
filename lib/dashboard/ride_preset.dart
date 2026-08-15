@@ -297,7 +297,12 @@ class RidePreset {
 /// consulte à l'arrêt et peut être longue.
 @immutable
 sealed class RidePageSpec {
-  const RidePageSpec({required this.title, this.menu = false});
+  const RidePageSpec({
+    required this.title,
+    this.menu = false,
+    this.menuCondition,
+    this.menuAutoOpen = false,
+  });
 
   final String title;
 
@@ -310,22 +315,77 @@ sealed class RidePageSpec {
   /// sens acceptable pour une page qu'on aurait composée exprès.
   final bool menu;
 
+  /// Seulement quand [menu] est vrai : fait rejoindre le défilement à cette
+  /// page, le temps que la condition dure — voir
+  /// `RideShellPage._updateConditionalPages`. `null` (absente ou inconnue du
+  /// contrat) laisse la page purement statique, comme avant ce réglage.
+  final PageMenuCondition? menuCondition;
+
+  /// Bascule automatiquement dessus quand [menuCondition] devient vraie,
+  /// plutôt que de seulement la faire rejoindre le défilement. Sans effet si
+  /// [menuCondition] est `null`.
+  final bool menuAutoOpen;
+
   static RidePageSpec? parse(Object? raw) {
     if (raw is! Map) return null;
     final title = raw['title'] is String ? raw['title'] as String : null;
     final menu = raw['menu'] == true;
+    final menuCondition = PageMenuCondition.parse(raw['menu_condition']);
+    final menuAutoOpen = raw['menu_auto_open'] == true;
 
     return switch (raw['kind']) {
       // Jamais derrière le menu, et pas par oubli : la carte est le WebView
       // peint au fond de la pile pour toute la sortie, pas une page qu'on ouvre
       // et qu'on referme.
       'map' => const MapPageSpec(),
-      'grid' => GridPageSpec.parse(raw, title: title, menu: menu),
-      'list' => ListPageSpec.parse(raw, title: title, menu: menu),
-      'laps' => LapListPageSpec.parse(raw, title: title, menu: menu),
+      'grid' => GridPageSpec.parse(
+          raw,
+          title: title,
+          menu: menu,
+          menuCondition: menuCondition,
+          menuAutoOpen: menuAutoOpen,
+        ),
+      'list' => ListPageSpec.parse(
+          raw,
+          title: title,
+          menu: menu,
+          menuCondition: menuCondition,
+          menuAutoOpen: menuAutoOpen,
+        ),
+      'laps' => LapListPageSpec.parse(
+          raw,
+          title: title,
+          menu: menu,
+          menuCondition: menuCondition,
+          menuAutoOpen: menuAutoOpen,
+        ),
       _ => null,
     };
   }
+}
+
+/// Les conditions de sortie qu'une page rangée derrière le menu peut porter
+/// pour rejoindre le défilement toute seule — même contrat que
+/// `CompanionSettings::MENU_CONDITIONS` côté site.
+enum PageMenuCondition {
+  /// Un itinéraire est suivi (`NavState.onRoute`).
+  routeActive,
+
+  /// La pente sous les roues est négative au-delà d'un seuil
+  /// (`RideStats.gradePercent`).
+  descending,
+
+  /// Sur un col, ou à son approche (`NavState.climb`, `RouteClimbs`).
+  nearCol;
+
+  /// `null` pour une valeur absente ou inconnue de cette version de l'appli —
+  /// la page reste alors purement statique, jamais perdue.
+  static PageMenuCondition? parse(Object? raw) => switch (raw) {
+        'route_active' => routeActive,
+        'descending' => descending,
+        'near_col' => nearCol,
+        _ => null,
+      };
 }
 
 /// La carte du site.
@@ -351,6 +411,8 @@ class GridPageSpec extends RidePageSpec {
     required this.cells,
     this.dividers = const [],
     super.menu,
+    super.menuCondition,
+    super.menuAutoOpen,
   });
 
   final int rows;
@@ -372,6 +434,8 @@ class GridPageSpec extends RidePageSpec {
     Map<dynamic, dynamic> raw, {
     String? title,
     bool menu = false,
+    PageMenuCondition? menuCondition,
+    bool menuAutoOpen = false,
   }) {
     final rows = _gridSide(raw['rows']);
     final cols = _gridSide(raw['cols']);
@@ -389,6 +453,8 @@ class GridPageSpec extends RidePageSpec {
       cells: cells,
       dividers: _gridDividers(raw['dividers'], rows: rows, cols: cols),
       menu: menu,
+      menuCondition: menuCondition,
+      menuAutoOpen: menuAutoOpen,
     );
   }
 }
@@ -458,6 +524,8 @@ class ListPageSpec extends RidePageSpec {
     required super.title,
     required this.blocks,
     super.menu,
+    super.menuCondition,
+    super.menuAutoOpen,
   });
 
   final List<DashboardBlock> blocks;
@@ -466,13 +534,21 @@ class ListPageSpec extends RidePageSpec {
     Map<dynamic, dynamic> raw, {
     String? title,
     bool menu = false,
+    PageMenuCondition? menuCondition,
+    bool menuAutoOpen = false,
   }) {
     final blocks = [
       for (final entry in (raw['blocks'] is List ? raw['blocks'] as List : []))
         if (DashboardBlock.parse(entry) case final block?) block,
     ];
     if (blocks.isEmpty) return null;
-    return ListPageSpec(title: title ?? 'Sortie', blocks: blocks, menu: menu);
+    return ListPageSpec(
+      title: title ?? 'Sortie',
+      blocks: blocks,
+      menu: menu,
+      menuCondition: menuCondition,
+      menuAutoOpen: menuAutoOpen,
+    );
   }
 }
 
@@ -491,6 +567,8 @@ class LapListPageSpec extends RidePageSpec {
     required this.series,
     required this.layout,
     super.menu,
+    super.menuCondition,
+    super.menuAutoOpen,
   });
 
   final String series;
@@ -504,6 +582,8 @@ class LapListPageSpec extends RidePageSpec {
     Map<dynamic, dynamic> raw, {
     String? title,
     bool menu = false,
+    PageMenuCondition? menuCondition,
+    bool menuAutoOpen = false,
   }) {
     final layout = LapPageLayout.parse(raw);
     // Une page de tours sans le moindre composant n'a rien à montrer une fois
@@ -514,6 +594,8 @@ class LapListPageSpec extends RidePageSpec {
       series: raw['series'] is String ? raw['series'] as String : 'default',
       layout: layout,
       menu: menu,
+      menuCondition: menuCondition,
+      menuAutoOpen: menuAutoOpen,
     );
   }
 }
