@@ -602,7 +602,16 @@ class _RideShellPageState extends State<RideShellPage>
 
     setState(() => _activeConditional = next);
 
-    if (autoOpen != null) {
+    // Une alerte en cours possède l'écran (voir [_decideReturn], appelé juste
+    // avant sur ce même tic, qui vient de fixer [_lastAlert]) : forcer
+    // l'ouverture ici la court-circuiterait sans que la politique de retour
+    // le sache. C'est précisément ce qui arrivait au départ d'un col qui
+    // commence sur un virage — les deux mécanismes se disputaient l'écran au
+    // même tic, et la page battait ensuite entre la carte et la page de col à
+    // chaque virage suivant. La page reste dans le défilement ; elle
+    // s'ouvrira d'elle-même au prochain retour sur la carte si sa condition
+    // tient toujours, juste pas poussée d'office pendant l'alerte.
+    if (autoOpen != null && _lastAlert == RideAlert.none) {
       // Anime, et ferme au passage la page du menu qu'on vient déjà de fermer
       // — sans effet ici, mais c'est le seul chemin qui sait aussi recalculer
       // l'index brut le plus proche.
