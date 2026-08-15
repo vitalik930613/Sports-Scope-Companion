@@ -271,9 +271,52 @@ class _WeatherChartPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (steps.isEmpty || size.width <= 0 || size.height <= 0) return;
 
+    _paintGrid(canvas, size);
     _paintBars(canvas, size);
-    _paintLine(canvas, size, steps.map((s) => s.windSpeed).toList(growable: false), _windColor, dashed: true);
-    _paintLine(canvas, size, steps.map((s) => s.temperature).toList(growable: false), _tempColor, dashed: false);
+    _paintLine(
+      canvas,
+      size,
+      steps.map((s) => s.windSpeed).toList(growable: false),
+      _windColor,
+      dashed: true,
+      labelsOnRight: true,
+    );
+    _paintLine(
+      canvas,
+      size,
+      steps.map((s) => s.temperature).toList(growable: false),
+      _tempColor,
+      dashed: false,
+      labelsOnRight: false,
+      labelSuffix: '°',
+    );
+  }
+
+  /// Cadrillage de fond : horizontal fixe (haut/milieu/bas), vertical calé
+  /// sur l'intervalle réel entre deux pas plutôt que sur un index — l'API
+  /// n'est pas garantie strictement horaire. Purement un repère visuel, pas
+  /// lié à l'échelle d'une courbe en particulier (température et vent ont
+  /// chacune la sienne, voir `_paintLine`).
+  void _paintGrid(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.12)
+      ..strokeWidth = 1;
+
+    for (final fraction in const [0.0, 0.5, 1.0]) {
+      final y = fraction * size.height;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+
+    if (steps.length < 2) return;
+    final stepMinutes = steps[1].time.difference(steps[0].time).inMinutes;
+    if (stepMinutes <= 0) return;
+
+    final stepsPerLine = math.max(1, (180 / stepMinutes).round());
+    final stepX = size.width / (steps.length - 1);
+    for (var i = stepsPerLine; i < steps.length - 1; i += stepsPerLine) {
+      final x = i * stepX;
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
   }
 
   void _paintBars(Canvas canvas, Size size) {
@@ -283,7 +326,7 @@ class _WeatherChartPainter extends CustomPainter {
     final barAreaHeight = size.height * _barAreaFraction;
 
     for (var i = 0; i < steps.length; i++) {
-      final height = (steps[i].precipitation / _maxMmPerHour).clamp(0.0, 1.0) * barAreaHeight;
+      final height = _barHeight(steps[i].precipitation, barAreaHeight);
       if (height <= 0) continue;
 
       final x = i * stepX + (stepX - barWidth) / 2;
@@ -295,9 +338,53 @@ class _WeatherChartPainter extends CustomPainter {
         paint,
       );
     }
+
+    _paintPrecipScaleLabels(canvas, size, barAreaHeight);
   }
 
-  void _paintLine(Canvas canvas, Size size, List<double> values, Color color, {required bool dashed}) {
+  double _barHeight(double mmPerHour, double barAreaHeight) =>
+      (mmPerHour / _maxMmPerHour).clamp(0.0, 1.0) * barAreaHeight;
+
+  /// Min/max du cumul horaire affiché, même convention que les courbes
+  /// (`_paintScaleLabels`) mais centrées : gauche et droite sont déjà pris
+  /// par température et vent. Rien à montrer si la fenêtre reste sèche —
+  /// « 0mm » ne ferait que confirmer ce que l'absence de barre dit déjà. Le
+  /// label se cale sur la même hauteur que la barre correspondante
+  /// (`_barHeight`), donc juste au-dessus d'elle même quand le cumul dépasse
+  /// le plafond d'affichage (`_maxMmPerHour`).
+  void _paintPrecipScaleLabels(Canvas canvas, Size size, double barAreaHeight) {
+    final values = steps.map((s) => s.precipitation).toList(growable: false);
+    final max = values.reduce(math.max);
+    if (max <= 0) return;
+    final min = values.reduce(math.min);
+
+    void paintAt(double value) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: '${value.toStringAsFixed(1)}mm',
+          style: const TextStyle(color: _precipColor, fontSize: 8, fontWeight: FontWeight.w600),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final dx = (size.width - painter.width) / 2;
+      final y = size.height - _barHeight(value, barAreaHeight);
+      final dy = (y - painter.height / 2).clamp(0.0, math.max(0.0, size.height - painter.height)).toDouble();
+      painter.paint(canvas, Offset(dx, dy));
+    }
+
+    paintAt(max);
+    if (min > 0) paintAt(min);
+  }
+
+  void _paintLine(
+    Canvas canvas,
+    Size size,
+    List<double> values,
+    Color color, {
+    required bool dashed,
+    required bool labelsOnRight,
+    String labelSuffix = '',
+  }) {
     if (values.length < 2) return;
 
     final min = values.reduce(math.min);
@@ -326,15 +413,47 @@ class _WeatherChartPainter extends CustomPainter {
         path.lineTo(point.dx, point.dy);
       }
       canvas.drawPath(path, paint);
-      return;
+    } else {
+      // Une ligne pointillée à la main : contrairement à SVG côté éditeur
+      // (`CompanionBlockPreview.vue`, `stroke-dasharray`), `Paint`/`Path` de
+      // Flutter n'a pas de motif de trait natif.
+      for (var i = 0; i < points.length - 1; i++) {
+        _drawDashedSegment(canvas, points[i], points[i + 1], paint);
+      }
     }
 
-    // Une ligne pointillée à la main : contrairement à SVG côté éditeur
-    // (`CompanionBlockPreview.vue`, `stroke-dasharray`), `Paint`/`Path` de
-    // Flutter n'a pas de motif de trait natif.
-    for (var i = 0; i < points.length - 1; i++) {
-      _drawDashedSegment(canvas, points[i], points[i + 1], paint);
+    _paintScaleLabels(canvas, size, min, max, color, labelsOnRight, labelSuffix);
+  }
+
+  /// Les bornes de la plage affichée, dans la couleur de la courbe : pas
+  /// d'axe numéroté commun possible, température et vent sont normalisés
+  /// chacun sur son propre min/max (voir le commentaire de classe). Gauche
+  /// pour la température, droite pour le vent — les deux se retrouveraient
+  /// sinon superposées, chaque courbe utilisant toute la hauteur disponible.
+  void _paintScaleLabels(
+    Canvas canvas,
+    Size size,
+    double min,
+    double max,
+    Color color,
+    bool alignRight,
+    String suffix,
+  ) {
+    void paintAt(double value, double y) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: '${value.round()}$suffix',
+          style: TextStyle(color: color, fontSize: 8, fontWeight: FontWeight.w600),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final x = alignRight ? size.width - painter.width : 0.0;
+      final dy = (y - painter.height / 2).clamp(0.0, math.max(0.0, size.height - painter.height)).toDouble();
+      painter.paint(canvas, Offset(x, dy));
     }
+
+    paintAt(max, 0);
+    paintAt(min, size.height);
   }
 
   void _drawDashedSegment(Canvas canvas, Offset start, Offset end, Paint paint) {
