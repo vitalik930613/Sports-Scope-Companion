@@ -11,15 +11,24 @@ import '../recording/elevation_profile_point.dart';
 /// nom différent des deux côtés ferait un bouton muet.
 const climbLapSeries = 'cols';
 
-/// Le profil gradué d'un col, reçu une fois par col (voir la doc de
-/// [NavClimb] dans nav_state.dart : « il aura son propre message le jour où
-/// on le dessinera » — c'est ce message).
+/// Le profil gradué d'un col.
 ///
 /// Volontairement dépourvu de toute mise en forme (pas de chemin SVG, pas de
 /// couleur) : c'est `gradeColorOf` (lib/ui/grade_colors.dart) qui colore
 /// chaque segment, et cette classe qui calcule elle-même la mise à l'échelle
 /// 0-100 — même division du travail que companionNav/NavState, où la page
 /// envoie des mesures brutes et l'appli choisit sa mise en scène.
+///
+/// Reçu de deux façons, voir `RouteClimb.profile` (route_climbs.dart) pour
+/// laquelle fait autorité :
+///
+/// - dans chaque entrée de `route_climbs`, poussé une fois par tracé pour
+///   TOUS les cols d'un coup ([fromRouteClimbEntry]) — la source normale, qui
+///   rend le profil disponible hors ligne dès le chargement du tracé ;
+/// - dans le message `climb_profile` ([fromJson]), poussé une seule fois à
+///   l'entrée du col en cours — repli pour un site plus ancien que ce champ
+///   de `route_climbs` (voir `climbProfileFor` côté Rails, qui continue de
+///   l'envoyer pour cette seule raison).
 @immutable
 class ClimbProfile {
   const ClimbProfile({
@@ -55,6 +64,17 @@ class ClimbProfile {
 
   static ClimbProfile? fromJson(Object? raw) {
     if (raw is! Map || raw['type'] != 'climb_profile') return null;
+    return _parse(raw);
+  }
+
+  /// Reconstruit un profil depuis une entrée de la liste `climbs` du message
+  /// `route_climbs` — même champs que [fromJson], sans l'enveloppe `type`.
+  static ClimbProfile? fromRouteClimbEntry(Object? raw) {
+    if (raw is! Map) return null;
+    return _parse(raw);
+  }
+
+  static ClimbProfile? _parse(Map raw) {
     final id = raw['id'];
     final rawPoints = raw['points'];
     final rawGrades = raw['segmentGrades'];

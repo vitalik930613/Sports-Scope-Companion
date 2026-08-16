@@ -71,10 +71,12 @@ class NavTurn {
 }
 
 /// Le col en cours, sans son profil (trop volumineux pour être republié à
-/// chaque seconde — il aura son propre message le jour où on le dessinera).
+/// chaque seconde — voir [id], qui permet de le retrouver dans la liste des
+/// cols du tracé, `RouteClimb.profile` dans route_climbs.dart).
 @immutable
 class NavClimb {
   const NavClimb({
+    this.id,
     required this.ratio,
     required this.remainingGainM,
     required this.grade,
@@ -83,6 +85,12 @@ class NavClimb {
     this.category,
   });
 
+  /// = `RouteClimb.id` du même col — clé de recherche dans la liste reçue par
+  /// `route_climbs`, pour y retrouver le profil gradué déjà en mémoire. `null`
+  /// face à un site plus ancien que ce champ (voir `ClimbProfile.fromJson`,
+  /// repli sur le message `climb_profile`, qui n'a pas besoin de cette clé
+  /// puisqu'il ne concerne toujours que le col en cours).
+  final int? id;
   final double ratio;
   final double remainingGainM;
   final double grade;
@@ -92,7 +100,9 @@ class NavClimb {
 
   static NavClimb? fromJson(Object? raw) {
     if (raw is! Map) return null;
+    final id = raw['id'];
     return NavClimb(
+      id: id is num ? id.toInt() : null,
       ratio: _toDouble(raw['ratio']) ?? 0,
       remainingGainM: _toDouble(raw['remainingGainM']) ?? 0,
       grade: _toDouble(raw['grade']) ?? 0,

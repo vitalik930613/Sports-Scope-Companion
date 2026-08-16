@@ -5,6 +5,7 @@ import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
 import '../../recording/ride_lap.dart';
 import '../blocks/averages_block.dart';
+import '../blocks/climb_profile_block.dart';
 import '../blocks/lap_summary_block.dart';
 import '../blocks/mark_lap_block.dart';
 import '../blocks/metric_view.dart';
@@ -174,6 +175,12 @@ class _LapListBodyState extends State<LapListBody> {
   /// du moment…) reste celle de maintenant, tour affiché ou non : voir
   /// `MetricId.read`.
   ///
+  /// `ClimbProfileBlock` se dessine ici aussi, mais pas avec `ClimbProfileCard`
+  /// (celui-ci suit `NavClimb`, donc seulement le col *en cours*) : c'est
+  /// [LapClimbProfileCard], qui résout `RouteClimb.profile` depuis
+  /// `RideLap.climbId` — un col déjà grimpé garde ainsi son graphique après le
+  /// sommet, quand on revient consulter le tour depuis cette page.
+  ///
   /// `MarkLapBlock` **fait exception** et se dessine comme partout ailleurs :
   /// c'est en consultant les tours qu'on a le plus de raisons d'en marquer un
   /// nouveau. Sa série (`markLap.series`) n'a par contre **aucun lien** avec
@@ -230,6 +237,12 @@ class _LapListBodyState extends State<LapListBody> {
           mode: summary.mode,
           color: summary.color,
           textColor: summary.textColor,
+        ),
+      final ClimbProfileBlock climbProfile => LapClimbProfileCard(
+          routeClimbs: widget.sources.routeClimbs,
+          climbId: lap.climbId,
+          color: climbProfile.color,
+          textColor: climbProfile.textColor,
         ),
       final MarkLapBlock markLap => MarkLapControl(
           recorder: widget.sources.recorder,

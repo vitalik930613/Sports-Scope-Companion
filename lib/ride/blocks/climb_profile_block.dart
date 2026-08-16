@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../ui/formats.dart';
 import '../climb_profile.dart';
 import '../nav_state.dart';
+import '../route_climbs.dart';
 import 'block_card.dart';
 import 'elevation_profile_surface.dart';
 
@@ -104,4 +105,103 @@ class _Card extends StatelessWidget {
       );
 
   String _title() => profile.category == null ? 'Profil du col' : 'Profil du col · cat. ${profile.category}';
+}
+
+/// Le même graphique, mais pour un col déjà grimpé — posé sur la page Tours
+/// (voir `LapListBody._block`, cas `ClimbProfileBlock`). [ClimbProfileCard]
+/// se pilote par [NavClimb] : sur un tour qui n'est plus le tour courant, la
+/// page web n'en parle plus (`nav.value?.climb == null`), donc son graphique
+/// disparaîtrait alors que le tracé, lui, se souvient très bien de ce col.
+///
+/// La source est donc [RouteClimb] et son [RouteClimb.profile] — reçus une
+/// fois pour tout le tracé au chargement (voir la doc de [ClimbProfile]),
+/// donc toujours là après le sommet. `ratio: null` : rien à distinguer entre
+/// « déjà grimpé » et « restant », c'est tout le col qu'on regarde ici, pas
+/// la progression du moment (voir la doc de [ElevationProfileSurface.ratio]).
+class LapClimbProfileCard extends StatelessWidget {
+  const LapClimbProfileCard({
+    super.key,
+    required this.routeClimbs,
+    required this.climbId,
+    this.color,
+    this.textColor,
+  });
+
+  final ValueListenable<RouteClimbs?>? routeClimbs;
+
+  /// = `RideLap.climbId` du tour affiché. `null` sur un tour qui ne couvre
+  /// aucun col (tracé entre deux cols, ou série autre que `climbLapSeries`).
+  final int? climbId;
+
+  final Color? color;
+  final Color? textColor;
+
+  static const _title = 'Profil du col';
+
+  @override
+  Widget build(BuildContext context) {
+    final routeClimbs = this.routeClimbs;
+    if (routeClimbs == null) {
+      return BlockCard(
+        title: _title,
+        lines: const ['Ce profil roule sans carte.'],
+        color: color,
+        textColor: textColor,
+      );
+    }
+
+    final climbId = this.climbId;
+    if (climbId == null) {
+      return BlockCard(
+        title: _title,
+        lines: const ['Ce tour ne couvre aucun col.'],
+        color: color,
+        textColor: textColor,
+      );
+    }
+
+    return ListenableBuilder(
+      listenable: routeClimbs,
+      builder: (context, _) {
+        final climb = _findClimb(routeClimbs.value, climbId);
+        if (climb == null) {
+          return BlockCard(
+            title: _title,
+            lines: const ['Col introuvable dans le tracé actuel.'],
+            color: color,
+            textColor: textColor,
+          );
+        }
+
+        final profile = climb.profile;
+        if (profile == null) {
+          return BlockCard(
+            title: _title,
+            lines: const ['Profil de ce col non reçu.'],
+            color: color,
+            textColor: textColor,
+          );
+        }
+
+        return ElevationProfileSurface(
+          title: profile.category == null ? _title : '$_title · cat. ${profile.category}',
+          headline: '+${climb.gainM.round()} m',
+          aside: formatDistance(climb.lengthM),
+          grade: climb.avgGrade,
+          points: profile.points,
+          segmentGrades: profile.segmentGrades,
+          ratio: null,
+          color: color,
+          textColor: textColor,
+        );
+      },
+    );
+  }
+
+  static RouteClimb? _findClimb(RouteClimbs? list, int id) {
+    for (final climb in list?.climbs ?? const <RouteClimb>[]) {
+      if (climb.id == id) return climb;
+    }
+    return null;
+  }
 }

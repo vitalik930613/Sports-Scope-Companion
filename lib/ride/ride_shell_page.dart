@@ -156,8 +156,9 @@ class _RideShellPageState extends State<RideShellPage>
   /// Sans carte, personne ne l'alimente jamais — et personne ne l'écoute.
   final _nav = NavStateNotifier();
 
-  /// Le profil du col en cours, poussé une fois par col (voir
-  /// climb_profile.dart). Sans carte, personne ne l'alimente ni ne l'écoute —
+  /// Le profil du col en cours, résolu depuis [_routeClimbs] par id à chaque
+  /// trame `nav` (voir `_onPageMessage`) — donc disponible hors ligne dès que
+  /// le tracé est chargé. Sans carte, personne ne l'alimente ni ne l'écoute —
   /// même sort que [_nav].
   final _climbProfile = ClimbProfileNotifier();
 
@@ -201,6 +202,17 @@ class _RideShellPageState extends State<RideShellPage>
   /// s'ouvre grand tout seul recouvrirait la carte au moment précis où le
   /// cycliste a le plus besoin de voir la route devant lui.
   final _climbExpanded = ValueNotifier<bool>(false);
+
+  /// Cherche l'entrée de [_routeClimbs] qui correspond à [id] — voir son
+  /// usage dans `_onPageMessage`, cas `'nav'`. `null` sans liste encore reçue,
+  /// col sans id (site plus ancien) ou id qui ne matche aucune entrée.
+  RouteClimb? _findRouteClimb(int? id) {
+    if (id == null) return null;
+    for (final climb in _routeClimbs.value?.climbs ?? const <RouteClimb>[]) {
+      if (climb.id == id) return climb;
+    }
+    return null;
+  }
 
   /// Un col de démonstration, affiché par-dessus la sortie réelle (carte,
   /// bandeau, radar) — voir le bouton « Simuler un col » du menu d'actions.
@@ -1140,30 +1152,50 @@ class _RideShellPageState extends State<RideShellPage>
       case 'nav':
         // Front descendant du col : « il y avait un climb, il n'y en a
         // plus ». Comparé AVANT d'accepter le nouveau message, pas après —
-        // sinon les deux valent toujours la nouvelle. Un profil laissé en
-        // place après la fin du col redessinerait le dernier col fini sur un
-        // col suivant qui n'a pas encore poussé le sien (fenêtre de quelques
-        // centaines de ms entre climb_profile et le premier nav.climb, cf.
-        // climb_profile.dart).
+        // sinon les deux valent toujours la nouvelle.
         final hadClimb = _nav.value?.climb != null;
         _nav.accept(message);
-        final hasClimb = _nav.value?.climb != null;
+        final climb = _nav.value?.climb;
+        final hasClimb = climb != null;
         if (hadClimb != hasClimb) {
           // Isole la montée dans son propre tour de la série `cols` — sans
           // effet si aucune page ou bouton du profil ne la déclare
           // (`RideRecorder.markLap`, no-op sur une série inconnue).
           widget.recorder.markLap(climbLapSeries);
         }
-        if (hadClimb && !hasClimb) {
-          _climbProfile.reset();
-          _climbExpanded.value = false;
+        if (!hasClimb) {
+          if (hadClimb) {
+            _climbProfile.reset();
+            _climbExpanded.value = false;
+          }
+        } else if (_findRouteClimb(climb.id)?.profile case final profile?) {
+          // Le profil de CE col est déjà dans `route_climbs`, reçu une fois
+          // pour tout le tracé au chargement (voir RouteClimb.profile) —
+          // résolu à chaque trame tant que le col dure, pas seulement au
+          // front montant : une liste reçue en retard (démarrage de sortie)
+          // se rattrape ainsi toute seule, sans attendre un nouveau front.
+          // Un site plus ancien que ce champ (ou une liste pas encore reçue)
+          // laisse `_climbProfile` tel quel : c'est alors le message
+          // `climb_profile` classique, ci-dessous, qui le remplira.
+          _climbProfile.value = profile;
+          if (!hadClimb) {
+            // Le tour que le front montant vient d'ouvrir sur la série
+            // `cols` est celui de CE col — voir `RideRecorder.tagClimb`.
+            widget.recorder.tagClimb(climbLapSeries, profile.id);
+          }
         }
       case 'climb_profile':
+        // Repli pour un site plus ancien que `route_climbs.climbs[].points`,
+        // qui ne pousse alors le profil qu'une fois par col, à l'entrée (voir
+        // la doc de ClimbProfile) — la résolution normale, ci-dessus,
+        // l'emporte déjà dans l'immense majorité des cas.
         _climbProfile.accept(message);
         // Le tour que le front montant vient d'ouvrir sur la série `cols` est
         // forcément celui de ce col-ci — voir `RideRecorder.tagClimb`. C'est
         // ce qui permet à la page Tours de nommer le tour comme le composant
-        // Cols du tracé plutôt que « Tour N ».
+        // Cols du tracé plutôt que « Tour N ». Sans effet si le tour a déjà
+        // été étiqueté ci-dessus (`tagClimb` réécrit le même id sur le même
+        // dernier tour).
         if (_climbProfile.value case final profile?) {
           widget.recorder.tagClimb(climbLapSeries, profile.id);
         }

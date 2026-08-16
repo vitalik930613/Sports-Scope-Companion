@@ -40,6 +40,7 @@ ClimbProfile debugClimbProfile() {
 NavClimb debugClimbFor(ClimbProfile profile, double ratio) {
   final gainM = profile.gainM;
   return NavClimb(
+    id: profile.id,
     ratio: ratio,
     remainingGainM: gainM * (1 - ratio),
     grade: _gradeAt(profile, ratio),
