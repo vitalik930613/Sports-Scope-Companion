@@ -7,6 +7,7 @@ import '../../ui/formats.dart';
 import '../../ui/grade_colors.dart';
 import '../nav_state.dart';
 import '../route_climbs.dart';
+import '../widgets/climb_preview_dialog.dart';
 import 'block_card.dart';
 
 /// La liste des cols du tracé, avec un repère « en cours / prochain ».
@@ -153,6 +154,11 @@ class ClimbListCard extends StatelessWidget {
                       status: statuses[i],
                       isNext: i == nextIndex,
                       baseInk: ink,
+                      onTap: () => showClimbPreview(
+                        context,
+                        climb: list.climbs[i],
+                        index: i + 1,
+                      ),
                     ),
                   ),
               ],
@@ -181,6 +187,7 @@ class _ClimbRow extends StatelessWidget {
     required this.climb,
     required this.status,
     required this.isNext,
+    required this.onTap,
     this.baseInk = Colors.white,
   });
 
@@ -188,6 +195,7 @@ class _ClimbRow extends StatelessWidget {
   final RouteClimb climb;
   final ClimbStatus status;
   final bool isNext;
+  final VoidCallback onTap;
 
   /// Le texte réglé dans l'éditeur, ou blanc — voir [ClimbListCard.textColor].
   final Color baseInk;
@@ -201,59 +209,66 @@ class _ClimbRow extends StatelessWidget {
       // Un col déjà grimpé reste lisible, mais s'efface au profit de ceux qui
       // restent : c'est sur eux qu'on revient en roulant.
       opacity: done ? 0.5 : 1,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 10,
-            height: 10,
-            margin: const EdgeInsets.only(top: 5),
-            decoration: BoxDecoration(
-              color: gradeColorOf(climb.avgGrade),
-              shape: BoxShape.circle,
+      // Le tap prévisualise le graphique gradué de CE col, qu'il soit déjà
+      // grimpé, en cours ou encore à venir — voir showClimbPreview. Un col
+      // n'a rien de plus à faire au tap : pas de sélection, pas de navigation.
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              margin: const EdgeInsets.only(top: 5),
+              decoration: BoxDecoration(
+                color: gradeColorOf(climb.avgGrade),
+                shape: BoxShape.circle,
+              ),
             ),
-          ),
-          SizedBox(width: metrics.gap * 0.6),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        '${climb.name ?? 'Col $index'}'
-                        '${climb.category == null ? '' : ' · Cat. ${climb.category}'}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: baseInk,
-                          fontWeight: FontWeight.w600,
-                          fontSize: metrics.lineSize,
+            SizedBox(width: metrics.gap * 0.6),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          '${climb.name ?? 'Col $index'}'
+                          '${climb.category == null ? '' : ' · Cat. ${climb.category}'}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: baseInk,
+                            fontWeight: FontWeight.w600,
+                            fontSize: metrics.lineSize,
+                          ),
                         ),
                       ),
-                    ),
-                    if (status == ClimbStatus.current || isNext) ...[
-                      SizedBox(width: metrics.gap * 0.5),
-                      _StatusChip(current: status == ClimbStatus.current),
+                      if (status == ClimbStatus.current || isNext) ...[
+                        SizedBox(width: metrics.gap * 0.5),
+                        _StatusChip(current: status == ClimbStatus.current),
+                      ],
                     ],
-                  ],
-                ),
-                Text(
-                  '${formatDistanceKm(climb.lengthM)} · '
-                  '${climb.gainM.round()} m D+ · '
-                  '${climb.avgGrade.round()} % moy',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: baseInk.withValues(alpha: 0.6),
-                    fontSize: metrics.unitSize,
                   ),
-                ),
-              ],
+                  Text(
+                    '${formatDistanceKm(climb.lengthM)} · '
+                    '${climb.gainM.round()} m D+ · '
+                    '${climb.avgGrade.round()} % moy',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: baseInk.withValues(alpha: 0.6),
+                      fontSize: metrics.unitSize,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
