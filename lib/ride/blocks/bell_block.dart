@@ -18,9 +18,8 @@ import 'bell_player.dart';
 /// qu'on cherche est justement celui qu'on a mis en silencieux avant de
 /// rouler.
 ///
-/// Boucle jusqu'au prochain tap, avec un arrêt de sécurité à 3 secondes — le
-/// temps de repérer le bruit sans laisser sonner un téléphone qu'on ne
-/// retrouve pas tout de suite.
+/// Joue le son une fois jusqu'au bout (pas de boucle) ; un tap pendant la
+/// lecture l'arrête plus tôt.
 class BellControl extends StatefulWidget {
   const BellControl({
     super.key,

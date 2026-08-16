@@ -19,13 +19,14 @@ import '../../dashboard/dashboard_block.dart';
 /// simplement — même convention que le reste de l'appli (`ChangeNotifier`/
 /// `ValueNotifier`, rien d'autre).
 ///
-/// Boucle jusqu'à [stop] ou [toggle], avec un arrêt de sécurité à 3
-/// secondes — le temps de repérer le bruit sans laisser sonner un téléphone
-/// qu'on ne retrouve pas tout de suite. Son au flux d'alarme
-/// (`AndroidUsageType.alarm`, focus exclusif) plutôt qu'au volume média :
-/// c'est le seul flux qui traverse le mode silencieux/Ne pas déranger, or un
-/// téléphone qu'on cherche est justement celui qu'on a mis en silencieux
-/// avant de rouler.
+/// Joue le son une fois, jusqu'au bout — pas de boucle : sonnette et klaxon
+/// sont des signaux brefs, pas une alarme à faire cesser. Le minuteur de
+/// secours à 3 s (largement plus long que `bell.wav`/`horn.wav`, moins de 2
+/// s tous les deux) ne sert qu'à couvrir un `onPlayerComplete` qui ne
+/// arriverait pas. Son au flux d'alarme (`AndroidUsageType.alarm`, focus
+/// exclusif) plutôt qu'au volume média : c'est le seul flux qui traverse le
+/// mode silencieux/Ne pas déranger, or un téléphone qu'on cherche est
+/// justement celui qu'on a mis en silencieux avant de rouler.
 class BellPlayer extends ChangeNotifier {
   static final _alarmContext = AudioContext(
     android: const AudioContextAndroid(
@@ -51,7 +52,8 @@ class BellPlayer extends ChangeNotifier {
     _notify();
 
     try {
-      final player = AudioPlayer()..setReleaseMode(ReleaseMode.loop);
+      final player = AudioPlayer()..setReleaseMode(ReleaseMode.release);
+      player.onPlayerComplete.first.then((_) => stop());
       // `ctx` directement sur `play()` plutôt que `AudioPlayer.global.
       // setAudioContext` : ce dernier changerait le flux par défaut de
       // *tous* les lecteurs de l'appli (radar, virages), pas seulement de
