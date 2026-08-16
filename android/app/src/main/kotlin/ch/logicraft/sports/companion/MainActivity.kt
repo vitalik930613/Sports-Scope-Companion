@@ -21,6 +21,10 @@ class MainActivity : FlutterActivity() {
                         setBrightness(call.arguments as? Double)
                         result.success(null)
                     }
+                    "setKeepScreenOn" -> {
+                        setKeepScreenOn(call.arguments as? Boolean ?: false)
+                        result.success(null)
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -43,6 +47,25 @@ class MainActivity : FlutterActivity() {
         // reposer une écriture sur la fenêtre sur cette hypothèse.
         runOnUiThread {
             window.attributes = window.attributes.apply { screenBrightness = value }
+        }
+    }
+
+    /**
+     * Empêche (ou laisse) l'écran s'éteindre tout seul, pour cette fenêtre
+     * seulement — même portée que [setBrightness], donc pas de veille oubliée
+     * allumée si l'appli meurt en pleine page. Sert au banc de sniff GATT
+     * (`GattSniffPage`) : un test de geste bouton se joue sur plusieurs
+     * dizaines de secondes, largement au-delà du délai de veille du
+     * téléphone, et une capture coupée par l'écran qui s'éteint perdrait la
+     * trame qu'on attendait.
+     */
+    private fun setKeepScreenOn(keepOn: Boolean) {
+        runOnUiThread {
+            if (keepOn) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            } else {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
         }
     }
 

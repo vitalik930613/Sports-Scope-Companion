@@ -1,11 +1,8 @@
-import 'dart:async';
-
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
-import 'package:vibration/vibration.dart';
 
 import '../../dashboard/dashboard_block.dart';
 import 'action_button.dart';
+import 'bell_player.dart';
 
 /// Fait sonner fort le téléphone — pour le retrouver dans un sac ou une
 /// poche, ou attirer l'attention de quelqu'un qui roule devant.
@@ -15,11 +12,11 @@ import 'action_button.dart';
 /// contrairement à [SleepControl], qui doit traverser la coquille pour
 /// ramener le cycliste sur la carte.
 ///
-/// Son et vibration au flux d'alarme (`AndroidUsageType.alarm`, focus
-/// exclusif) plutôt qu'au volume média : c'est le seul flux qui traverse le
-/// mode silencieux/Ne pas déranger comme le ferait un réveil, or un
-/// téléphone qu'on cherche est justement celui qu'on a mis en silencieux
-/// avant de rouler.
+/// Son au flux d'alarme (`AndroidUsageType.alarm`, focus exclusif) plutôt
+/// qu'au volume média : c'est le seul flux qui traverse le mode
+/// silencieux/Ne pas déranger comme le ferait un réveil, or un téléphone
+/// qu'on cherche est justement celui qu'on a mis en silencieux avant de
+/// rouler.
 ///
 /// Boucle jusqu'au prochain tap, avec un arrêt de sécurité à 3 secondes — le
 /// temps de repérer le bruit sans laisser sonner un téléphone qu'on ne
@@ -43,72 +40,31 @@ class BellControl extends StatefulWidget {
 }
 
 class _BellControlState extends State<BellControl> {
-  static final _alarmContext = AudioContext(
-    android: const AudioContextAndroid(
-      contentType: AndroidContentType.sonification,
-      usageType: AndroidUsageType.alarm,
-      audioFocus: AndroidAudioFocus.gain,
-    ),
-  );
+  final _player = BellPlayer();
 
-  static const _failsafe = Duration(seconds: 3);
-  static const _vibrationPattern = [0, 400, 150, 400, 150, 400, 150, 400];
-  static const _vibrationIntensities = [0, 255, 0, 255, 0, 255, 0, 255];
-
-  AudioPlayer? _player;
-  Timer? _failsafeTimer;
-  bool _ringing = false;
+  @override
+  void initState() {
+    super.initState();
+    _player.addListener(_onChanged);
+  }
 
   @override
   void dispose() {
-    unawaited(_stop());
+    _player.removeListener(_onChanged);
+    _player.dispose();
     super.dispose();
   }
 
-  Future<void> _toggle() => _ringing ? _stop() : _start();
-
-  Future<void> _start() async {
-    setState(() => _ringing = true);
-
-    unawaited(
-      Vibration.vibrate(
-        pattern: _vibrationPattern,
-        intensities: _vibrationIntensities,
-        repeat: 0,
-      ).catchError((Object e) => debugPrint('[sonnette] vibration impossible : $e')),
-    );
-
-    try {
-      await AudioPlayer.global.setAudioContext(_alarmContext);
-      final player = AudioPlayer()..setReleaseMode(ReleaseMode.loop);
-      await player.play(AssetSource('sounds/${widget.sound.key}.wav'));
-      _player = player;
-    } catch (e) {
-      debugPrint('[sonnette] son indisponible : $e');
-    }
-
-    _failsafeTimer = Timer(_failsafe, _stop);
-  }
-
-  Future<void> _stop() async {
-    _failsafeTimer?.cancel();
-    _failsafeTimer = null;
-    unawaited(Vibration.cancel());
-
-    final player = _player;
-    _player = null;
-    await player?.stop();
-    await player?.dispose();
-
-    if (mounted) setState(() => _ringing = false);
+  void _onChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) => DashboardActionButton(
-        icon: _ringing ? Icons.notifications_active : Icons.notifications,
+        icon: _player.ringing ? Icons.notifications_active : Icons.notifications,
         label: 'Faire sonner',
         compact: widget.mode == BellMode.compact,
-        onPressed: _toggle,
+        onPressed: () => _player.toggle(widget.sound),
         color: widget.color,
         textColor: widget.textColor,
       );

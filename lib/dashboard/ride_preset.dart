@@ -34,6 +34,7 @@ class RidePreset {
     this.lighting = const LightingSettings(),
     this.screen = const ScreenSettings(),
     this.traveledPath = const TraveledPathSettings(),
+    this.buttons = const ButtonSettings(),
   });
 
   /// Le tableau de bord d'aujourd'hui, mot pour mot.
@@ -108,6 +109,11 @@ class RidePreset {
   /// appli. L'appli ne dessine rien elle-même, elle ne fait que transmettre
   /// ces valeurs telles quelles au pont.
   final TraveledPathSettings traveledPath;
+
+  /// Ce que chaque geste sur chaque canal du D-Fly (Di2) déclenche — voir
+  /// `Di2ButtonGesturePolicy` (`lib/ride/`) pour la classification du geste,
+  /// et `RideShellPage._performButtonAction` pour l'exécution.
+  final ButtonSettings buttons;
 
   /// Les pages qu'on fait défiler, dans l'ordre.
   List<RidePageSpec> get ridePages {
@@ -246,6 +252,7 @@ class RidePreset {
       lighting: LightingSettings.parse(raw['lighting']),
       screen: ScreenSettings.parse(raw['screen']),
       traveledPath: TraveledPathSettings.parse(raw['traveled_path']),
+      buttons: ButtonSettings.parse(raw['buttons']),
     );
   }
 
@@ -305,9 +312,19 @@ sealed class RidePageSpec {
     this.menuCondition,
     this.menuAutoOpen = false,
     this.icon,
+    this.key,
   });
 
   final String title;
+
+  /// Identifiant stable, choisi sur le site — `null` si le document ne le
+  /// fournit pas (contrat plus ancien, ou page qui n'a jamais eu besoin
+  /// d'être visée). Contrairement à [title], libre et pas garanti unique,
+  /// c'est la seule façon de désigner une page qui survive à une réédition du
+  /// profil : un bouton Di2 configuré en « aller à la page X »
+  /// (`GoToPageAction`) s'y résout, jamais à un index qui se décale dès que
+  /// les pages sont réordonnées.
+  final String? key;
 
   /// L'icône choisie dans l'éditeur pour repérer cette page dans le menu ⋮
   /// (`DashboardPage._menuFor`) — `null` quand la clé est absente ou inconnue
@@ -344,13 +361,16 @@ sealed class RidePageSpec {
     final menuCondition = PageMenuCondition.parse(raw['menu_condition']);
     final menuAutoOpen = raw['menu_auto_open'] == true;
     final icon = companionIconFor(raw['icon'] is String ? raw['icon'] as String : null);
+    final key = raw['key'] is String && (raw['key'] as String).isNotEmpty
+        ? raw['key'] as String
+        : null;
 
     return switch (raw['kind']) {
       // Jamais derrière le menu, et pas par oubli : la carte est le WebView
       // peint au fond de la pile pour toute la sortie, pas une page qu'on ouvre
       // et qu'on referme. Elle ne paraît donc jamais dans le menu ⋮ et n'a pas
       // besoin de son icône.
-      'map' => const MapPageSpec(),
+      'map' => MapPageSpec(key: key),
       'grid' => GridPageSpec.parse(
           raw,
           title: title,
@@ -358,6 +378,7 @@ sealed class RidePageSpec {
           menuCondition: menuCondition,
           menuAutoOpen: menuAutoOpen,
           icon: icon,
+          key: key,
         ),
       'list' => ListPageSpec.parse(
           raw,
@@ -366,6 +387,7 @@ sealed class RidePageSpec {
           menuCondition: menuCondition,
           menuAutoOpen: menuAutoOpen,
           icon: icon,
+          key: key,
         ),
       'laps' => LapListPageSpec.parse(
           raw,
@@ -374,6 +396,7 @@ sealed class RidePageSpec {
           menuCondition: menuCondition,
           menuAutoOpen: menuAutoOpen,
           icon: icon,
+          key: key,
         ),
       _ => null,
     };
@@ -412,7 +435,7 @@ enum PageMenuCondition {
 /// plateforme démontée cesse de suivre le cycliste), et sa position dans le
 /// catalogue n'y change rien.
 class MapPageSpec extends RidePageSpec {
-  const MapPageSpec() : super(title: 'Carte');
+  const MapPageSpec({super.key}) : super(title: 'Carte');
 }
 
 /// Une grille de `rows` × `cols`, avec fusions.
@@ -430,6 +453,7 @@ class GridPageSpec extends RidePageSpec {
     super.menuCondition,
     super.menuAutoOpen,
     super.icon,
+    super.key,
   });
 
   final int rows;
@@ -454,6 +478,7 @@ class GridPageSpec extends RidePageSpec {
     PageMenuCondition? menuCondition,
     bool menuAutoOpen = false,
     FaIconData? icon,
+    String? key,
   }) {
     final rows = _gridSide(raw['rows']);
     final cols = _gridSide(raw['cols']);
@@ -474,6 +499,7 @@ class GridPageSpec extends RidePageSpec {
       menuCondition: menuCondition,
       menuAutoOpen: menuAutoOpen,
       icon: icon,
+      key: key,
     );
   }
 }
@@ -546,6 +572,7 @@ class ListPageSpec extends RidePageSpec {
     super.menuCondition,
     super.menuAutoOpen,
     super.icon,
+    super.key,
   });
 
   final List<DashboardBlock> blocks;
@@ -557,6 +584,7 @@ class ListPageSpec extends RidePageSpec {
     PageMenuCondition? menuCondition,
     bool menuAutoOpen = false,
     FaIconData? icon,
+    String? key,
   }) {
     final blocks = [
       for (final entry in (raw['blocks'] is List ? raw['blocks'] as List : []))
@@ -570,6 +598,7 @@ class ListPageSpec extends RidePageSpec {
       menuCondition: menuCondition,
       menuAutoOpen: menuAutoOpen,
       icon: icon,
+      key: key,
     );
   }
 }
@@ -592,6 +621,7 @@ class LapListPageSpec extends RidePageSpec {
     super.menuCondition,
     super.menuAutoOpen,
     super.icon,
+    super.key,
   });
 
   final String series;
@@ -608,6 +638,7 @@ class LapListPageSpec extends RidePageSpec {
     PageMenuCondition? menuCondition,
     bool menuAutoOpen = false,
     FaIconData? icon,
+    String? key,
   }) {
     final layout = LapPageLayout.parse(raw);
     // Une page de tours sans le moindre composant n'a rien à montrer une fois
@@ -621,6 +652,7 @@ class LapListPageSpec extends RidePageSpec {
       menuCondition: menuCondition,
       menuAutoOpen: menuAutoOpen,
       icon: icon,
+      key: key,
     );
   }
 }
@@ -1061,3 +1093,129 @@ class TraveledPathSettings {
 
 double _double(Object? raw, double fallback) =>
     raw is num ? raw.toDouble() : fallback;
+
+/// Ce qu'un geste sur un bouton distant (D-Fly du Di2) déclenche.
+///
+/// Un jeton de chaîne par action plutôt qu'un `enum` : certaines portent un
+/// réglage (`RingBellAction.sound`, `GoToPageAction.pageKey`), même choix que
+/// [BandSlot] pour la même raison — un `enum` à plat ne peut rien porter.
+/// `parse` ne lève jamais et rend `null` sur un jeton absent ou inconnu de
+/// cette version : un geste sans action assignée ne fait simplement rien.
+@immutable
+sealed class ButtonAction {
+  const ButtonAction();
+
+  static ButtonAction? parse(Object? raw) {
+    if (raw is! String) return null;
+    if (raw.startsWith('go_to_page:')) {
+      final pageKey = raw.substring('go_to_page:'.length);
+      return pageKey.isEmpty ? null : GoToPageAction(pageKey);
+    }
+    return switch (raw) {
+      'next_page' => const NextPageAction(),
+      'previous_page' => const PreviousPageAction(),
+      'bell' => const RingBellAction(BellSound.bell),
+      'horn' => const RingBellAction(BellSound.horn),
+      'start_lap' => const StartLapAction(),
+      'sleep' => const EnterSleepAction(),
+      // Anticipation : sans effet tant que le site n'expose pas `sleepExit`
+      // — voir `NavigationWebController.requestWake`.
+      'wake' => const ExitSleepAction(),
+      _ => null,
+    };
+  }
+}
+
+class NextPageAction extends ButtonAction {
+  const NextPageAction();
+}
+
+class PreviousPageAction extends ButtonAction {
+  const PreviousPageAction();
+}
+
+class RingBellAction extends ButtonAction {
+  const RingBellAction(this.sound);
+  final BellSound sound;
+}
+
+class StartLapAction extends ButtonAction {
+  const StartLapAction();
+}
+
+class EnterSleepAction extends ButtonAction {
+  const EnterSleepAction();
+}
+
+/// Anticipation : voir `NavigationWebController.requestWake`, qui appelle un
+/// point d'entrée JS que le site n'expose pas encore.
+class ExitSleepAction extends ButtonAction {
+  const ExitSleepAction();
+}
+
+/// Anticipation : ne se résout que si une page du profil porte ce
+/// [RidePageSpec.key] au moment du geste — sinon sans effet, jamais une
+/// erreur, un profil réédité entre-temps ne doit rien casser.
+class GoToPageAction extends ButtonAction {
+  const GoToPageAction(this.pageKey);
+  final String pageKey;
+}
+
+/// Les trois gestes qu'un canal du D-Fly peut produire — voir
+/// `Di2ButtonGesturePolicy` (`lib/ride/`) pour comment on les distingue.
+@immutable
+class ButtonGestureActions {
+  const ButtonGestureActions({this.click, this.doubleClick, this.longPress});
+
+  final ButtonAction? click;
+  final ButtonAction? doubleClick;
+  final ButtonAction? longPress;
+
+  static ButtonGestureActions parse(Object? raw) {
+    if (raw is! Map) return const ButtonGestureActions();
+    return ButtonGestureActions(
+      click: ButtonAction.parse(raw['click']),
+      doubleClick: ButtonAction.parse(raw['double_click']),
+      longPress: ButtonAction.parse(raw['long_press']),
+    );
+  }
+}
+
+/// Ce que les quatre canaux du D-Fly déclenchent, par profil de sortie —
+/// seuls 1 et 2 sont câblés sur le matériel testé jusqu'ici, 3 et 4 suivent
+/// le même format (voir `ble/decoders/di2_buttons.dart`) et n'ont donc pas de
+/// raison d'attendre un futur remaniement pour être configurables.
+///
+/// Par défaut, exactement le comportement d'avant ce réglage — canal 1 =
+/// page précédente, canal 2 = page suivante, sur le clic simple seulement,
+/// rien sur 3 et 4 — pour qu'un document sans section `buttons` (site plus
+/// ancien, ou [RidePreset.builtIn]) ne change rien à l'existant.
+@immutable
+class ButtonSettings {
+  const ButtonSettings({
+    this.channel1 = const ButtonGestureActions(click: PreviousPageAction()),
+    this.channel2 = const ButtonGestureActions(click: NextPageAction()),
+    this.channel3 = const ButtonGestureActions(),
+    this.channel4 = const ButtonGestureActions(),
+  });
+
+  final ButtonGestureActions channel1;
+  final ButtonGestureActions channel2;
+  final ButtonGestureActions channel3;
+  final ButtonGestureActions channel4;
+
+  static ButtonSettings parse(Object? raw) {
+    if (raw is! Map) return const ButtonSettings();
+    const fallback = ButtonSettings();
+
+    ButtonGestureActions channel(String key, ButtonGestureActions fallback) =>
+        raw.containsKey(key) ? ButtonGestureActions.parse(raw[key]) : fallback;
+
+    return ButtonSettings(
+      channel1: channel('channel1', fallback.channel1),
+      channel2: channel('channel2', fallback.channel2),
+      channel3: channel('channel3', fallback.channel3),
+      channel4: channel('channel4', fallback.channel4),
+    );
+  }
+}

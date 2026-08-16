@@ -260,6 +260,24 @@ class NavigationWebController {
     }
   }
 
+  /// Miroir de [requestSleep] dans l'autre sens — pour un geste natif (bouton
+  /// Di2 configuré en « sortie de veille ») qui doit réveiller la carte sans
+  /// attendre le virage qui la sort seule de son voile.
+  ///
+  /// `sleepExit` n'existe pas encore côté site au moment d'écrire ceci
+  /// (`companionBridge.ts` n'expose que l'entrée en veille) : l'appel est de
+  /// l'anticipation, sans effet — jamais une exception — contre un site qui
+  /// ne le connaît pas encore, même garantie que [requestSleep].
+  Future<void> requestWake() async {
+    try {
+      await webView.runJavaScript(
+        'void (window.sportsScopeCompanion?.sleepExit?.());',
+      );
+    } catch (e) {
+      debugPrint('[web] réveil ignoré : $e');
+    }
+  }
+
   /// Déclenche le téléchargement hors ligne du trajet affiché, depuis le menu
   /// natif — voir `OfflineMapNotifier` et `companionBridge.ts` côté Rails. Le
   /// téléchargement (tuiles, archive PMTiles) reste entièrement côté site :

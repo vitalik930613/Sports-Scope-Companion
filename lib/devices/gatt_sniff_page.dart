@@ -1,9 +1,14 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../ble/sensor_hub.dart';
+import '../navigation/screen_dimmer.dart';
 
 /// Outil de rétro-ingénierie temporaire : s'abonne à **toutes** les
 /// caractéristiques notifiantes d'un appareil déjà connecté, connues ou non
@@ -47,11 +52,32 @@ class _GattSniffPageState extends State<GattSniffPage> {
   /// que ce qu'on peut coller tel quel.
   final _muted = <String>{};
 
+  /// Ce qu'on est en train de faire, tapé à la main juste avant de le faire
+  /// (« double clic channel1 ») puis juste après (« double clic channel1
+  /// fait ») : deux repères qui encadrent le geste dans le journal, pour
+  /// retrouver après coup *quelles* trames lui appartiennent sans avoir à
+  /// deviner sur l'horodatage seul.
+  final _markerController = TextEditingController();
+
+  final _screen = ScreenDimmer();
+
+  @override
+  void initState() {
+    super.initState();
+    // Un essai de geste se joue sur plusieurs dizaines de secondes — bien
+    // au-delà du délai de veille du téléphone — et un écran qui s'éteint en
+    // plein test coupe l'abonnement aux notifications GATT en même temps que
+    // la capture qu'on est venu faire.
+    unawaited(_screen.setKeepScreenOn(true));
+  }
+
   @override
   void dispose() {
     for (final sub in _subs) {
       unawaited(sub.cancel());
     }
+    unawaited(_screen.setKeepScreenOn(false));
+    _markerController.dispose();
     super.dispose();
   }
 
@@ -103,16 +129,60 @@ class _GattSniffPageState extends State<GattSniffPage> {
         '— presse les boutons maintenant');
   }
 
-  static _Frame _format(BluetoothCharacteristic c, List<int> data) {
+  static _Frame _format(BluetoothCharacteristic c, List<int> data) =>
+      _Frame(time: _timeNow(), uuid: c.uuid.str, bytes: data);
+
+  static String _timeNow() {
     final now = DateTime.now();
-    final time = '${now.hour.toString().padLeft(2, '0')}:'
+    return '${now.hour.toString().padLeft(2, '0')}:'
         '${now.minute.toString().padLeft(2, '0')}:'
         '${now.second.toString().padLeft(2, '0')}.'
         '${now.millisecond.toString().padLeft(3, '0')}';
-    final hex = data
-        .map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase())
-        .join('-');
-    return _Frame(time: time, uuid: c.uuid.str, hex: hex);
+  }
+
+  /// Insère le texte tapé comme repère, à l'instant présent — même liste que
+  /// les trames, pour rester dans le même ordre chronologique une fois
+  /// exporté.
+  void _addMarker() {
+    final text = _markerController.text.trim();
+    if (text.isEmpty) return;
+    final marker = _Frame.marker(time: _timeNow(), note: text);
+    debugPrint('[sniff] $marker');
+    setState(() => _entries.insert(0, marker));
+    _markerController.clear();
+  }
+
+  /// Le journal entier (trames et repères), dans l'ordre chronologique —
+  /// [_entries] est le plus récent en tête, l'export le remet à l'endroit —
+  /// partagé comme le `.fit` d'une sortie (`RidesPage._export`) : un fichier
+  /// jetable dans le dossier temporaire, puis la main au partage d'Android.
+  Future<void> _export() async {
+    if (_entries.isEmpty) return;
+    final lines = [for (final frame in _entries.reversed) frame.toString()];
+    final directory = await getTemporaryDirectory();
+    final file = File(p.join(directory.path, 'sniff_di2.txt'));
+    await file.writeAsString(lines.join('\n'), flush: true);
+
+    if (!mounted) return;
+    await SharePlus.instance.share(ShareParams(
+      files: [XFile(file.path, mimeType: 'text/plain')],
+      fileNameOverrides: ['sniff_di2.txt'],
+      subject: 'Sniff GATT Di2',
+    ));
+  }
+
+  /// La trame précédente **du même canal** (même caractéristique) : c'est
+  /// elle qui sert de référence pour la mise en évidence, un compteur qui
+  /// tourne sur le cardio n'ayant rien à dire de ce qui bouge sur le Di2. La
+  /// liste est la plus récente en tête, donc « précédente » se cherche après
+  /// l'index courant. `null` sur la toute première trame d'une
+  /// caractéristique : rien à comparer, donc rien à surligner.
+  _Frame? _previousOf(int index) {
+    final uuid = _entries[index].uuid;
+    for (var j = index + 1; j < _entries.length; j++) {
+      if (_entries[j].uuid == uuid) return _entries[j];
+    }
+    return null;
   }
 
   /// Tait toute la caractéristique de cette trame : plus jamais affichée ni
@@ -150,6 +220,11 @@ class _GattSniffPageState extends State<GattSniffPage> {
                 icon: const Icon(Icons.filter_alt_off),
                 tooltip: 'Réafficher les ${_muted.length} caractéristique(s) tues',
               ),
+            IconButton(
+              onPressed: _entries.isEmpty ? null : () => unawaited(_export()),
+              icon: const Icon(Icons.ios_share),
+              tooltip: 'Exporter le journal',
+            ),
           ],
         ],
       ),
@@ -193,6 +268,29 @@ class _GattSniffPageState extends State<GattSniffPage> {
             ],
           ),
         ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _markerController,
+                  decoration: const InputDecoration(
+                    hintText: 'Repère — ex. « double clic channel1 »',
+                    isDense: true,
+                  ),
+                  onSubmitted: (_) => _addMarker(),
+                ),
+              ),
+              IconButton(
+                onPressed: _addMarker,
+                icon: const Icon(Icons.add_circle_outline),
+                tooltip: 'Ajouter le repère',
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
         Expanded(
           child: _entries.isEmpty
               ? const Center(child: Text('En attente d\'une trame…'))
@@ -200,15 +298,36 @@ class _GattSniffPageState extends State<GattSniffPage> {
                   itemCount: _entries.length,
                   itemBuilder: (_, i) {
                     final frame = _entries[i];
+                    if (frame.note case final note?) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 3),
+                        child: Text(
+                          '${frame.time}  ** $note',
+                          style: TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).colorScheme.secondary,
+                          ),
+                        ),
+                      );
+                    }
+                    final previous = _previousOf(i);
                     return InkWell(
                       onTap: () => _mute(frame),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 3),
-                        child: Text(
-                          '$frame',
-                          style: const TextStyle(
-                              fontFamily: 'monospace', fontSize: 12),
+                        child: Text.rich(
+                          TextSpan(
+                            style: const TextStyle(
+                                fontFamily: 'monospace', fontSize: 12),
+                            children: [
+                              TextSpan(text: '${frame.time}  ${frame.uuid}  '),
+                              ..._hexSpans(context, frame.bytes, previous?.bytes),
+                            ],
+                          ),
                         ),
                       ),
                     );
@@ -218,16 +337,59 @@ class _GattSniffPageState extends State<GattSniffPage> {
       ],
     );
   }
+
+  /// Les octets en hexa, un `TextSpan` chacun : ceux qui diffèrent de
+  /// [previous] à la même position ressortent en gras et dans la couleur
+  /// d'accent du thème — c'est ce qui permet de voir d'un coup d'œil, pendant
+  /// un appui maintenu sur le Di2, quel octet bouge (le compteur du canal) et
+  /// lesquels restent immobiles. Un octet au-delà de la longueur de
+  /// [previous] compte comme changé : une trame plus longue que la précédente
+  /// n'a rien à comparer sur sa queue.
+  List<TextSpan> _hexSpans(
+    BuildContext context,
+    List<int> bytes,
+    List<int>? previous,
+  ) {
+    final changedStyle = TextStyle(
+      color: Theme.of(context).colorScheme.primary,
+      fontWeight: FontWeight.bold,
+    );
+    return [
+      for (var i = 0; i < bytes.length; i++) ...[
+        if (i > 0) const TextSpan(text: '-'),
+        TextSpan(
+          text: bytes[i].toRadixString(16).padLeft(2, '0').toUpperCase(),
+          style:
+              previous != null && (i >= previous.length || bytes[i] != previous[i])
+                  ? changedStyle
+                  : null,
+        ),
+      ],
+    ];
+  }
 }
 
-/// Une trame reçue, horodatée.
+/// Une trame reçue, horodatée — ou un repère tapé à la main ([marker]),
+/// distingué par [note] non nul plutôt que par une sous-classe : les deux
+/// vivent dans la même liste chronologique et le même export, seul le rendu
+/// diffère.
 class _Frame {
-  const _Frame({required this.time, required this.uuid, required this.hex});
+  const _Frame({required this.time, required this.uuid, required this.bytes})
+      : note = null;
+
+  const _Frame.marker({required this.time, required this.note})
+      : uuid = '',
+        bytes = const [];
 
   final String time;
   final String uuid;
-  final String hex;
+  final List<int> bytes;
+  final String? note;
+
+  String get hex => bytes
+      .map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase())
+      .join('-');
 
   @override
-  String toString() => '$time  $uuid  $hex';
+  String toString() => note != null ? '$time  ** $note' : '$time  $uuid  $hex';
 }

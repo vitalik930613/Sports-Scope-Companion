@@ -1,4 +1,5 @@
 import 'decoders/di2.dart';
+import 'decoders/di2_buttons.dart' show Di2ButtonPressKind;
 
 /// Une mesure horodatée issue d'un capteur.
 ///
@@ -54,20 +55,31 @@ class GearSample extends SensorSample {
   final Di2Gears gears;
 }
 
-/// Ce que le tableau de bord doit faire d'une pression sur un bouton distant.
+/// Les quatre canaux du D-Fly (satellites/sprinter) du Di2, characteristic
+/// `0x2AC2` — voir `decoders/di2_buttons.dart`. Seuls 1 et 2 sont câblés sur
+/// le matériel testé jusqu'ici ; 3 et 4 suivent le même format, confirmé en
+/// réassignant les deux mêmes boutons dessus côté E-Tube.
 ///
-/// Volontairement pas le code de bouton brut : c'est le futur décodeur (D-Fly
-/// du Di2, protocole non encore établi — voir `decoders/di2.dart`) qui
-/// connaîtra le mapping matériel, pas [RideShellPage]. Deux valeurs seulement
-/// parce que c'est tout ce qu'on sait vouloir en faire aujourd'hui — changer
-/// de page, dans un sens ou l'autre.
-enum RemoteButton { next, previous }
+/// Le canal brut, pas une direction déjà décidée : depuis que le profil de
+/// sortie (`RidePreset.buttons`) peut assigner une action différente à
+/// chaque canal et à chaque geste (clic, double-clic, appui long), c'est lui
+/// qui porte la convention « canal 1 = page précédente, canal 2 = page
+/// suivante » — par défaut, pas par nécessité. Le décodeur ne doit plus rien
+/// en savoir.
+enum Di2ButtonChannel { one, two, three, four }
 
-/// Une pression sur un bouton distant, déjà traduite en [RemoteButton].
+/// Une pression sur un bouton distant.
+///
+/// [pressKind] est ce que le D-Fly classe lui-même dans l'octet du compteur
+/// (voir `decoders/di2_buttons.dart`) — `null` pour une valeur non reconnue,
+/// en pratique jamais observée. Le double-clic et l'appui long s'y lisent
+/// directement, instantanément : voir `Di2ButtonGesturePolicy` (`lib/ride/`)
+/// pour comment [RideShellPage] les distingue du clic simple.
 class RemoteButtonSample extends SensorSample {
-  const RemoteButtonSample(super.at, this.button);
+  const RemoteButtonSample(super.at, this.channel, this.pressKind);
 
-  final RemoteButton button;
+  final Di2ButtonChannel channel;
+  final Di2ButtonPressKind? pressKind;
 }
 
 /// Un véhicule détecté par le radar arrière.

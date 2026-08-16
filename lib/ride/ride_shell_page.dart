@@ -21,8 +21,10 @@ import '../recording/ride_recorder.dart';
 import '../ui/offline_download_dialog.dart';
 import '../ui/power_calibration_dialog.dart';
 import 'auto_return_policy.dart';
+import 'blocks/bell_player.dart';
 import 'climb_debug_data.dart';
 import 'climb_profile.dart';
+import 'di2_button_gesture_policy.dart';
 import 'native_turn_alerts.dart';
 import 'nav_state.dart';
 import 'navigation_web_view.dart';
@@ -46,6 +48,7 @@ import 'widgets/radar_frame.dart';
 import 'widgets/radar_side_gauge.dart';
 import 'widgets/radar_wake_page.dart';
 import 'widgets/ride_bottom_band.dart';
+import 'widgets/ride_button_flash.dart';
 import 'widgets/ride_page_flash.dart';
 
 /// La coquille d'une sortie : ce qui appartient à l'écran, pas à la page web.
@@ -317,10 +320,32 @@ class _RideShellPageState extends State<RideShellPage>
   /// temps qui passe.
   Timer? _tick;
 
-  /// Boutons distants (D-Fly du Di2) : squelette de câblage en attente du
-  /// décodeur — voir `RemoteButtonSample` (`ble/samples.dart`) et le TODO dans
-  /// `ble/decoders/di2.dart`. Personne n'émet encore cet échantillon.
+  /// Boutons distants (D-Fly du Di2) — voir `RemoteButtonSample`
+  /// (`ble/samples.dart`) pour le canal brut, [Di2ButtonGesturePolicy] pour
+  /// sa classification en clic/double-clic/appui long, et
+  /// [_performButtonAction] pour l'exécution.
   StreamSubscription<SensorSample>? _remoteButtonSub;
+
+  /// Tic dédié à [Di2ButtonGesturePolicy.resolve], plus rapide que celui d'une
+  /// seconde qui pilote le reste de la coquille : l'appui long se déclenche
+  /// entre deux trames de maintien (répétées à ~1 s d'écart), et un tic à
+  /// 1 Hz ferait attendre jusqu'à la trame suivante — près d'une seconde de
+  /// retard en plus du seuil lui-même — avant de le voir. Séparé plutôt que
+  /// fondu dans `_tick` : accélérer *tout* le reste (retour auto, réveil
+  /// radar) n'a aucune raison d'accompagner ce seul réglage.
+  Timer? _buttonTick;
+  final _buttonGestures = Di2ButtonGesturePolicy();
+
+  /// La sonnette/le klaxon déclenchés par un geste de bouton distant —
+  /// indépendante de tout [BellControl] posé sur le tableau de bord, comme
+  /// deux `BellControl` le seraient déjà entre eux.
+  final _buttonBell = BellPlayer();
+
+  /// Le dernier geste de bouton résolu, pour [RideButtonFlash] — `seq`
+  /// incrémenté à chaque geste, y compris deux fois le même de suite, sinon
+  /// le second ne changerait rien à l'œil du widget et ne s'afficherait pas.
+  ButtonGestureFlash? _buttonFlash;
+  int _buttonFlashSeq = 0;
 
   /// Le cycliste a-t-il changé de page de sa main depuis la dernière décision ?
   bool _userMoved = false;
@@ -408,7 +433,15 @@ class _RideShellPageState extends State<RideShellPage>
     if (_preset.sensors.gears) {
       _remoteButtonSub = widget.hub.samples.listen((sample) {
         if (sample is! RemoteButtonSample) return;
-        _stepPage(sample.button == RemoteButton.next ? 1 : -1);
+        if (_buttonGestures.onPress(sample.channel, sample.at, sample.pressKind)
+            case final gesture?) {
+          _dispatchButtonGesture(sample.channel, gesture);
+        }
+      });
+      _buttonTick = Timer.periodic(const Duration(milliseconds: 200), (_) {
+        for (final event in _buttonGestures.resolve(DateTime.now())) {
+          _dispatchButtonGesture(event.channel, event.gesture);
+        }
       });
     }
 
@@ -454,6 +487,8 @@ class _RideShellPageState extends State<RideShellPage>
       _updateRadarWake();
       _checkNativeTurnAlert();
       _updateConditionalPages();
+      // Boutons distants : voir `_buttonTick`, plus rapide, pour
+      // `Di2ButtonGesturePolicy.resolve`.
       // Même source que le chien de garde (`recorder.lastFix`) et même
       // conséquence assumée : hors enregistrement la boussole n'a aucune course
       // à laquelle se comparer, donc elle ne se validera pas.
@@ -998,6 +1033,75 @@ class _RideShellPageState extends State<RideShellPage>
     unawaited(_web?.requestSleep());
   }
 
+  /// Répartit un geste résolu ([Di2ButtonGesturePolicy]) vers l'action que le
+  /// profil de sortie assigne à ce canal et à ce geste — rien si le profil
+  /// n'y a rien mis pour ce geste-là.
+  void _dispatchButtonGesture(Di2ButtonChannel channel, Di2ButtonGesture gesture) {
+    debugPrint('[boutons] canal $channel geste $gesture');
+    // Toujours mis à jour, qu'une action soit assignée ou non : c'est un
+    // repère de diagnostic (« quel geste vient d'être vu ? »), pas une
+    // confirmation d'exécution.
+    setState(() {
+      _buttonFlash = ButtonGestureFlash(channel, gesture, _buttonFlashSeq++);
+    });
+    final actions = switch (channel) {
+      Di2ButtonChannel.one => _preset.buttons.channel1,
+      Di2ButtonChannel.two => _preset.buttons.channel2,
+      Di2ButtonChannel.three => _preset.buttons.channel3,
+      Di2ButtonChannel.four => _preset.buttons.channel4,
+    };
+    final action = switch (gesture) {
+      Di2ButtonGesture.click => actions.click,
+      Di2ButtonGesture.doubleClick => actions.doubleClick,
+      Di2ButtonGesture.longPress => actions.longPress,
+    };
+    if (action != null) _performButtonAction(action);
+  }
+
+  void _performButtonAction(ButtonAction action) {
+    switch (action) {
+      case NextPageAction():
+        _stepPage(1);
+      case PreviousPageAction():
+        _stepPage(-1);
+      case RingBellAction(:final sound):
+        unawaited(_buttonBell.toggle(sound));
+      case StartLapAction():
+        // Même garde que `MarkLapControl` (`mark_lap_block.dart`) : un tour
+        // ne veut rien dire hors enregistrement.
+        if (widget.recorder.isActive) widget.recorder.markLap('default');
+      case EnterSleepAction():
+        _sleep();
+      case ExitSleepAction():
+        unawaited(_web?.requestWake());
+      case GoToPageAction(:final pageKey):
+        _goToPageByKey(pageKey);
+    }
+  }
+
+  /// Résout un [GoToPageAction] par la clé stable des pages
+  /// ([RidePageSpec.key]) plutôt que par un index qui se décale au moindre
+  /// réordonnancement du profil. Cherche d'abord dans le défilement, puis
+  /// dans le menu ; sans effet si aucune page ne porte cette clé — profil
+  /// réédité entre-temps, ou site plus ancien que ce réglage — jamais une
+  /// erreur.
+  void _goToPageByKey(String pageKey) {
+    final ridePages = _ridePages;
+    for (var i = 0; i < ridePages.length; i++) {
+      if (ridePages[i].key == pageKey) {
+        _goToPage(i);
+        return;
+      }
+    }
+    final menuPages = _menuPages;
+    for (var i = 0; i < menuPages.length; i++) {
+      if (menuPages[i].key == pageKey) {
+        _setMenuPage(i);
+        return;
+      }
+    }
+  }
+
   /// Messages venus de la page.
   ///
   /// `ready` : la page annonce que son pont est en place.
@@ -1096,7 +1200,9 @@ class _RideShellPageState extends State<RideShellPage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _tick?.cancel();
+    _buttonTick?.cancel();
     unawaited(_remoteButtonSub?.cancel());
+    _buttonBell.dispose();
     // Le magnétomètre s'éteint avec la sortie : c'est le seul capteur de ce
     // dossier qui coûterait de la batterie une fois l'écran refermé.
     unawaited(widget.compass?.stop());
@@ -1301,6 +1407,18 @@ class _RideShellPageState extends State<RideShellPage>
               bottom: bandHeight + 12,
               child: Center(
                 child: RidePageFlash(page: _page, count: _pageCount),
+              ),
+            ),
+            // Au-dessus du numéro de page plutôt qu'au même endroit : un clic
+            // sur un canal assigné à la page suivante/précédente déclenche les
+            // deux repères à la fois, et ils se chevaucheraient sinon.
+            Positioned(
+              key: const ValueKey('geste-bouton'),
+              left: 0,
+              right: 0,
+              bottom: bandHeight + 12 + 46,
+              child: Center(
+                child: RideButtonFlash(event: _buttonFlash),
               ),
             ),
             // La bande de l'encoche : jusqu'à une mesure de chaque côté de la

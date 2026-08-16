@@ -97,12 +97,14 @@ class Di2ButtonsCharacteristic extends CharacteristicDecoder {
 
   @override
   List<SensorSample> decode(List<int> data, DateTime at) => [
-        for (final channel in _channels.update(data))
-          // Convention du cycliste : canal pair = page suivante, impair =
-          // page précédente (voir `ride_shell_page.dart`).
+        for (final press in _channels.update(data))
+          // L'énumération est dans le même ordre que la numérotation des
+          // canaux (1..4) : `values[channel - 1]` évite un `switch` qui ne
+          // dirait rien de plus.
           RemoteButtonSample(
             at,
-            channel.isEven ? RemoteButton.next : RemoteButton.previous,
+            Di2ButtonChannel.values[press.channel - 1],
+            press.kind,
           ),
       ];
 

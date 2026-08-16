@@ -373,9 +373,19 @@ class _SensorsPageState extends State<SensorsPage> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Text(
-        frame.hex,
+        '${_frameTime(frame.at)}  ${frame.hex}',
         style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
       ),
     );
   }
+
+  // Précision à la milliseconde : le seul moyen de voir, à l'œil, si un
+  // appui maintenu répète des trames ou n'en envoie qu'une — la question qui
+  // tranche si un « appui long » est détectable côté Di2 (voir
+  // `ble/decoders/di2_buttons.dart`).
+  String _frameTime(DateTime at) =>
+      '${at.hour.toString().padLeft(2, '0')}:'
+      '${at.minute.toString().padLeft(2, '0')}:'
+      '${at.second.toString().padLeft(2, '0')}.'
+      '${at.millisecond.toString().padLeft(3, '0')}';
 }
