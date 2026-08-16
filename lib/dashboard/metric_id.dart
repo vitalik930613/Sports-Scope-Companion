@@ -310,10 +310,12 @@ enum MetricId {
       MetricId.hrAvg => MetricReading(
           stats.avgHeartRate?.toString(),
           numericValue: stats.avgHeartRate?.toDouble(),
+          zoneKey: stats.avgHeartRate == null ? null : profile.hrZoneFor(stats.avgHeartRate!)?.key,
         ),
       MetricId.hrMax => MetricReading(
           stats.maxHeartRate?.toString(),
           numericValue: stats.maxHeartRate?.toDouble(),
+          zoneKey: stats.maxHeartRate == null ? null : profile.hrZoneFor(stats.maxHeartRate!)?.key,
         ),
       MetricId.power => _zoned(
           sources.hub.latestPower.value,
@@ -334,14 +336,17 @@ enum MetricId {
       MetricId.powerAvg => MetricReading(
           stats.avgPower?.toString(),
           numericValue: stats.avgPower?.toDouble(),
+          zoneKey: stats.avgPower == null ? null : profile.powerZoneFor(stats.avgPower!)?.key,
         ),
       MetricId.powerNormalized => MetricReading(
           stats.normalizedPowerW?.toString(),
           numericValue: stats.normalizedPowerW?.toDouble(),
+          zoneKey: stats.normalizedPowerW == null ? null : profile.powerZoneFor(stats.normalizedPowerW!)?.key,
         ),
       MetricId.powerMax => MetricReading(
           stats.maxPower?.toString(),
           numericValue: stats.maxPower?.toDouble(),
+          zoneKey: stats.maxPower == null ? null : profile.powerZoneFor(stats.maxPower!)?.key,
         ),
       MetricId.cadence => MetricReading(
           sources.hub.latestCadence.value?.round().toString(),
