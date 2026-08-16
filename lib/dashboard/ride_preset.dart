@@ -1119,6 +1119,7 @@ sealed class ButtonAction {
       'start_lap' => const StartLapAction(),
       'sleep' => const EnterSleepAction(),
       'wake' => const ExitSleepAction(),
+      'toggle_sleep' => const ToggleSleepAction(),
       _ => null,
     };
   }
@@ -1150,6 +1151,16 @@ class EnterSleepAction extends ButtonAction {
 /// ancien que ce point d'entrée.
 class ExitSleepAction extends ButtonAction {
   const ExitSleepAction();
+}
+
+/// Un seul bouton pour les deux sens plutôt que deux réglages à poser sur
+/// deux gestes — le cas d'usage courant (« un bouton pour la veille ») n'a
+/// pas besoin de deux canaux ou de deux gestes distincts pour entrer et
+/// sortir. Résolu dans `RideShellPage._performButtonAction`, seul endroit qui
+/// connaît l'état courant (`ScreenPolicy.dimmed`) : cette classe ne porte
+/// aucune donnée, juste l'intention.
+class ToggleSleepAction extends ButtonAction {
+  const ToggleSleepAction();
 }
 
 /// Anticipation : ne se résout que si une page du profil porte ce

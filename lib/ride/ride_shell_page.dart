@@ -1074,6 +1074,18 @@ class _RideShellPageState extends State<RideShellPage>
         _sleep();
       case ExitSleepAction():
         unawaited(_web?.requestWake());
+      case ToggleSleepAction():
+        // `_screenPolicy.dimmed` et non un état à soi : c'est déjà ce qui
+        // pilote le rétroéclairage (`_applyScreen`), donc ce que le cycliste
+        // voit réellement. Pendant une alerte radar, l'écran est rallumé sans
+        // que la page ait renoncé à sa veille (`dimmed` retombe à faux le
+        // temps de l'alerte) — le bouton rejoue alors une entrée en veille
+        // déjà demandée, sans effet côté site (`enter` s'y sait idempotent).
+        if (_screenPolicy.dimmed) {
+          unawaited(_web?.requestWake());
+        } else {
+          _sleep();
+        }
       case GoToPageAction(:final pageKey):
         _goToPageByKey(pageKey);
     }

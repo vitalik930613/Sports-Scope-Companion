@@ -462,7 +462,16 @@ long/le tap sur la carte — `NavigationWebController.requestSleep`/
 `requestWake`, qui appellent `sleepEnter`/`sleepExit` côté pont
 (`companionBridge.ts`, dépôt Rails). Un site plus ancien que `sleepExit` (ou
 un profil sans carte, donc sans pont du tout) laisse le bouton sans effet,
-jamais une exception. `RingBellAction` ne rejoue pas le `BellPlayer` d'un
+jamais une exception. `ToggleSleepAction` couvre les deux en un seul bouton —
+le cas courant, un bouton unique pour la veille plutôt que deux gestes ou deux
+canaux séparés. Elle ne porte aucune donnée : c'est `RideShellPage.
+_performButtonAction`, seul à connaître `ScreenPolicy.dimmed`, qui tranche
+entre `requestSleep`/`requestWake` au moment du geste. Pendant une alerte
+radar, `dimmed` retombe à faux le temps de l'alerte (l'écran se rallume) sans
+que la page ait renoncé à sa veille : le bouton rejoue alors une entrée en
+veille déjà demandée, sans effet côté site (`enter` s'y sait idempotent, voir
+`registerSleepHandlers` dans `RouteNavigation.vue`). `RingBellAction` ne
+rejoue pas le `BellPlayer` d'un
 `BellControl` posé sur le tableau de bord — un geste Di2 n'a pas de widget à
 lui, `RideShellPage` en garde une instance à part (`_buttonBell`).
 
