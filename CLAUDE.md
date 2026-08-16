@@ -423,6 +423,74 @@ connus font, pas ce qu'un profil demande ; y ajouter un quatrième état visuel
 ferait trois façons différentes d'être gris. L'exclusion se lit en toutes lettres
 dans la feuille de départ, à côté du nom du profil.
 
+## Les boutons du D-Fly (Di2)
+
+Trois étages, du signal radio au geste qui compte, chacun testable seul.
+
+1. **Décodage** (`ble/decoders/di2_buttons.dart`, `Di2ButtonChannels`) : le
+   D-Fly classe lui-même le geste dans le quartet haut du compteur de chaque
+   canal — `single`, `doubleClick`, `holdStart`/`holdContinue`/`holdEnd`. Rien
+   à deviner par un délai de silence, contrairement à un double-clic de souris.
+2. **Résolution** (`ride/di2_button_gesture_policy.dart`,
+   `Di2ButtonGesturePolicy`) : réduit ce classement à trois gestes —
+   `click`/`doubleClick`/`longPress` — résolus **instantanément** dans la
+   plupart des cas, puisque c'est déjà le D-Fly qui a tranché. `resolve()`,
+   piloté par un tic dédié (`RideShellPage._buttonTick`, plus rapide que celui
+   de la coquille), ne sert qu'en filet de sécurité : une trame de fin de
+   maintien perdue en route, ou un classement inconnu de cette version.
+3. **Répartition** (`_dispatchButtonGesture`/`_performButtonAction`,
+   `ride_shell_page.dart`) : le geste résolu, sur son canal, cherche son
+   action dans `RidePreset.buttons` (`ButtonSettings`, `dashboard/
+   ride_preset.dart`) et l'exécute — rien si le profil n'y a rien mis.
+
+### Les actions (`ButtonAction`, `dashboard/ride_preset.dart`)
+
+Un jeton de chaîne par action, pas un `enum` à plat : certaines portent un
+réglage (`RingBellAction.sound`, `GoToPageAction.pageKey`). `ButtonAction.
+parse` ne lève jamais et rend `null` sur un jeton absent ou inconnu de cette
+version — un geste sans action assignée, ou dont le site est plus récent que
+l'appli, ne fait simplement rien.
+
+`GoToPageAction` vise une page par sa **clé stable** (`RidePageSpec.key`),
+jamais par un index qui se décale au moindre réordonnancement du profil dans
+l'éditeur. Elle cherche d'abord dans le défilement, puis dans le menu ; sans
+effet si aucune page ne porte cette clé — profil réédité entre-temps, ou site
+plus ancien que ce réglage.
+
+`EnterSleepAction`/`ExitSleepAction` empruntent le même chemin que l'appui
+long/le tap sur la carte — `NavigationWebController.requestSleep`/
+`requestWake`, qui appellent `sleepEnter`/`sleepExit` côté pont
+(`companionBridge.ts`, dépôt Rails). Un site plus ancien que `sleepExit` (ou
+un profil sans carte, donc sans pont du tout) laisse le bouton sans effet,
+jamais une exception. `RingBellAction` ne rejoue pas le `BellPlayer` d'un
+`BellControl` posé sur le tableau de bord — un geste Di2 n'a pas de widget à
+lui, `RideShellPage` en garde une instance à part (`_buttonBell`).
+
+`ButtonSettings` couvre les quatre canaux, chacun avec ses trois gestes
+(`ButtonGestureActions`). **Absent vaut le comportement d'avant ce
+réglage** — canal 1 = page précédente au clic, canal 2 = page suivante au
+clic, rien sur 3 et 4 — pour qu'un document sans section `buttons` (site plus
+ancien, ou `RidePreset.builtIn`) ne change rien à l'existant.
+
+### Le site : des clés de page à générer
+
+`CompanionSettings` (dépôt Rails) assainit `buttons` avec la même règle que
+partout ailleurs dans ce document : **plus indulgent que l'appli, jamais
+moins**. Une clé de canal absente disparaît (`nil`, pas une structure creuse),
+et `go_to_page:<clé>` n'est gardé que si `<clé>` désigne une page qui existe
+réellement dans **ce profil-ci**, une fois assaini — sinon le bouton
+composerait un geste qui ne ferait jamais rien, sans qu'on le sache.
+
+C'est ce qui a demandé la seule pièce manquante côté site : les pages n'avaient
+jusque-là **aucune clé**. `CompanionSettings.page_key` en fabrique une au
+même titre que `unique_key` pour un profil (parameterize du titre, ou
+`page-N` de repli), mais **unique par profil seulement**, pas globalement — un
+bouton ne vise jamais une page d'un autre profil. Elle n'existe qu'une fois le
+document passé par l'assainisseur : une page tout juste ajoutée dans
+l'éditeur n'a donc pas encore de clé, et n'apparaît dans « Aller à… » qu'après
+un premier « Enregistrer » — l'éditeur le dit en toutes lettres plutôt que de
+laisser deviner pourquoi la page manque à l'appel.
+
 ## Le tableau de bord de sortie (`lib/ride/`)
 
 `RideShellPage` est la coquille : plein écran, rétroéclairage, zones obstruées

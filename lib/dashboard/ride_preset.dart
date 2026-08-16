@@ -1118,8 +1118,6 @@ sealed class ButtonAction {
       'horn' => const RingBellAction(BellSound.horn),
       'start_lap' => const StartLapAction(),
       'sleep' => const EnterSleepAction(),
-      // Anticipation : sans effet tant que le site n'expose pas `sleepExit`
-      // — voir `NavigationWebController.requestWake`.
       'wake' => const ExitSleepAction(),
       _ => null,
     };
@@ -1147,8 +1145,9 @@ class EnterSleepAction extends ButtonAction {
   const EnterSleepAction();
 }
 
-/// Anticipation : voir `NavigationWebController.requestWake`, qui appelle un
-/// point d'entrée JS que le site n'expose pas encore.
+/// Voir `NavigationWebController.requestWake`, qui appelle `sleepExit` côté
+/// pont (`companionBridge.ts`, dépôt Rails) — sans effet contre un site plus
+/// ancien que ce point d'entrée.
 class ExitSleepAction extends ButtonAction {
   const ExitSleepAction();
 }

@@ -264,10 +264,9 @@ class NavigationWebController {
   /// Di2 configuré en « sortie de veille ») qui doit réveiller la carte sans
   /// attendre le virage qui la sort seule de son voile.
   ///
-  /// `sleepExit` n'existe pas encore côté site au moment d'écrire ceci
-  /// (`companionBridge.ts` n'expose que l'entrée en veille) : l'appel est de
-  /// l'anticipation, sans effet — jamais une exception — contre un site qui
-  /// ne le connaît pas encore, même garantie que [requestSleep].
+  /// `?.` sur l'objet ET sur la méthode, même garantie que [requestSleep] :
+  /// un site plus ancien que `sleepExit` (`companionBridge.ts`, dépôt Rails)
+  /// laisse le bouton sans effet plutôt que de faire planter la sortie.
   Future<void> requestWake() async {
     try {
       await webView.runJavaScript(
