@@ -1116,6 +1116,7 @@ sealed class ButtonAction {
       'previous_page' => const PreviousPageAction(),
       'bell' => const RingBellAction(BellSound.bell),
       'horn' => const RingBellAction(BellSound.horn),
+      'booster' => const RingBellAction(BellSound.booster),
       'start_lap' => const StartLapAction(),
       'sleep' => const EnterSleepAction(),
       'wake' => const ExitSleepAction(),

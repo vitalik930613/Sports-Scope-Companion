@@ -744,29 +744,47 @@ class _HomePageState extends State<HomePage> {
             tooltip: 'Mes sorties',
           ),
           IconButton(
-            onPressed: _openRadarSimulator,
-            icon: const Icon(Icons.radar),
-            tooltip: 'Simuler le radar',
-          ),
-          IconButton(
-            onPressed: _openClimbDebug,
-            icon: const Icon(Icons.landscape),
-            tooltip: 'Simuler un col',
-          ),
-          IconButton(
-            onPressed: _openGattSniff,
-            icon: const Icon(Icons.bug_report),
-            tooltip: 'Sniff GATT (D-Fly)',
-          ),
-          IconButton(
-            onPressed: _openDebugLog,
-            icon: const Icon(Icons.terminal),
-            tooltip: 'Journal',
-          ),
-          IconButton(
             onPressed: _openSensors,
             icon: const Icon(Icons.sensors),
             tooltip: 'Capteurs',
+          ),
+          // Bancs d'essai et journal : utiles en développement, pas au
+          // quotidien — regroupés pour ne pas noyer les boutons qu'on touche
+          // à chaque sortie (Compte, Mes sorties, Capteurs).
+          PopupMenuButton<VoidCallback>(
+            icon: const Icon(Icons.bug_report_outlined),
+            tooltip: 'Debug',
+            onSelected: (action) => action(),
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: _openRadarSimulator,
+                child: const ListTile(
+                  leading: Icon(Icons.radar),
+                  title: Text('Simuler le radar'),
+                ),
+              ),
+              PopupMenuItem(
+                value: _openClimbDebug,
+                child: const ListTile(
+                  leading: Icon(Icons.landscape),
+                  title: Text('Simuler un col'),
+                ),
+              ),
+              PopupMenuItem(
+                value: _openGattSniff,
+                child: const ListTile(
+                  leading: Icon(Icons.bug_report),
+                  title: Text('Sniff GATT (D-Fly)'),
+                ),
+              ),
+              PopupMenuItem(
+                value: _openDebugLog,
+                child: const ListTile(
+                  leading: Icon(Icons.terminal),
+                  title: Text('Journal'),
+                ),
+              ),
+            ],
           ),
         ],
       ),

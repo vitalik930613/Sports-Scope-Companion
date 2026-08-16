@@ -19,14 +19,17 @@ import '../../dashboard/dashboard_block.dart';
 /// simplement — même convention que le reste de l'appli (`ChangeNotifier`/
 /// `ValueNotifier`, rien d'autre).
 ///
-/// Joue le son une fois, jusqu'au bout — pas de boucle : sonnette et klaxon
-/// sont des signaux brefs, pas une alarme à faire cesser. Le minuteur de
-/// secours à 3 s (largement plus long que `bell.wav`/`horn.wav`, moins de 2
-/// s tous les deux) ne sert qu'à couvrir un `onPlayerComplete` qui ne
-/// arriverait pas. Son au flux d'alarme (`AndroidUsageType.alarm`, focus
-/// exclusif) plutôt qu'au volume média : c'est le seul flux qui traverse le
-/// mode silencieux/Ne pas déranger, or un téléphone qu'on cherche est
-/// justement celui qu'on a mis en silencieux avant de rouler.
+/// Joue le son une fois, jusqu'au bout — pas de boucle : sonnette, klaxon et
+/// booster sont des signaux, pas une alarme à faire cesser. Le minuteur de
+/// secours à 7 s (largement plus long que le plus long des trois —
+/// `booster.wav`, ~6,3 s ; `bell.wav`/`horn.wav` tiennent tous les deux sous
+/// 2 s) ne sert qu'à couvrir un `onPlayerComplete` qui n'arriverait pas :
+/// trop court, il coupe le son avant sa fin dans le cas courant, pas
+/// seulement dans le cas raté qu'il est censé couvrir. Son au flux d'alarme
+/// (`AndroidUsageType.alarm`, focus exclusif) plutôt qu'au volume média :
+/// c'est le seul flux qui traverse le mode silencieux/Ne pas déranger, or un
+/// téléphone qu'on cherche est justement celui qu'on a mis en silencieux
+/// avant de rouler.
 class BellPlayer extends ChangeNotifier {
   static final _alarmContext = AudioContext(
     android: const AudioContextAndroid(
@@ -36,7 +39,7 @@ class BellPlayer extends ChangeNotifier {
     ),
   );
 
-  static const _failsafe = Duration(seconds: 3);
+  static const _failsafe = Duration(seconds: 7);
 
   AudioPlayer? _player;
   Timer? _failsafeTimer;

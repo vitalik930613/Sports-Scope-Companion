@@ -1049,14 +1049,18 @@ enum BellMode with BlockMode {
 
 /// Ce que sonne [BellBlock] — même liste que `CompanionSettings::BELL_SOUNDS`
 /// côté site. `bell` en tête : une sonnette classique, le repli d'un document
-/// qui ne connaît pas encore `horn`.
+/// qui ne connaît pas encore `horn`/`booster`.
 enum BellSound with BlockMode {
   bell('bell'),
 
   /// Le klaxon deux tons des voitures de la caravane du Tour de France —
   /// choisi pour être méconnaissable avec les autres alertes de l'appli
   /// (radar, virages), pas seulement fort.
-  horn('horn');
+  horn('horn'),
+
+  /// Le plus long des trois sons (~6 s) — voir le minuteur de secours de
+  /// `BellPlayer` (`ride/blocks/bell_player.dart`), calé dessus.
+  booster('booster');
 
   const BellSound(this.key);
 
