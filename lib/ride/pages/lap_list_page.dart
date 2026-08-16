@@ -88,16 +88,8 @@ class _LapListBodyState extends State<LapListBody> {
   /// page de mesures.
   Widget _body(List<RideLap> laps, int selected) =>
       switch (widget.spec.layout) {
-        final LapBlocksLayout list => ListView(
-            padding: const EdgeInsets.only(bottom: 24),
-            children: [
-              for (final block in list.blocks)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _block(block, laps: laps, selected: selected),
-                ),
-            ],
-          ),
+        final LapBlocksLayout list =>
+          _listBody(list, laps: laps, selected: selected),
         final LapGridLayout grid => DashboardGrid(
             rows: grid.rows,
             cols: grid.cols,
@@ -108,6 +100,53 @@ class _LapListBodyState extends State<LapListBody> {
             onMeasured: widget.onGridMeasured,
           ),
       };
+
+  /// Une colonne (le cas courant), ou plusieurs côte à côte — même disposition
+  /// et même raison que `DashboardPage._listBody` sur une page de mesures :
+  /// toute la page défile d'un bloc, colonnes comprises.
+  Widget _listBody(
+    LapBlocksLayout list, {
+    required List<RideLap> laps,
+    required int selected,
+  }) {
+    if (list.cols <= 1) {
+      return ListView(
+        padding: const EdgeInsets.only(bottom: 24),
+        children: [
+          for (final placement in list.blocks)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _block(placement.block, laps: laps, selected: selected),
+            ),
+        ],
+      );
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var col = 0; col < list.cols; col++) ...[
+            if (col > 0) const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                children: [
+                  for (final placement in list.blocks)
+                    if (placement.col == col)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _block(placement.block,
+                            laps: laps, selected: selected),
+                      ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 
   /// Le contrôle fermé : le fond anthracite des cartes, et un tap ouvre le
   /// choix en plein écran plutôt qu'un menu qui se referme au moindre cahot

@@ -203,7 +203,9 @@ class RidePreset {
           keys.add(series);
           switch (layout) {
             case LapBlocksLayout(:final blocks):
-              blocks.forEach(collect);
+              for (final placement in blocks) {
+                collect(placement.block);
+              }
             case LapGridLayout(:final cells):
               for (final cell in cells) {
                 collect(cell.block);
@@ -726,17 +728,26 @@ sealed class LapPageLayout {
 }
 
 /// La liste défilante, telle qu'elle existait avant que le choix se pose.
+///
+/// Mêmes colonnes qu'une [ListPageSpec] ordinaire ([cols],
+/// [ListBlockPlacement.col]) : rien ne distingue les deux dispositions une
+/// fois le tour choisi, c'est la même page qui défile.
 class LapBlocksLayout extends LapPageLayout {
-  const LapBlocksLayout(this.blocks);
+  const LapBlocksLayout(this.blocks, {this.cols = 1});
 
-  final List<DashboardBlock> blocks;
+  final List<ListBlockPlacement> blocks;
+  final int cols;
 
   static LapBlocksLayout? parse(Map<dynamic, dynamic> raw) {
+    final cols = raw['cols'] is num
+        ? (raw['cols'] as num).toInt().clamp(1, ListPageSpec.maxCols)
+        : 1;
     final blocks = [
       for (final entry in (raw['blocks'] is List ? raw['blocks'] as List : []))
-        if (DashboardBlock.parse(entry) case final block?) block,
+        if (ListBlockPlacement.parse(entry, cols: cols) case final placement?)
+          placement,
     ];
-    return blocks.isEmpty ? null : LapBlocksLayout(blocks);
+    return blocks.isEmpty ? null : LapBlocksLayout(blocks, cols: cols);
   }
 }
 

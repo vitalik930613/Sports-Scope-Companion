@@ -321,7 +321,9 @@ garanties de `CompanionSettings.parse`, chacune gardée par un test :
    composant entier pour un mauvais numéro de colonne serait pire qu'un
    rangement approximatif. Une colonne peut déborder verticalement — c'est ce
    qui distingue une liste d'une grille — et toute la page défile d'un bloc,
-   colonnes comprises : elles ne défilent jamais chacune pour son compte.
+   colonnes comprises : elles ne défilent jamais chacune pour son compte. Même
+   règle pour une page `laps` en liste défilante (`LapBlocksLayout`) : c'est
+   la même disposition, seule la série de tours change autour.
 6. **Bandes : 1 à 4 mesures**, au-delà on tronque.
 7. **Capteur non mentionné = capteur activé** (voir plus bas).
 8. Clés et modes inconnus **ignorés** : le site peut être plus récent que l'appli.
