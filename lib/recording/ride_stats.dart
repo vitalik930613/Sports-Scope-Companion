@@ -170,6 +170,16 @@ class RideStats {
   int? maxPower;
   double? maxSpeedMps;
 
+  /// La dernière altitude résolue (baromètre si la sortie en a, GPS sinon) —
+  /// même préférence que [ascentM], mais sans l'hystérésis qui la retarde de
+  /// [altitudeNoiseM] : ici on veut l'altitude du moment, pas une référence de
+  /// dénivelé.
+  double? currentAltitudeM;
+
+  /// L'altitude la plus haute vue depuis le départ, même source que
+  /// [currentAltitudeM].
+  double? maxAltitudeM;
+
   /// La pente la plus raide vue depuis le départ — signée, donc c'est bien un
   /// mur qu'on cherche ici et jamais un plongeon (cf. [gradePercent]).
   /// Échantillonnée sur les mêmes lectures que [avgGrade] : une valeur qui n'a
@@ -214,6 +224,8 @@ class RideStats {
   int _speedCount = 0;
   double _gradeSum = 0;
   int _gradeCount = 0;
+  double _altitudeSum = 0;
+  int _altitudeCount = 0;
 
   // Le travail mécanique, cumulé point par point : la seule grandeur d'ici qui
   // dépende de la *durée* d'un point et pas seulement de sa valeur.
@@ -281,6 +293,10 @@ class RideStats {
   /// donc vers 0 malgré le relief parcouru, même moyenne « par échantillon »
   /// que les autres mesures d'ici plutôt qu'un ratio D+ / distance.
   double? get avgGrade => _gradeCount > 0 ? _gradeSum / _gradeCount : null;
+
+  /// L'altitude moyenne depuis le départ, même source que [currentAltitudeM].
+  double? get avgAltitudeM =>
+      _altitudeCount > 0 ? _altitudeSum / _altitudeCount : null;
 
   /// Puissance normalisée, `null` tant que la fenêtre n'est pas pleine : sur
   /// moins de 30 s la valeur n'aurait aucun sens, et un chiffre faux vaut moins
@@ -405,6 +421,12 @@ class RideStats {
     // dénivelé reprend exactement où il s'était arrêté.
     final altitude = hasBaroAltitude ? point.baroAltitudeM : point.altitudeM;
     if (altitude != null) {
+      currentAltitudeM = altitude;
+      _altitudeSum += altitude;
+      _altitudeCount++;
+      maxAltitudeM =
+          maxAltitudeM == null || altitude > maxAltitudeM! ? altitude : maxAltitudeM;
+
       _addAltitude(altitude, point.at, moving);
       _addGrade(altitude, point.at, point.distanceM);
 
@@ -592,6 +614,10 @@ class RideStats {
     maxClimbRateMph = null;
     minHeartRate = minCadence = minPower = null;
     minSpeedMps = null;
+    currentAltitudeM = null;
+    maxAltitudeM = null;
+    _altitudeSum = 0;
+    _altitudeCount = 0;
     _hrSum = _hrCount = 0;
     _cadenceSum = 0;
     _cadenceCount = 0;

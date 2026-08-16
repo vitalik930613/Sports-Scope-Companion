@@ -52,6 +52,8 @@ enum MetricId {
   cadenceMax('cadence_max', 'Cadence max', 'tr/min', Icons.autorenew),
   ascent('ascent', 'Dénivelé positif', 'm', Icons.trending_up),
   altitude('altitude', 'Altitude', 'm', Icons.terrain),
+  altitudeAvg('altitude_avg', 'Altitude moyenne', 'm', Icons.terrain),
+  altitudeMax('altitude_max', 'Altitude max', 'm', Icons.terrain),
   grade('grade', 'Pente', '%', Icons.north_east),
   gradeAvg('grade_avg', 'Pente moyenne', '%', Icons.north_east),
   gradeMax('grade_max', 'Pente max', '%', Icons.north_east),
@@ -368,9 +370,23 @@ enum MetricId {
               : null,
           numericValue: active && sources.recorder.gpsEnabled ? stats.ascentM : null,
         ),
+      // Mesure instantanée (voir la tête de [read]) : toujours celle de la
+      // sortie entière, jamais celle d'un tour qu'on est en train de
+      // consulter. Baromètre préféré au GPS dès qu'il y en a un, même
+      // préférence collante que [RideStats.ascentM] — sinon la valeur
+      // sauterait de plusieurs mètres au moment même où le baromètre prend le
+      // relais.
       MetricId.altitude => MetricReading(
-          sources.recorder.lastFix?.altitudeM?.round().toString(),
-          numericValue: sources.recorder.lastFix?.altitudeM,
+          sources.recorder.stats.currentAltitudeM?.round().toString(),
+          numericValue: sources.recorder.stats.currentAltitudeM,
+        ),
+      MetricId.altitudeAvg => MetricReading(
+          stats.avgAltitudeM?.round().toString(),
+          numericValue: stats.avgAltitudeM,
+        ),
+      MetricId.altitudeMax => MetricReading(
+          stats.maxAltitudeM?.round().toString(),
+          numericValue: stats.maxAltitudeM,
         ),
       // La pente vient de l'enregistreur et pas du dernier point : c'est un
       // rapport entre deux endroits du parcours, elle n'existe pas avant le
