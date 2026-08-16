@@ -542,7 +542,7 @@ void main() {
     // carte.
     const bilan = ListPageSpec(
       title: 'Bilan',
-      blocks: [AveragesBlock()],
+      blocks: [ListBlockPlacement(block: AveragesBlock())],
       menu: true,
     );
 

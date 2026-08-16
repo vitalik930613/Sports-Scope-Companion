@@ -190,16 +190,7 @@ class DashboardPage extends StatelessWidget {
         // La carte ne passe jamais par ici : la coquille la peint au fond de la
         // pile, et cette page-ci n'est même pas construite pour elle.
         MapPageSpec() => const SizedBox.shrink(),
-        final ListPageSpec list => ListView(
-            padding: const EdgeInsets.only(bottom: 24),
-            children: [
-              for (final block in list.blocks)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _block(block),
-                ),
-            ],
-          ),
+        final ListPageSpec list => _listBody(list),
         final GridPageSpec grid => DashboardGrid(
             rows: grid.rows,
             cols: grid.cols,
@@ -214,6 +205,52 @@ class DashboardPage extends StatelessWidget {
             onGridMeasured: onGridMeasured,
           ),
       };
+
+  /// Une colonne (le cas courant), ou plusieurs côte à côte quand le profil
+  /// le demande.
+  ///
+  /// Toute la page défile d'un bloc, colonnes comprises : les faire défiler
+  /// chacune pour son compte ferait perdre le repère commun (« où en est
+  /// l'autre colonne ? ») à chaque glissé, et une liste n'a de toute façon pas
+  /// à tenir dans l'écran comme une grille.
+  Widget _listBody(ListPageSpec list) {
+    if (list.cols <= 1) {
+      return ListView(
+        padding: const EdgeInsets.only(bottom: 24),
+        children: [
+          for (final placement in list.blocks)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _block(placement.block),
+            ),
+        ],
+      );
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var col = 0; col < list.cols; col++) ...[
+            if (col > 0) const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                children: [
+                  for (final placement in list.blocks)
+                    if (placement.col == col)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _block(placement.block),
+                      ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 
   /// Le composant d'un bloc. `switch` exhaustif sur la hiérarchie scellée :
   /// ajouter un composant fait échouer la compilation ici, plutôt que de le

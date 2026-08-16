@@ -52,11 +52,11 @@ class RidePreset {
       ListPageSpec(
         title: 'Effort',
         blocks: [
-          RecordingBlock(),
-          ZonesBlock(source: ZonesSource.hr),
-          ZonesBlock(source: ZonesSource.power),
-          AveragesBlock(),
-          NavStateBlock(),
+          ListBlockPlacement(block: RecordingBlock()),
+          ListBlockPlacement(block: ZonesBlock(source: ZonesSource.hr)),
+          ListBlockPlacement(block: ZonesBlock(source: ZonesSource.power)),
+          ListBlockPlacement(block: AveragesBlock()),
+          ListBlockPlacement(block: NavStateBlock()),
         ],
       ),
     ],
@@ -210,7 +210,9 @@ class RidePreset {
               }
           }
         case ListPageSpec(:final blocks):
-          blocks.forEach(collect);
+          for (final placement in blocks) {
+            collect(placement.block);
+          }
         case GridPageSpec(:final cells):
           for (final cell in cells) {
             collect(cell.block);
@@ -564,10 +566,18 @@ class GridCell {
 
 /// La page qui défile, celle d'aujourd'hui : une pile de blocs qu'on consulte à
 /// l'arrêt d'un col ou au feu rouge.
+///
+/// Une seule colonne par défaut — la disposition d'avant ce réglage. Le site
+/// peut en demander plusieurs ([cols]) et viser la sienne pour chaque bloc
+/// ([ListBlockPlacement.col]) : jamais de ligne ni d'étendue comme [GridCell],
+/// parce qu'une liste n'a pas de hauteur à tenir — chaque colonne empile ses
+/// blocs dans l'ordre du document et peut déborder, c'est justement ce qui la
+/// distingue d'une grille.
 class ListPageSpec extends RidePageSpec {
   const ListPageSpec({
     required super.title,
     required this.blocks,
+    this.cols = 1,
     super.menu,
     super.menuCondition,
     super.menuAutoOpen,
@@ -575,7 +585,16 @@ class ListPageSpec extends RidePageSpec {
     super.key,
   });
 
-  final List<DashboardBlock> blocks;
+  final List<ListBlockPlacement> blocks;
+
+  /// 1 par défaut, y compris quand la clé est absente (contrat plus ancien) :
+  /// la disposition ne change alors en rien. Borné à [maxCols] : au-delà,
+  /// une colonne devient trop étroite pour un composant lisible sur un
+  /// téléphone en portrait — même borne que le bandeau (`RideBottomBand`,
+  /// 1 à 4 mesures).
+  final int cols;
+
+  static const maxCols = 4;
 
   static ListPageSpec? parse(
     Map<dynamic, dynamic> raw, {
@@ -586,20 +605,52 @@ class ListPageSpec extends RidePageSpec {
     FaIconData? icon,
     String? key,
   }) {
+    final cols = raw['cols'] is num
+        ? (raw['cols'] as num).toInt().clamp(1, maxCols)
+        : 1;
     final blocks = [
       for (final entry in (raw['blocks'] is List ? raw['blocks'] as List : []))
-        if (DashboardBlock.parse(entry) case final block?) block,
+        if (ListBlockPlacement.parse(entry, cols: cols) case final placement?)
+          placement,
     ];
     if (blocks.isEmpty) return null;
     return ListPageSpec(
       title: title ?? 'Sortie',
       blocks: blocks,
+      cols: cols,
       menu: menu,
       menuCondition: menuCondition,
       menuAutoOpen: menuAutoOpen,
       icon: icon,
       key: key,
     );
+  }
+}
+
+/// Un bloc de [ListPageSpec], et la colonne qui l'affiche.
+@immutable
+class ListBlockPlacement {
+  const ListBlockPlacement({this.col = 0, required this.block});
+
+  final int col;
+  final DashboardBlock block;
+
+  /// `col` est **fusionné dans le bloc lui-même**, jamais une enveloppe à
+  /// part comme [GridCell] : une entrée reste le bloc, avec une clé de plus,
+  /// donc un document d'avant ce réglage (aucune entrée n'a `col`) se lit
+  /// sans distinguer un ancien format d'un nouveau — l'absence vaut `0` des
+  /// deux côtés. Même contrat que `CompanionSettings.place_list_blocks`
+  /// (Rails).
+  ///
+  /// `col` est ramené dans `0..cols-1` plutôt que rejeté : contrairement à
+  /// l'origine d'une cellule de grille, il y a toujours une colonne la plus
+  /// proche, et perdre un composant entier pour une colonne hors service
+  /// serait pire qu'un mauvais rangement.
+  static ListBlockPlacement? parse(Object? raw, {required int cols}) {
+    final block = DashboardBlock.parse(raw);
+    if (block == null) return null;
+    final col = raw is Map && raw['col'] is num ? (raw['col'] as num).toInt() : 0;
+    return ListBlockPlacement(col: col.clamp(0, cols - 1), block: block);
   }
 }
 

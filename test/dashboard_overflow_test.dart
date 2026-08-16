@@ -324,7 +324,12 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: DashboardPage(
-          page: ListPageSpec(title: 'Effort', blocks: everything()),
+          page: ListPageSpec(
+            title: 'Effort',
+            blocks: [
+              for (final block in everything()) ListBlockPlacement(block: block),
+            ],
+          ),
           sources: sources,
         ),
       ),

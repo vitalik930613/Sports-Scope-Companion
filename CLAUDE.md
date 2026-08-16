@@ -288,7 +288,7 @@ dépôt Rails) rend un document : `presets[]`, chacun avec `pages[]`, `bands[]`,
 |---|---|
 | `map` | La carte du site. **Facultative et déplaçable comme les autres.** |
 | `grid` | `rows` × `cols`, chaque composant occupant un rectangle (`row_span`, `col_span`). **Ne défile pas** : elle se lit en roulant, tout doit tenir. |
-| `list` | La page qui défile — celle qu'on consulte à l'arrêt. |
+| `list` | La page qui défile — celle qu'on consulte à l'arrêt. Peut se répartir en 1 à 4 colonnes (`cols`), chaque bloc visant la sienne (`col`) ; contrairement à la grille, une colonne peut déborder verticalement. |
 
 Chaque composant porte un **`mode`** (`metric` : `big`/`compact`/`gauge`/`zone` ;
 `zones` : `bar`/`bar_only`/`legend` ; …), parce que le même contenu ne se dessine
@@ -313,9 +313,18 @@ garanties de `CompanionSettings.parse`, chacune gardée par un test :
    posé), une origine hors grille est rejetée (on ne devine pas où le cycliste
    voulait la mettre), et sur un recouvrement **la première posée gagne** —
    l'ordre du document, donc celui que l'éditeur affiche.
-5. **Bandes : 1 à 4 mesures**, au-delà on tronque.
-6. **Capteur non mentionné = capteur activé** (voir plus bas).
-7. Clés et modes inconnus **ignorés** : le site peut être plus récent que l'appli.
+5. **Liste : chaque bloc vise une colonne existante.** `cols` est borné à 4
+   (au-delà, une colonne devient trop étroite pour un composant lisible en
+   portrait — même borne que le bandeau) et la colonne d'un bloc est **ramenée**
+   dans cet intervalle plutôt que rejetée : contrairement à l'origine d'une
+   cellule de grille, il y a toujours une colonne la plus proche, et perdre un
+   composant entier pour un mauvais numéro de colonne serait pire qu'un
+   rangement approximatif. Une colonne peut déborder verticalement — c'est ce
+   qui distingue une liste d'une grille — et toute la page défile d'un bloc,
+   colonnes comprises : elles ne défilent jamais chacune pour son compte.
+6. **Bandes : 1 à 4 mesures**, au-delà on tronque.
+7. **Capteur non mentionné = capteur activé** (voir plus bas).
+8. Clés et modes inconnus **ignorés** : le site peut être plus récent que l'appli.
 
 Le menu d'actions, lui, **n'est pas configurable** et reste sur chaque page de
 données : c'est le seul chemin nommé pour sortir d'une sortie, et un profil mal
