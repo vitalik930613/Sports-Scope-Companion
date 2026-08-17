@@ -145,6 +145,39 @@ class _SensorsPageState extends State<SensorsPage> {
     if (mounted) setState(() {});
   }
 
+  /// Un nom plus simple que ce que le capteur annonce lui-même — souvent une
+  /// suite de lettres et de chiffres. Disponible connecté ou non : c'est un
+  /// libellé qu'on choisit une fois pour toutes, pas un réglage de la
+  /// connexion en cours.
+  Future<void> _rename(KnownDevice known) async {
+    final controller = TextEditingController(text: known.name);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Renommer'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Nom du capteur'),
+          onSubmitted: (value) => Navigator.pop(context, value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Enregistrer'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (name == null) return; // annulé
+    await _devices.rename(known.remoteId, name);
+  }
+
   void _toast(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -280,6 +313,7 @@ class _SensorsPageState extends State<SensorsPage> {
         trailing: PopupMenuButton<String>(
           onSelected: (action) => switch (action) {
             'forget' => _forget(known),
+            'rename' => _rename(known),
             'auto' =>
               _devices.setAutoConnect(known.remoteId, !known.autoConnect),
             'connect' => _connect(
@@ -300,6 +334,7 @@ class _SensorsPageState extends State<SensorsPage> {
                 status == SensorStatus.connected)
               const PopupMenuItem(
                   value: 'calibrate', child: Text('Calibrer la puissance')),
+            const PopupMenuItem(value: 'rename', child: Text('Renommer')),
             PopupMenuItem(
               value: 'auto',
               child: Text(known.autoConnect

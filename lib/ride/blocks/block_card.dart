@@ -91,7 +91,7 @@ class BlockCard extends StatelessWidget {
 /// Une ligne de [StatCard] : ce qu'on mesure à gauche, ce que ça vaut à droite.
 @immutable
 class StatRow {
-  const StatRow(this.label, this.value, {this.background});
+  const StatRow(this.label, this.value, {this.background, this.icon});
 
   final String label;
   final String value;
@@ -100,6 +100,14 @@ class StatRow {
   /// `null` sans seuil connu ou pour une mesure qui n'a pas de zone (cadence,
   /// vitesse) — la ligne garde alors le texte blanc uni.
   final Color? background;
+
+  /// Devant le libellé, `null` la plupart du temps : la mesure d'une carte
+  /// (moyennes, bilan de tour) est déjà dite par l'icône du titre, une par
+  /// ligne serait redondante. Sert quand chaque ligne est un *appareil*
+  /// différent plutôt qu'un chiffre différent de la même mesure — voir le
+  /// composant `battery`, où chaque ligne a son propre capteur donc sa
+  /// propre icône.
+  final IconData? icon;
 }
 
 /// La carte des moyennes : un titre, puis des lignes en **deux colonnes**.
@@ -201,6 +209,10 @@ class StatCard extends StatelessWidget {
               // libellé.
               child: Row(
                 children: [
+                  if (row.icon != null) ...[
+                    Icon(row.icon, size: metrics.lineSize, color: dimInk),
+                    SizedBox(width: metrics.gap / 2),
+                  ],
                   Expanded(
                     child: Text(
                       row.label,

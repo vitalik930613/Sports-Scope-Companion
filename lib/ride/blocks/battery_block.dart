@@ -64,6 +64,7 @@ class BatteryBlockView extends StatelessWidget {
           StatRow(
             device.label,
             device.percent == null ? '—' : '${device.percent} %',
+            icon: device.icon,
             background: device.low ? _low : null,
           ),
       ],
