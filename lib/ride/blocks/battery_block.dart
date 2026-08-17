@@ -87,6 +87,13 @@ class BatteryBlockView extends StatelessWidget {
   /// [sensor] restreint ce « parmi » à un seul appareil (BLE ou le téléphone
   /// lui-même), sinon la ceinture cardio oubliée sur la table gagnerait
   /// contre le capteur de puissance qu'on veut réellement surveiller.
+  ///
+  /// L'icône de l'appareil concerné accompagne le chiffre — sans elle, un
+  /// seul pourcentage nu ne dit pas s'il vient du capteur de puissance ou du
+  /// téléphone dans la poche. Elle n'apparaît que si elle ne peut désigner
+  /// qu'un seul appareil ([_sharedIcon]) : au repli « tous appareils
+  /// confondus » (pas de [sensor] réglé), plusieurs capacités différentes
+  /// dans le lot rendraient l'icône trompeuse plutôt qu'utile.
   Widget _compact(List<BatteryStatus> devices) {
     final target = sensor;
     final pool = switch (target) {
@@ -99,27 +106,48 @@ class BatteryBlockView extends StatelessWidget {
       return _emptyText('Aucun capteur appairé.', Colors.white38);
     }
 
-    final known = [for (final d in pool) if (d.percent != null) d.percent!];
-    if (known.isEmpty) return _emptyText('—', Colors.white38);
+    final known = [for (final d in pool) if (d.percent != null) d];
+    if (known.isEmpty) {
+      return _emptyText('—', Colors.white38, icon: _sharedIcon(pool));
+    }
 
-    final worst = known.reduce((a, b) => a < b ? a : b);
-    final worstIsLow = pool.any((d) => d.percent == worst && d.low);
-    return _emptyText('$worst %', worstIsLow ? _low : Colors.white);
+    final worst = known.reduce((a, b) => a.percent! < b.percent! ? a : b);
+    return _emptyText(
+      '${worst.percent} %',
+      worst.low ? _low : Colors.white,
+      icon: worst.icon,
+    );
   }
 
-  Widget _emptyText(String label, Color ink) {
+  /// L'icône commune à tout le lot, `null` si elle varie — voir [_compact].
+  static IconData? _sharedIcon(List<BatteryStatus> pool) {
+    final icons = pool.map((d) => d.icon).toSet();
+    return icons.length == 1 ? icons.first : null;
+  }
+
+  Widget _emptyText(String label, Color ink, {IconData? icon}) {
+    final text = Text(
+      label,
+      maxLines: 1,
+      style: TextStyle(
+        color: ink,
+        fontSize: 44,
+        fontWeight: FontWeight.w700,
+        height: 1.1,
+      ),
+    );
     return BlockSurface(
       background: color,
-      child: Text(
-        label,
-        maxLines: 1,
-        style: TextStyle(
-          color: ink,
-          fontSize: 44,
-          fontWeight: FontWeight.w700,
-          height: 1.1,
-        ),
-      ),
+      child: icon == null
+          ? text
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 28, color: ink.withValues(alpha: 0.7)),
+                const SizedBox(height: 4),
+                text,
+              ],
+            ),
     );
   }
 }
