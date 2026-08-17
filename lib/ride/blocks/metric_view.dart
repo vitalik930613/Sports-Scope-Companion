@@ -100,7 +100,13 @@ class MetricView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final content = ListenableBuilder(
-      listenable: Listenable.merge(metric.dependencies(sources)),
+      // Les dépendances des mesures secondaires aussi : sans ça, une carte
+      // dont seule la moyenne bouge (la vitesse instantanée restant stable)
+      // ne se rafraîchirait jamais.
+      listenable: Listenable.merge([
+        ...metric.dependencies(sources),
+        for (final slot in layout.secondary) ...slot.metric.dependencies(sources),
+      ]),
       builder: (context, _) => _paint(metric.read(sources, format: format)),
     );
 
@@ -121,6 +127,7 @@ class MetricView extends StatelessWidget {
       if (layout.unit != null) layout.unit!.row,
       layout.value.row,
       if (layout.gaugeRow != null) layout.gaugeRow!,
+      for (final slot in layout.secondary) slot.position.row,
     };
     return rows.toList()..sort();
   }
@@ -130,6 +137,12 @@ class MetricView extends StatelessWidget {
     final ink = textColor ?? (background == null ? Colors.white : foregroundOf(background));
     final valueSize = layout.gaugeRow != null ? _gaugeValueSize : _bigValueSize;
     final rows = _usedRows;
+    // Lues une fois pour toute la carte plutôt qu'à chaque case : plusieurs
+    // slots peuvent porter la même mesure (rare mais pas interdit), et
+    // `MetricId.read` n'est pas gratuit (zones, formatage).
+    final secondaryReadings = {
+      for (final slot in layout.secondary) slot: slot.metric.read(sources, format: format),
+    };
 
     return LayoutBuilder(
       builder: (context, outerConstraints) {
@@ -163,12 +176,13 @@ class MetricView extends StatelessWidget {
                     reading,
                     ink,
                     valueSize,
+                    secondaryReadings,
                     rowHeight: rowConstraints.maxHeight,
                   ),
                 ),
               )
             else
-              _gridRow(rows[i], reading, ink, valueSize),
+              _gridRow(rows[i], reading, ink, valueSize, secondaryReadings),
           ],
         ];
 
@@ -198,7 +212,14 @@ class MetricView extends StatelessWidget {
   /// pas) à côté. Plusieurs éléments dans une même case s'y affichent dans un
   /// ordre fixe — icône, étiquette, unité, chiffre — qu'on les ait posés dans
   /// cet ordre ou non.
-  Widget _gridRow(int row, MetricReading reading, Color ink, double valueSize, {double? rowHeight}) {
+  Widget _gridRow(
+    int row,
+    MetricReading reading,
+    Color ink,
+    double valueSize,
+    Map<SecondaryMetricSlot, MetricReading> secondaryReadings, {
+    double? rowHeight,
+  }) {
     // Le facteur d'échelle de cette rangée ([RowHeight.scale]) : une rangée
     // ne reçoit plus de place ([slot], plus bas) que si son contenu grandit
     // d'autant, sinon elle déborderait sur sa voisine plutôt que de s'y
@@ -240,17 +261,32 @@ class MetricView extends StatelessWidget {
             naturalHeight: rowHeight == null ? _valueHeight : null,
           )
         : null;
+    // Au plus un slot par case — la collision est déjà tranchée en amont
+    // (`MetricLayout.parse`, « premier posé gagne »), donc `firstWhere`
+    // trouve toujours zéro ou une entrée.
+    Widget? secondaryAt(GridColumn c) {
+      for (final entry in secondaryReadings.entries) {
+        if (entry.key.position.row == row && entry.key.position.column == c) {
+          return _secondaryWidget(entry.key, entry.value, ink, scale);
+        }
+      }
+      return null;
+    }
 
     bool isEmpty(GridColumn c) =>
-        iconAt(c) == null && labelAt(c) == null && unitAt(c) == null && valueAt(c) == null;
+        iconAt(c) == null &&
+        labelAt(c) == null &&
+        unitAt(c) == null &&
+        valueAt(c) == null &&
+        secondaryAt(c) == null;
 
     // Les éléments d'une même case, à leur taille *naturelle* et dans un
-    // ordre fixe (icône, étiquette, unité, chiffre) — qu'on les ait posés
-    // dans cet ordre ou non. C'est le groupe entier que [slot] met ensuite à
-    // l'échelle et pousse vers le bord de sa colonne, jamais chaque élément
-    // séparément : deux éléments posés « en haut à gauche » doivent rester
-    // collés l'un à l'autre, pas dispersés chacun sur son propre partage de
-    // la largeur de la rangée.
+    // ordre fixe (icône, étiquette, unité, chiffre, annotation secondaire) —
+    // qu'on les ait posés dans cet ordre ou non. C'est le groupe entier que
+    // [slot] met ensuite à l'échelle et pousse vers le bord de sa colonne,
+    // jamais chaque élément séparément : deux éléments posés « en haut à
+    // gauche » doivent rester collés l'un à l'autre, pas dispersés chacun sur
+    // son propre partage de la largeur de la rangée.
     Widget columnContent(GridColumn c) {
       final parts = <Widget>[];
       void add(Widget? w) {
@@ -263,6 +299,7 @@ class MetricView extends StatelessWidget {
       add(labelAt(c));
       add(unitAt(c));
       add(valueAt(c));
+      add(secondaryAt(c));
 
       return Row(mainAxisSize: MainAxisSize.min, children: parts);
     }
@@ -374,6 +411,54 @@ class MetricView extends StatelessWidget {
           fontSize: BlockMetrics.natural.unitSize * scale,
         ),
       );
+
+  /// Le repère par défaut d'un slot secondaire sans [SecondaryMetricSlot.label] —
+  /// déduit du suffixe de la clé (`_avg`/`_max`/`_min`), jamais du nom complet
+  /// de la mesure ([MetricId.name], « Vitesse moyenne »), bien trop long pour
+  /// un coin de carte. `null` sur une mesure sans suffixe reconnu : mieux vaut
+  /// un chiffre sans repère qu'un mot deviné.
+  static String? _defaultSecondaryCaption(MetricId metric) {
+    if (metric.key.endsWith('_avg')) return 'MOY';
+    if (metric.key.endsWith('_max')) return 'MAX';
+    if (metric.key.endsWith('_min')) return 'MIN';
+    return null;
+  }
+
+  /// Une annotation de coin : un petit repère (« MOY », « MAX »…) collé au
+  /// chiffre — jamais d'icône ni d'unité, qui la feraient répéter toute la
+  /// mise en forme d'une carte dans un espace prévu pour rester minuscule.
+  Widget _secondaryWidget(SecondaryMetricSlot slot, MetricReading reading, Color ink, double scale) {
+    final caption = slot.label ?? _defaultSecondaryCaption(slot.metric);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        if (caption != null) ...[
+          Text(
+            caption.toUpperCase(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: ink.withValues(alpha: 0.6),
+              fontSize: BlockMetrics.natural.unitSize * scale,
+            ),
+          ),
+          SizedBox(width: BlockMetrics.natural.gap / 4),
+        ],
+        Text(
+          reading.value ?? '—',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: ink,
+            fontSize: BlockMetrics.natural.titleSize * scale,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
 
   // ── La jauge ─────────────────────────────────────────────────────────────
   //

@@ -345,6 +345,54 @@ class GridPosition {
   int get hashCode => Object.hash(row, column);
 }
 
+/// Une annotation posée dans un coin d'un bloc `metric` — une mesure dérivée
+/// (`speed_avg`, `hr_max`…) plus petite que le chiffre principal, avec son
+/// propre repère (« MOY », « MAX »…). Voir [MetricLayout.secondary].
+@immutable
+class SecondaryMetricSlot {
+  const SecondaryMetricSlot({required this.metric, required this.position, this.label});
+
+  final MetricId metric;
+  final GridPosition position;
+
+  /// Le petit repère collé au chiffre — réglé dans l'éditeur. `null` : le
+  /// rendu retombe sur une légende compacte déduite du suffixe de
+  /// [metric.key] (`_avg` → « MOY », `_max` → « MAX », `_min` → « MIN »),
+  /// jamais sur le nom complet de la mesure ([MetricId.name]), trop long pour
+  /// un coin de carte.
+  final String? label;
+
+  /// `null` si `raw` ne décrit pas un slot exploitable — mesure inconnue de
+  /// cette version, ou position absente/invalide. Même tolérance que le reste
+  /// de ce fichier : rien ici ne lève.
+  static SecondaryMetricSlot? parse(Object? raw) {
+    if (raw is! Map) return null;
+
+    final metric = MetricId.fromKey(raw['metric']);
+    if (metric == null) return null;
+
+    final position = GridPosition.parse(raw['position']);
+    if (position == null) return null;
+
+    final label = raw['label'];
+    return SecondaryMetricSlot(
+      metric: metric,
+      position: position,
+      label: label is String && label.trim().isNotEmpty ? label.trim() : null,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is SecondaryMetricSlot &&
+      other.metric == metric &&
+      other.position == position &&
+      other.label == label;
+
+  @override
+  int get hashCode => Object.hash(metric, position, label);
+}
+
 /// La disposition d'un bloc `metric` : une grille à 3 colonnes et jusqu'à
 /// [maxRows] rangées, où chaque élément se pose dans une case précise. Une
 /// clé absente = élément masqué ; [value] est la seule obligatoire. La jauge
@@ -364,12 +412,18 @@ class MetricLayout {
     required this.value,
     this.gaugeRow,
     this.rowHeights = const {},
+    this.secondary = const [],
   });
 
   final GridPosition? icon;
   final GridPosition? label;
   final GridPosition? unit;
   final GridPosition value;
+
+  /// Les annotations min/moyenne/max posées dans les coins de la carte —
+  /// voir [SecondaryMetricSlot]. Vide sur un document d'avant ce réglage,
+  /// comme [rowHeights].
+  final List<SecondaryMetricSlot> secondary;
 
   /// La rangée occupée par la jauge, `null` si aucune n'est posée. Sa nature
   /// (zones du cycliste, plage réglée, plage dynamique) se décide au rendu
@@ -458,6 +512,30 @@ class MetricLayout {
       }
     }
 
+    // Les positions déjà prises par icon/label/unit/value/la jauge : un slot
+    // secondaire qui viserait l'une d'elles serait ignoré, « premier posé
+    // gagne » comme partout ailleurs dans ce document (recouvrement de
+    // grille, clé de profil dupliquée) — même règle que `sanitize_
+    // layout_positions` côté site, appliquée ici indépendamment plutôt que de
+    // faire confiance à un document déjà assaini.
+    final claimed = <GridPosition>{
+      if (positionFor('icon') case final p?) p,
+      if (positionFor('label') case final p?) p,
+      if (positionFor('unit') case final p?) p,
+      value,
+    };
+    final secondary = <SecondaryMetricSlot>[];
+    final secondaryRaw = raw['secondary'];
+    if (secondaryRaw is List) {
+      for (final entry in secondaryRaw) {
+        final slot = SecondaryMetricSlot.parse(entry);
+        if (slot == null) continue;
+        if (validGaugeRow != null && slot.position.row == validGaugeRow) continue;
+        if (!claimed.add(slot.position)) continue;
+        secondary.add(slot);
+      }
+    }
+
     return MetricLayout(
       icon: positionFor('icon'),
       label: positionFor('label'),
@@ -465,6 +543,7 @@ class MetricLayout {
       value: value,
       gaugeRow: validGaugeRow,
       rowHeights: rowHeights,
+      secondary: secondary,
     );
   }
 
@@ -476,7 +555,8 @@ class MetricLayout {
       other.unit == unit &&
       other.value == value &&
       other.gaugeRow == gaugeRow &&
-      mapEquals(other.rowHeights, rowHeights);
+      mapEquals(other.rowHeights, rowHeights) &&
+      listEquals(other.secondary, secondary);
 
   @override
   int get hashCode => Object.hash(
@@ -489,6 +569,7 @@ class MetricLayout {
         // entrées d'une `Map` n'a pas de sens à faire entrer dans le hash de
         // deux dispositions par ailleurs égales.
         rowHeights.entries.fold<int>(0, (acc, e) => acc ^ Object.hash(e.key, e.value)),
+        Object.hashAll(secondary),
       );
 }
 

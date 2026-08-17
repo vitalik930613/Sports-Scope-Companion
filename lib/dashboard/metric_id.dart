@@ -38,19 +38,23 @@ enum MetricId {
   speed('speed', 'Vitesse', 'km/h', Icons.speed),
   speedAvg('speed_avg', 'Vitesse moyenne', 'km/h', Icons.speed),
   speedMax('speed_max', 'Vitesse max', 'km/h', Icons.speed),
+  speedMin('speed_min', 'Vitesse minimum', 'km/h', Icons.speed),
   heartRate('heart_rate', 'Cardio', 'bpm', Icons.favorite),
   hrZone('hr_zone', 'Zone cardio', 'bpm', Icons.favorite),
   hrAvg('hr_avg', 'Cardio moyen', 'bpm', Icons.favorite_border),
   hrMax('hr_max', 'Cardio max', 'bpm', Icons.favorite_border),
+  hrMin('hr_min', 'Cardio minimum', 'bpm', Icons.favorite_border),
   power('power', 'Puissance', 'W', Icons.bolt),
   powerZone('power_zone', 'Zone de puissance', 'W', Icons.bolt),
   powerAvg('power_avg', 'Puissance moyenne', 'W', Icons.bolt),
   powerNormalized('power_np', 'Puissance normalisée', 'W', Icons.bolt),
   powerMax('power_max', 'Puissance max', 'W', Icons.bolt),
+  powerMin('power_min', 'Puissance minimum', 'W', Icons.bolt),
   powerBalance('power_balance', 'Équilibre G/D', '%', Icons.balance),
   cadence('cadence', 'Cadence', 'tr/min', Icons.autorenew),
   cadenceAvg('cadence_avg', 'Cadence moyenne', 'tr/min', Icons.autorenew),
   cadenceMax('cadence_max', 'Cadence max', 'tr/min', Icons.autorenew),
+  cadenceMin('cadence_min', 'Cadence minimum', 'tr/min', Icons.autorenew),
   ascent('ascent', 'Dénivelé positif', 'm', Icons.trending_up),
   altitude('altitude', 'Altitude', 'm', Icons.terrain),
   altitudeAvg('altitude_avg', 'Altitude moyenne', 'm', Icons.terrain),
@@ -58,6 +62,7 @@ enum MetricId {
   grade('grade', 'Pente', '%', Icons.north_east),
   gradeAvg('grade_avg', 'Pente moyenne', '%', Icons.north_east),
   gradeMax('grade_max', 'Pente max', '%', Icons.north_east),
+  gradeMin('grade_min', 'Pente minimum', '%', Icons.north_east),
   climbRate('climb_rate', 'Vitesse ascensionnelle', 'm/h', Icons.upgrade),
   climbRateAvg('climb_rate_avg', 'Vitesse ascensionnelle moyenne', 'm/h', Icons.upgrade),
   climbRateMax('climb_rate_max', 'Vitesse ascensionnelle max', 'm/h', Icons.upgrade),
@@ -295,6 +300,10 @@ enum MetricId {
           _kmh(stats.maxSpeedMps),
           numericValue: _kmhValue(stats.maxSpeedMps),
         ),
+      MetricId.speedMin => MetricReading(
+          _kmh(stats.minSpeedMps),
+          numericValue: _kmhValue(stats.minSpeedMps),
+        ),
       MetricId.heartRate => _zoned(
           sources.hub.latestHeartRate.value,
           profile: profile,
@@ -320,6 +329,11 @@ enum MetricId {
           stats.maxHeartRate?.toString(),
           numericValue: stats.maxHeartRate?.toDouble(),
           zoneKey: stats.maxHeartRate == null ? null : profile.hrZoneFor(stats.maxHeartRate!)?.key,
+        ),
+      MetricId.hrMin => MetricReading(
+          stats.minHeartRate?.toString(),
+          numericValue: stats.minHeartRate?.toDouble(),
+          zoneKey: stats.minHeartRate == null ? null : profile.hrZoneFor(stats.minHeartRate!)?.key,
         ),
       MetricId.power => _zoned(
           sources.hub.latestPower.value,
@@ -352,6 +366,11 @@ enum MetricId {
           numericValue: stats.maxPower?.toDouble(),
           zoneKey: stats.maxPower == null ? null : profile.powerZoneFor(stats.maxPower!)?.key,
         ),
+      MetricId.powerMin => MetricReading(
+          stats.minPower?.toString(),
+          numericValue: stats.minPower?.toDouble(),
+          zoneKey: stats.minPower == null ? null : profile.powerZoneFor(stats.minPower!)?.key,
+        ),
       MetricId.powerBalance =>
         _balanceReading(sources.hub.latestPowerBalance.value),
       MetricId.cadence => MetricReading(
@@ -365,6 +384,10 @@ enum MetricId {
       MetricId.cadenceMax => MetricReading(
           stats.maxCadence?.toString(),
           numericValue: stats.maxCadence?.toDouble(),
+        ),
+      MetricId.cadenceMin => MetricReading(
+          stats.minCadence?.toString(),
+          numericValue: stats.minCadence?.toDouble(),
         ),
       // Le dénivelé n'a de sens qu'une fois la sortie lancée : c'est un cumul,
       // et un cumul avant le départ vaut « rien », pas « zéro mètre ».
@@ -400,6 +423,7 @@ enum MetricId {
       // rouleau sans distance parcourue, la fenêtre ne s'est jamais remplie.
       MetricId.gradeAvg => _gradeReading(active ? stats.avgGrade : null),
       MetricId.gradeMax => _gradeReading(active ? stats.maxGrade : null),
+      MetricId.gradeMin => _gradeReading(active ? stats.minGrade : null),
       // Même garde que la pente : la vitesse ascensionnelle se lit sur la même
       // fenêtre, qui reste naturellement vide sans altitude.
       MetricId.climbRate => MetricReading(
