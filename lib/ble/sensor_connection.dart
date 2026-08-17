@@ -48,6 +48,15 @@ class SensorConnection {
   /// lancé la connexion.
   final canCalibratePower = ValueNotifier<bool>(false);
 
+  /// Dernier pourcentage de batterie connu, `null` tant qu'aucune lecture n'est
+  /// arrivée. Retenu ici plutôt que laissé sur le seul flux [samples] : la
+  /// lecture initiale (`readOnConnect`) peut arriver bien avant que quiconque
+  /// ne s'abonne (le tableau de bord de sortie, par exemple, ne se monte que
+  /// plus tard) — un flux broadcast ne rejoue rien à qui s'abonne après coup,
+  /// et cette première valeur, souvent la seule avant longtemps, serait perdue
+  /// en silence. Même raison que `detectedKinds`/`canCalibratePower`.
+  final batteryLevel = ValueNotifier<int?>(null);
+
   /// Décodeurs effectivement branchés, reconstruits à chaque (re)connexion.
   var _decoders = <CharacteristicDecoder>[];
 
@@ -258,6 +267,8 @@ class SensorConnection {
     _rawFrames.add(RawFrame(at, decoder.characteristic.str, data));
 
     for (final sample in decoder.decode(data, at)) {
+      // Retenu à part : voir le commentaire de [batteryLevel].
+      if (sample is BatterySample) batteryLevel.value = sample.percent;
       _samples.add(sample);
     }
   }
@@ -365,5 +376,6 @@ class SensorConnection {
     status.dispose();
     detectedKinds.dispose();
     canCalibratePower.dispose();
+    batteryLevel.dispose();
   }
 }

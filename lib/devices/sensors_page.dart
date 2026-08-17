@@ -311,18 +311,31 @@ class _SensorsPageState extends State<SensorsPage> {
         ),
         isThreeLine: true,
         trailing: PopupMenuButton<String>(
-          onSelected: (action) => switch (action) {
-            'forget' => _forget(known),
-            'rename' => _rename(known),
-            'auto' =>
-              _devices.setAutoConnect(known.remoteId, !known.autoConnect),
-            'connect' => _connect(
-                BluetoothDevice.fromId(known.remoteId),
-                label: known.name.isEmpty ? null : known.name,
-              ),
-            'calibrate' => showPowerCalibrationFor(context, connection),
-            _ => null,
-          },
+          // `onSelected` se déclenche pendant que la route du menu se referme
+          // encore (son animation de sortie n'est pas finie) : y ouvrir une
+          // autre route dans la foulée — notre boîte « Renommer » — plante
+          // Flutter (`_dependents.isEmpty is not true`, bug connu du
+          // framework, cf. flutter/flutter#127519 et consorts). Un cran de
+          // délai suffit à laisser la première route disparaître avant d'en
+          // pousser une seconde.
+          onSelected: (action) => Future.delayed(Duration.zero, () {
+            if (!mounted) return;
+            switch (action) {
+              case 'forget':
+                _forget(known);
+              case 'rename':
+                _rename(known);
+              case 'auto':
+                _devices.setAutoConnect(known.remoteId, !known.autoConnect);
+              case 'connect':
+                _connect(
+                  BluetoothDevice.fromId(known.remoteId),
+                  label: known.name.isEmpty ? null : known.name,
+                );
+              case 'calibrate':
+                showPowerCalibrationFor(context, connection);
+            }
+          }),
           itemBuilder: (context) => [
             if (connection == null)
               const PopupMenuItem(value: 'connect', child: Text('Connecter')),
