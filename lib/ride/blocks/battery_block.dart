@@ -1,24 +1,25 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../../ble/sensor_profile.dart';
 import '../../dashboard/dashboard_block.dart';
 import '../battery_status.dart';
 import 'block_card.dart';
 
-/// L'état des batteries des capteurs BLE connus, posé dans une page de
-/// données.
+/// L'état des batteries des capteurs BLE connus, et de celle du téléphone lui-
+/// même, posé dans une page de données.
 ///
 /// Contrairement au radar, **jamais coupé par le profil** — voir
 /// `SensorSettings.allows(SensorKind.battery)` — donc pas de branche « coupé
 /// par ce profil » ici : la seule chose qui varie est d'avoir ou non des
-/// appareils connus, et d'avoir ou non lu leur pourcentage.
+/// appareils connus, et d'avoir ou non lu leur pourcentage. Même chose pour la
+/// batterie du téléphone : elle n'a pas de réglage pour la couper, elle est
+/// de toute façon toujours à portée de qui tient l'appareil en main.
 class BatteryBlockView extends StatelessWidget {
   const BatteryBlockView({
     super.key,
     required this.battery,
     this.mode = BatteryMode.list,
-    this.sensorKind,
+    this.sensor,
     this.color,
     this.textColor,
   });
@@ -26,9 +27,9 @@ class BatteryBlockView extends StatelessWidget {
   final ValueListenable<List<BatteryStatus>> battery;
   final BatteryMode mode;
 
-  /// Voir `BatteryBlock.sensorKind` — ne restreint que [_compact], la liste
+  /// Voir `BatteryBlock.sensor` — ne restreint que [_compact], la liste
   /// affiche déjà tous les appareils connus.
-  final SensorKind? sensorKind;
+  final BatterySensor? sensor;
 
   /// Fond réglé dans l'éditeur — voir [DashboardBlock.color].
   final Color? color;
@@ -83,14 +84,16 @@ class BatteryBlockView extends StatelessWidget {
 
   /// Le pire pourcentage connu parmi les appareils qui en publient un — un
   /// seul chiffre, pour la case qui n'a pas la place d'en lister plusieurs.
-  /// [sensorKind] restreint ce « parmi » à un seul capteur, sinon la ceinture
-  /// cardio oubliée sur la table gagnerait contre le capteur de puissance
-  /// qu'on veut réellement surveiller.
+  /// [sensor] restreint ce « parmi » à un seul appareil (BLE ou le téléphone
+  /// lui-même), sinon la ceinture cardio oubliée sur la table gagnerait
+  /// contre le capteur de puissance qu'on veut réellement surveiller.
   Widget _compact(List<BatteryStatus> devices) {
-    final kind = sensorKind;
-    final pool = kind == null
-        ? devices
-        : [for (final d in devices) if (d.kinds.contains(kind)) d];
+    final target = sensor;
+    final pool = switch (target) {
+      null => devices,
+      BatterySensor.phone => [for (final d in devices) if (d.isPhone) d],
+      _ => [for (final d in devices) if (d.kinds.contains(target.sensorKind)) d],
+    };
 
     if (pool.isEmpty) {
       return _emptyText('Aucun capteur appairé.', Colors.white38);

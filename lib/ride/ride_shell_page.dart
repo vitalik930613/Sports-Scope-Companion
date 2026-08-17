@@ -17,6 +17,7 @@ import '../navigation/navigation_picker_sheet.dart';
 import '../navigation/navigation_target.dart';
 import '../navigation/route_catalog_store.dart';
 import '../navigation/screen_dimmer.dart';
+import '../phone/phone_sensors.dart';
 import '../phone/rider_compass.dart';
 import '../recording/ride_recorder.dart';
 import '../ui/offline_download_dialog.dart';
@@ -89,6 +90,7 @@ class RideShellPage extends StatefulWidget {
     required this.devices,
     required this.recorder,
     this.compass,
+    this.phone,
     required this.session,
     required this.riderProfile,
     required this.trainingBudget,
@@ -126,6 +128,14 @@ class RideShellPage extends StatefulWidget {
   /// réveille le processeur pour une flèche que personne ne regarde. Nulle sur
   /// un appareil sans magnétomètre, dans un test, ou quand le profil l'a coupée.
   final RiderCompass? compass;
+
+  /// Les capteurs du téléphone lui-même — ici, seulement pour sa batterie
+  /// (voir `BatteryStatusNotifier`). Volontairement **pas** tiré de
+  /// [compass] : ce dernier est nul dès que le profil coupe la boussole
+  /// (`preset.sensors.compass`), et la batterie du téléphone n'a pas de
+  /// réglage pour la couper — elle ne doit pas disparaître avec un capteur
+  /// sans rapport.
+  final PhoneSensors? phone;
 
   /// Pas pour authentifier la page — le cookie du WebView s'en charge — mais
   /// pour tenir à jour ce que l'appli affiche de la session.
@@ -469,6 +479,7 @@ class _RideShellPageState extends State<RideShellPage>
     _battery = BatteryStatusNotifier(
       widget.devices,
       widget.hub,
+      phone: widget.phone,
       thresholdPercent: _preset.battery.thresholdPercent,
     );
     _battery.addListener(_onBatteryStatus);

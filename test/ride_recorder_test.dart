@@ -345,8 +345,8 @@ class _FakePhone implements PhoneSensors {
   final _pressure = StreamController<double>.broadcast();
 
   @override
-  Future<PhoneSensorAvailability> available() async =>
-      const PhoneSensorAvailability(pressure: true, light: true, heading: true);
+  Future<PhoneSensorAvailability> available() async => const PhoneSensorAvailability(
+      pressure: true, light: true, heading: true, battery: true);
 
   @override
   Stream<double> pressureHpa() => _pressure.stream;
@@ -356,6 +356,9 @@ class _FakePhone implements PhoneSensors {
 
   @override
   Stream<double> headingDeg() => const Stream.empty();
+
+  @override
+  Stream<int> batteryPercent() => const Stream.empty();
 
   @override
   Future<void> setLocation({

@@ -352,7 +352,7 @@ class DashboardPage extends StatelessWidget {
         final BatteryBlock batteryBlock => BatteryBlockView(
             battery: battery,
             mode: batteryBlock.mode,
-            sensorKind: batteryBlock.sensorKind,
+            sensor: batteryBlock.sensor,
             color: batteryBlock.color,
             textColor: batteryBlock.textColor,
           ),

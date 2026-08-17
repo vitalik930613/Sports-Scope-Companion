@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -6,6 +8,7 @@ import '../ble/sensor_connection.dart';
 import '../ble/sensor_hub.dart';
 import '../ble/sensor_profile.dart';
 import '../devices/known_devices_store.dart';
+import '../phone/phone_sensors.dart';
 import '../ui/sensor_icons.dart';
 
 /// L'état batterie d'un appareil connu, tel qu'on le dessine.
@@ -17,23 +20,34 @@ class BatteryStatus {
     required this.icon,
     required this.connected,
     this.kinds = const {},
+    this.isPhone = false,
     this.percent,
     this.low = false,
   });
 
-  /// `KnownDevice.remoteId` — jamais affiché, sert seulement de clé.
+  /// `KnownDevice.remoteId` pour un capteur BLE, `'phone'` pour la batterie du
+  /// téléphone lui-même — jamais affiché, sert seulement de clé.
   final String id;
 
   final String label;
   final IconData icon;
+
+  /// Toujours vrai pour [isPhone] : le téléphone qui fait tourner l'appli
+  /// n'est jamais « déconnecté » au sens où l'entend un capteur BLE.
   final bool connected;
 
   /// Capacités constatées de l'appareil (`KnownDevice.kinds`) — sert à
   /// [BatteryBlockView] à restreindre le mode compact à un capteur précis
-  /// (`BatteryBlock.sensorKind`).
+  /// (`BatteryBlock.sensor`). Vide pour [isPhone].
   final Set<SensorKind> kinds;
 
-  /// `null` : pas connecté, ou connecté sans le service batterie standard.
+  /// La ligne de la batterie du téléphone lui-même, plutôt qu'un capteur BLE
+  /// — voir `BatterySensor.phone`. Pas un [SensorKind] : ce n'est pas un
+  /// appareil BLE, `kinds` reste vide.
+  final bool isPhone;
+
+  /// `null` : pas connecté, ou connecté sans le service batterie standard —
+  /// ou, pour [isPhone], pas encore de première lecture.
   final int? percent;
 
   /// `percent` sous le seuil du profil de sortie.
@@ -47,6 +61,7 @@ class BatteryStatus {
       other.icon == icon &&
       other.connected == connected &&
       setEquals(other.kinds, kinds) &&
+      other.isPhone == isPhone &&
       other.percent == percent &&
       other.low == low;
 
@@ -57,13 +72,15 @@ class BatteryStatus {
         icon,
         connected,
         Object.hashAllUnordered(kinds),
+        isPhone,
         percent,
         low,
       );
 }
 
 /// Le pourcentage de batterie de chaque appareil connu, tenu à jour en
-/// écoutant chaque connexion.
+/// écoutant chaque connexion — et celui du téléphone lui-même, s'il en est
+/// donné un.
 ///
 /// La liste des lignes vient de [KnownDevicesStore] — la source stable et
 /// écoutable, mise à jour par `DeviceLinker` à chaque connexion réussie
@@ -78,14 +95,28 @@ class BatteryStatus {
 /// bien avant que ce notifieur n'existe (le tableau de bord de sortie se
 /// monte après coup), et un flux broadcast ne rejoue rien à qui s'abonne en
 /// retard — la première valeur, longtemps la seule, se perdrait en silence.
+///
+/// [phone] est facultatif et abonné pour de bon, sans `start`/`stop` — au
+/// contraire du baromètre ou de la boussole, un intent collant ne réveille
+/// rien entre deux trames, il n'y a donc rien à économiser à couper
+/// l'abonnement. `null` (widget de test, plateforme non Android) : la ligne
+/// téléphone n'apparaît simplement jamais, même repli que pour un appareil
+/// BLE jamais appairé.
 class BatteryStatusNotifier extends ValueNotifier<List<BatteryStatus>> {
   BatteryStatusNotifier(
     this._devices,
     this._hub, {
+    PhoneSensors? phone,
     this.thresholdPercent = 20,
   }) : super(const []) {
     _devices.addListener(_resubscribe);
     _resubscribe();
+    if (phone != null) {
+      _phoneSub = phone.batteryPercent().listen((percent) {
+        _phonePercent = percent;
+        _rebuild();
+      });
+    }
   }
 
   final KnownDevicesStore _devices;
@@ -94,6 +125,12 @@ class BatteryStatusNotifier extends ValueNotifier<List<BatteryStatus>> {
 
   final _listeners = <String, VoidCallback>{};
   final _subscribed = <String, SensorConnection>{};
+
+  StreamSubscription<int>? _phoneSub;
+
+  /// `null` tant qu'aucune trame n'est arrivée : pas de ligne téléphone dans
+  /// [_rebuild] jusque-là, même convention qu'un appareil BLE pas encore lu.
+  int? _phonePercent;
 
   /// Reconstruit les abonnements sur ce que le magasin connaît désormais —
   /// appelé à chaque changement du magasin, y compris une reconnexion.
@@ -136,6 +173,16 @@ class BatteryStatusNotifier extends ValueNotifier<List<BatteryStatus>> {
 
   void _rebuild() {
     value = [
+      if (_phonePercent != null)
+        BatteryStatus(
+          id: 'phone',
+          label: 'Téléphone',
+          icon: Icons.smartphone,
+          connected: true,
+          isPhone: true,
+          percent: _phonePercent,
+          low: _isLow(_phonePercent),
+        ),
       for (final device in _devices.devices)
         BatteryStatus(
           id: device.remoteId,
@@ -159,6 +206,7 @@ class BatteryStatusNotifier extends ValueNotifier<List<BatteryStatus>> {
     for (final id in _subscribed.keys.toList()) {
       _unsubscribe(id);
     }
+    unawaited(_phoneSub?.cancel());
     super.dispose();
   }
 }

@@ -338,6 +338,10 @@ Future<void> openNavigation(
         devices: devices,
         // La boussole ne sert qu'avec une carte, et le profil peut la couper.
         compass: preset.sensors.compass ? compass : null,
+        // Indépendant de la ligne ci-dessus : la batterie du téléphone n'a
+        // pas de réglage pour la couper (voir `RideShellPage.phone`), elle ne
+        // doit pas disparaître avec la boussole.
+        phone: compass.phone,
         recorder: recorder,
         session: session,
         riderProfile: riderProfile,
@@ -536,6 +540,10 @@ class _HomePageState extends State<HomePage> {
   /// pas recalculé si on change de profil sans relancer l'appli, même
   /// simplification que le reste de cet écran (la liste de capteurs qu'un
   /// profil garde, par exemple, ne se relit pas non plus en direct ici).
+  // Pas de `phone:` ici, volontairement : cette carte n'existe que si un
+  // capteur BLE est connu (voir la tête de `BatteryStatusCard`), et la
+  // batterie du téléphone se lit déjà dans la barre système de l'accueil —
+  // c'est en sortie, plein écran, qu'elle disparaît (voir `RideShellPage`).
   late final _battery = BatteryStatusNotifier(
     widget.devices,
     widget.hub,

@@ -108,7 +108,7 @@ sealed class DashboardBlock {
         ),
       'battery' => BatteryBlock(
           mode: _modeOf(raw['mode'], BatteryMode.values),
-          sensorKind: _sensorKindOf(raw['sensor']),
+          sensor: _batterySensorOf(raw['sensor']),
           color: color,
           textColor: textColor,
         ),
@@ -155,18 +155,20 @@ sealed class DashboardBlock {
     return modes.first;
   }
 
-  /// Le capteur visé par `battery.sensor` — mêmes clés que
+  /// Le capteur visé par `battery.sensor` — mêmes clés BLE que
   /// `SensorSettings.parse` (`heart_rate`, `power`, `cadence`, `gears`,
-  /// `radar`) pour que le site n'ait qu'un seul vocabulaire à connaître.
-  /// `null` sur tout le reste, y compris une clé absente : c'est ce qui garde
-  /// le comportement d'avant ce réglage (le pire pourcentage, tous appareils
-  /// confondus).
-  static SensorKind? _sensorKindOf(Object? raw) => switch (raw) {
-        'heart_rate' => SensorKind.heartRate,
-        'power' => SensorKind.power,
-        'cadence' => SensorKind.speedCadence,
-        'gears' => SensorKind.gears,
-        'radar' => SensorKind.radar,
+  /// `radar`) pour que le site n'ait qu'un seul vocabulaire à connaître, plus
+  /// `phone` pour la batterie du téléphone lui-même, qui n'est pas un capteur
+  /// BLE. `null` sur tout le reste, y compris une clé absente : c'est ce qui
+  /// garde le comportement d'avant ce réglage (le pire pourcentage, tous
+  /// appareils confondus, téléphone compris).
+  static BatterySensor? _batterySensorOf(Object? raw) => switch (raw) {
+        'heart_rate' => BatterySensor.heartRate,
+        'power' => BatterySensor.power,
+        'cadence' => BatterySensor.speedCadence,
+        'gears' => BatterySensor.gears,
+        'radar' => BatterySensor.radar,
+        'phone' => BatterySensor.phone,
         _ => null,
       };
 
@@ -1171,13 +1173,13 @@ enum RadarMode with BlockMode {
   final String key;
 }
 
-/// L'état des batteries des capteurs BLE connus. Jamais coupé par le profil
-/// (voir `SensorSettings.allows`) : pas de branche « profil éteint » à
-/// dessiner, contrairement à [RadarBlock].
+/// L'état des batteries des capteurs BLE connus, et de celle du téléphone
+/// lui-même. Jamais coupé par le profil (voir `SensorSettings.allows`) : pas
+/// de branche « profil éteint » à dessiner, contrairement à [RadarBlock].
 class BatteryBlock extends DashboardBlock {
   const BatteryBlock({
     this.mode = BatteryMode.list,
-    this.sensorKind,
+    this.sensor,
     super.color,
     super.textColor,
   });
@@ -1185,24 +1187,25 @@ class BatteryBlock extends DashboardBlock {
   final BatteryMode mode;
 
   /// En mode [BatteryMode.compact], restreint le pire pourcentage à ce
-  /// capteur-là plutôt qu'à tous les appareils connus — la case n'a la place
-  /// que pour un chiffre, et « le pire de tous » n'est pas toujours celui
-  /// qu'on veut y surveiller (le capteur de puissance, par exemple, plutôt
-  /// que la ceinture cardio posée sur la table depuis la dernière sortie).
-  /// `null` : comportement d'avant ce réglage, tous appareils confondus.
-  /// Sans effet en mode [BatteryMode.list], qui les liste déjà tous.
-  final SensorKind? sensorKind;
+  /// capteur-là plutôt qu'à tous les appareils connus (téléphone compris) —
+  /// la case n'a la place que pour un chiffre, et « le pire de tous » n'est
+  /// pas toujours celui qu'on veut y surveiller (le capteur de puissance, par
+  /// exemple, plutôt que la ceinture cardio posée sur la table depuis la
+  /// dernière sortie). `null` : comportement d'avant ce réglage, tous
+  /// appareils confondus. Sans effet en mode [BatteryMode.list], qui les
+  /// liste déjà tous.
+  final BatterySensor? sensor;
 
   @override
   bool operator ==(Object other) =>
       other is BatteryBlock &&
       other.mode == mode &&
-      other.sensorKind == sensorKind &&
+      other.sensor == sensor &&
       other.color == color &&
       other.textColor == textColor;
 
   @override
-  int get hashCode => Object.hash(mode, sensorKind, color, textColor);
+  int get hashCode => Object.hash(mode, sensor, color, textColor);
 }
 
 enum BatteryMode with BlockMode {
@@ -1217,6 +1220,26 @@ enum BatteryMode with BlockMode {
 
   @override
   final String key;
+}
+
+/// Ce que le mode compact d'un bloc `battery` peut viser : un capteur BLE
+/// connu, ou la batterie du téléphone lui-même — pas un [SensorKind], qui ne
+/// connaît que le BLE et n'a rien à dire d'un appareil qui n'en est pas un.
+enum BatterySensor {
+  heartRate(SensorKind.heartRate),
+  power(SensorKind.power),
+  speedCadence(SensorKind.speedCadence),
+  gears(SensorKind.gears),
+  radar(SensorKind.radar),
+
+  /// `null` : n'a pas de capacité BLE correspondante, voir
+  /// `BatteryStatus.isPhone`.
+  phone(null);
+
+  const BatterySensor(this.sensorKind);
+
+  /// `null` pour [phone], seul cas sans capteur BLE derrière.
+  final SensorKind? sensorKind;
 }
 
 /// L'animation radar des précipitations (RainViewer), centrée sur la position
