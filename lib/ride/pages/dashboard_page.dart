@@ -5,8 +5,10 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../dashboard/dashboard_block.dart';
 import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
+import '../battery_status.dart';
 import '../blocks/altitude_profile_block.dart';
 import '../blocks/averages_block.dart';
+import '../blocks/battery_block.dart';
 import '../blocks/change_route_block.dart';
 import '../blocks/clear_route_block.dart';
 import '../blocks/climb_list_block.dart';
@@ -48,6 +50,7 @@ class DashboardPage extends StatelessWidget {
     required this.page,
     required this.sources,
     this.radar,
+    required this.battery,
     this.menuPages = const [],
     this.onOpenMenuPage,
     this.onClose,
@@ -71,6 +74,10 @@ class DashboardPage extends StatelessWidget {
 
   /// Nul quand le profil a coupé le radar.
   final ValueListenable<RadarView>? radar;
+
+  /// Jamais nul : contrairement au radar, la batterie n'est pas une capacité
+  /// que le profil peut couper (voir `SensorSettings.allows`).
+  final ValueListenable<List<BatteryStatus>> battery;
 
   /// Les pages que le profil range derrière le menu, dans son ordre.
   ///
@@ -341,6 +348,12 @@ class DashboardPage extends StatelessWidget {
             radar: radar,
             mode: radarBlock.mode,
             color: radarBlock.color,
+          ),
+        final BatteryBlock batteryBlock => BatteryBlockView(
+            battery: battery,
+            mode: batteryBlock.mode,
+            color: batteryBlock.color,
+            textColor: batteryBlock.textColor,
           ),
         final PrecipRadarBlock precip => PrecipRadarBlockView(
             recorder: sources.recorder,

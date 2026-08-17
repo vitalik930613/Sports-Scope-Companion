@@ -12,6 +12,7 @@ import 'package:sports_scope_companion/recording/gps_fix.dart';
 import 'package:sports_scope_companion/recording/gps_source.dart';
 import 'package:sports_scope_companion/recording/ride_recorder.dart';
 import 'package:sports_scope_companion/recording/ride_store.dart';
+import 'package:sports_scope_companion/ride/battery_status.dart';
 import 'package:sports_scope_companion/ride/blocks/metric_view.dart';
 import 'package:sports_scope_companion/ride/pages/dashboard_page.dart';
 import 'package:sports_scope_companion/training/training_budget_store.dart';
@@ -114,7 +115,13 @@ void main() {
   }
 
   Future<void> pumpGrid(WidgetTester tester) => tester.pumpWidget(
-        MaterialApp(home: DashboardPage(page: grid(), sources: sources)),
+        MaterialApp(
+          home: DashboardPage(
+            page: grid(),
+            sources: sources,
+            battery: ValueNotifier<List<BatteryStatus>>(const []),
+          ),
+        ),
       );
 
   /// Le rectangle d'une cellule, repéré par l'unité qu'elle affiche.

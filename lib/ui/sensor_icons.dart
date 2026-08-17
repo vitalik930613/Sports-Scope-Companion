@@ -15,6 +15,7 @@ IconData iconFor(SensorKind kind) => switch (kind) {
       SensorKind.speedCadence => Icons.autorenew,
       SensorKind.gears => Icons.settings,
       SensorKind.radar => Icons.radar,
+      SensorKind.battery => Icons.battery_full,
     };
 
 /// Icône d'un appareil dont on ne sait pas encore ce qu'il mesure : jamais

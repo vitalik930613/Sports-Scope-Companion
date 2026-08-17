@@ -212,6 +212,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
       _navigatorKey.currentContext,
       target: target,
       hub: _hub,
+      devices: widget.devices,
       recorder: _recorder,
       compass: _compass,
       session: widget.session,
@@ -273,6 +274,7 @@ Future<void> openNavigation(
   BuildContext? context, {
   required NavigationTarget target,
   required SensorHub hub,
+  required KnownDevicesStore devices,
   required RideRecorder recorder,
   required RiderCompass compass,
   required SiteSession session,
@@ -331,6 +333,7 @@ Future<void> openNavigation(
         target: target,
         preset: preset,
         hub: hub,
+        devices: devices,
         // La boussole ne sert qu'avec une carte, et le profil peut la couper.
         compass: preset.sensors.compass ? compass : null,
         recorder: recorder,
@@ -708,6 +711,7 @@ class _HomePageState extends State<HomePage> {
         context,
         target: target,
         hub: _hub,
+        devices: widget.devices,
         recorder: widget.recorder,
         compass: widget.compass,
         session: widget.session,

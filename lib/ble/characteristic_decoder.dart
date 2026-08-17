@@ -1,5 +1,6 @@
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
+import 'decoders/battery.dart';
 import 'decoders/csc.dart';
 import 'decoders/cycling_power.dart';
 import 'decoders/di2.dart';
@@ -110,6 +111,25 @@ class Di2ButtonsCharacteristic extends CharacteristicDecoder {
 
   @override
   void reset() => _channels.reset();
+}
+
+class BatteryCharacteristic extends CharacteristicDecoder {
+  final _decoder = BatteryDecoder();
+
+  @override
+  Guid get characteristic => BleCharacteristics.batteryLevel;
+
+  // La plupart des capteurs ne notifient la batterie que rarement, voire
+  // jamais après la connexion : sans lecture initiale, le niveau resterait
+  // inconnu toute la sortie sur un appareil qui n'a pourtant rien à cacher.
+  @override
+  bool get readOnConnect => true;
+
+  @override
+  List<SensorSample> decode(List<int> data, DateTime at) {
+    final sample = _decoder.decode(data, at: at);
+    return sample == null ? const [] : [sample];
+  }
 }
 
 class VariaRadarCharacteristic extends CharacteristicDecoder {

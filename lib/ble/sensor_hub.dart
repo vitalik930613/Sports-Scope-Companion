@@ -96,6 +96,8 @@ class SensorHub {
         latestRadar.value = sample;
       case WheelSpeedSample():
         break;
+      case BatterySample():
+        break; // par appareil — voir BatteryStatusNotifier, pas un scalaire du hub
     }
     _samples.add(sample);
   }

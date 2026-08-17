@@ -31,6 +31,7 @@ class RidePreset {
     this.notch = const [],
     this.sensors = const SensorSettings(),
     this.radar = const RadarSettings(),
+    this.battery = const BatterySettings(),
     this.lighting = const LightingSettings(),
     this.screen = const ScreenSettings(),
     this.traveledPath = const TraveledPathSettings(),
@@ -101,6 +102,7 @@ class RidePreset {
 
   final SensorSettings sensors;
   final RadarSettings radar;
+  final BatterySettings battery;
   final LightingSettings lighting;
   final ScreenSettings screen;
 
@@ -253,6 +255,7 @@ class RidePreset {
       notch: _notch(raw['notch']),
       sensors: SensorSettings.parse(raw['sensors']),
       radar: RadarSettings.parse(raw['radar']),
+      battery: BatterySettings.parse(raw['battery']),
       lighting: LightingSettings.parse(raw['lighting']),
       screen: ScreenSettings.parse(raw['screen']),
       traveledPath: TraveledPathSettings.parse(raw['traveled_path']),
@@ -972,6 +975,13 @@ class SensorSettings {
         SensorKind.speedCadence => cadence,
         SensorKind.gears => gears,
         SensorKind.radar => radar,
+        // Jamais réglable, jamais un motif de rattachement ou d'écart à elle
+        // seule : une ceinture cardiaque qui publie aussi sa batterie porte
+        // `kinds = {heartRate, battery}`, et couper `heart_rate` doit suffire
+        // à l'écarter — si `battery` restait « permise » par défaut, l'appareil
+        // serait quand même rattrapé au vol (`devicesToReattach` rattache dès
+        // qu'*une* capacité détectée est permise).
+        SensorKind.battery => true,
       };
 
   static SensorSettings parse(Object? raw) {
@@ -1054,6 +1064,33 @@ class RadarSettings {
       wakeHold: raw['wake_hold_s'] is num
           ? Duration(seconds: (raw['wake_hold_s'] as num).round())
           : fallback.wakeHold,
+    );
+  }
+}
+
+/// Le seuil d'alerte batterie des capteurs BLE, et son son.
+///
+/// « Absent vaut activé », même logique que [RadarSettings.sounds] : un
+/// document plus ancien que ce réglage ne doit pas faire perdre l'alerte en
+/// silence.
+@immutable
+class BatterySettings {
+  const BatterySettings({this.thresholdPercent = 20, this.sounds = true});
+
+  /// En dessous, un appareil est « faible » — voir `BatteryStatus.low`.
+  final int thresholdPercent;
+
+  final bool sounds;
+
+  static BatterySettings parse(Object? raw) {
+    if (raw is! Map) return const BatterySettings();
+    const fallback = BatterySettings();
+
+    return BatterySettings(
+      thresholdPercent: raw['threshold_percent'] is num
+          ? (raw['threshold_percent'] as num).round().clamp(1, 100)
+          : fallback.thresholdPercent,
+      sounds: raw['sounds'] is bool ? raw['sounds'] as bool : fallback.sounds,
     );
   }
 }

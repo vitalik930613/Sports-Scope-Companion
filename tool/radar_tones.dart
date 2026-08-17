@@ -3,8 +3,9 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 /// Fabrique les tonalités d'alerte dans `assets/sounds/` : celles du radar
-/// arrière, celle du filet natif de virages (`native_turn_alerts.dart`), et
-/// celles du composant `bell` du tableau de bord (`bell_block.dart`).
+/// arrière, celle du filet natif de virages (`native_turn_alerts.dart`),
+/// celles du composant `bell` du tableau de bord (`bell_block.dart`), et
+/// celle d'une batterie faible (`battery_alert_sound.dart`).
 ///
 /// Les sons sont *générés* et non téléchargés, pour trois raisons : ils pèsent
 /// quelques kilo-octets, ils n'ont aucune licence à traîner, et surtout ils
@@ -32,6 +33,12 @@ import 'dart:typed_data';
 /// - **sonnette** (`bell`) : trois notes aiguës brèves, le repli du composant
 ///   `bell` — un tintement de sonnette de vélo, pas une alerte de conduite,
 ///   qu'on reconnaît d'un coup de pouce délibéré et non d'un capteur.
+/// - **batterie faible** (`battery_low`) : deux notes graves qui retombent
+///   lentement — grave et lent pour ne jamais se confondre avec les deux
+///   notes aiguës et brèves de « dégagé » (`radar_clear`), ni avec aucune
+///   autre alerte de ce fichier. Une retombée, pas une alarme : ce n'est pas
+///   un danger immédiat, juste quelque chose à savoir avant que ça le
+///   devienne.
 /// - **klaxon** (`horn`) : un accord de trois trompes graves tenues ensemble,
 ///   avec une attaque longue — la montée en pression qu'on entend sur un
 ///   vrai avertisseur pneumatique à trompes (celui des voitures de la
@@ -63,6 +70,12 @@ void main(List<String> args) {
   _write(directory, 'radar_clear.wav', [
     const _Note(hz: 880, ms: 80, gain: 0.6),
     const _Note(hz: 587, ms: 110, gain: 0.6),
+  ]);
+
+  _write(directory, 'battery_low.wav', [
+    const _Note(hz: 330, ms: 180, gain: 0.7),
+    const _Note.silence(ms: 90),
+    const _Note(hz: 220, ms: 260, gain: 0.7),
   ]);
 
   _write(directory, 'turn_alert.wav', [

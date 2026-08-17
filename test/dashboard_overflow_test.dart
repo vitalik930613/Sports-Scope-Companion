@@ -16,6 +16,7 @@ import 'package:sports_scope_companion/recording/gps_source.dart';
 import 'package:sports_scope_companion/recording/ride_recorder.dart';
 import 'package:sports_scope_companion/recording/ride_store.dart';
 import 'package:sports_scope_companion/recording/track_point.dart';
+import 'package:sports_scope_companion/ride/battery_status.dart';
 import 'package:sports_scope_companion/ride/nav_state.dart';
 import 'package:sports_scope_companion/ride/pages/dashboard_page.dart';
 import 'package:sports_scope_companion/training/training_budget.dart';
@@ -173,6 +174,7 @@ void main() {
             cells: cells,
           ),
           sources: sources,
+          battery: ValueNotifier<List<BatteryStatus>>(const []),
           onGridMeasured: onGridMeasured,
         ),
       ),
@@ -331,6 +333,7 @@ void main() {
             ],
           ),
           sources: sources,
+          battery: ValueNotifier<List<BatteryStatus>>(const []),
         ),
       ),
     );

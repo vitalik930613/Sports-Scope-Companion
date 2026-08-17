@@ -12,6 +12,7 @@ import '../ble/samples.dart';
 import '../ble/sensor_hub.dart';
 import '../dashboard/metric_id.dart';
 import '../dashboard/ride_preset.dart';
+import '../devices/known_devices_store.dart';
 import '../navigation/navigation_picker_sheet.dart';
 import '../navigation/navigation_target.dart';
 import '../navigation/route_catalog_store.dart';
@@ -21,6 +22,9 @@ import '../recording/ride_recorder.dart';
 import '../ui/offline_download_dialog.dart';
 import '../ui/power_calibration_dialog.dart';
 import 'auto_return_policy.dart';
+import 'battery_alert_sound.dart';
+import 'battery_status.dart';
+import 'battery_wake_policy.dart';
 import 'blocks/bell_player.dart';
 import 'climb_debug_data.dart';
 import 'climb_profile.dart';
@@ -38,6 +42,7 @@ import 'route_climbs.dart';
 import 'route_profile.dart';
 import 'screen_policy.dart';
 import 'turn_proximity.dart';
+import 'widgets/battery_alert_banner.dart';
 import 'widgets/climb_badge.dart';
 import 'widgets/compass_badge.dart';
 import 'widgets/climb_profile_overlay.dart';
@@ -81,6 +86,7 @@ class RideShellPage extends StatefulWidget {
     required this.target,
     required this.preset,
     required this.hub,
+    required this.devices,
     required this.recorder,
     this.compass,
     required this.session,
@@ -99,6 +105,11 @@ class RideShellPage extends StatefulWidget {
   final RidePreset preset;
 
   final SensorHub hub;
+
+  /// Les appareils appairés, pour construire la rangée de batteries — même
+  /// magasin que l'accueil (`SensorStatusStrip`), source des lignes du bloc
+  /// `battery` (voir `BatteryStatusNotifier`).
+  final KnownDevicesStore devices;
 
   /// Les itinéraires du compte, pour en choisir un autre en pleine sortie. Le
   /// même magasin que l'écran des capteurs : son cache est ce qui rend le choix
@@ -395,6 +406,23 @@ class _RideShellPageState extends State<RideShellPage>
   /// veille ensuite.
   late final RadarWakePolicy _radarWake;
 
+  /// La batterie de chaque appareil connu, et sa voix — mêmes principes que
+  /// le radar, mais jamais coupée par le profil (voir
+  /// `SensorSettings.allows(SensorKind.battery)`).
+  late final BatteryStatusNotifier _battery;
+  final _batteryVoice = BatteryAlertVoice();
+  final _batterySound = BatteryAlertPlayer();
+
+  /// Ce qui décide de rallumer l'écran pour une alerte batterie, et de le
+  /// rendre à la veille ensuite — impulsion plutôt qu'état continu, voir
+  /// `BatteryWakePolicy`.
+  late final BatteryWakePolicy _batteryWake;
+
+  /// Les appareils à nommer dans le bandeau d'alerte, vide = rien à montrer.
+  /// Partage l'horloge de [_batteryWake] : pas de minuteur séparé pour le
+  /// bandeau, voir `_updateBatteryWake`.
+  final _batteryAlert = ValueNotifier<List<BatteryStatus>>(const []);
+
   late final MetricSources _sources;
 
   /// Construit une fois : un changement de page ne doit pas reconstruire l'arbre
@@ -423,6 +451,7 @@ class _RideShellPageState extends State<RideShellPage>
 
     _autoReturn = AutoReturnPolicy(mapPage: _mapPage);
     _radarWake = RadarWakePolicy(hold: _preset.radar.wakeHold);
+    _batteryWake = BatteryWakePolicy();
 
     _mutedRadar = ValueNotifier<RadarSample?>(null);
     _radar = RadarViewNotifier(
@@ -436,6 +465,14 @@ class _RideShellPageState extends State<RideShellPage>
     if (_preset.radar.sounds && _preset.sensors.radar) {
       unawaited(_radarSound.warmUp());
     }
+
+    _battery = BatteryStatusNotifier(
+      widget.devices,
+      widget.hub,
+      thresholdPercent: _preset.battery.thresholdPercent,
+    );
+    _battery.addListener(_onBatteryStatus);
+    if (_preset.battery.sounds) unawaited(_batterySound.warmUp());
 
     // Même garde que pour le radar : un profil qui écarte le Di2 (vélo prêté,
     // boîtier de l'autre vélo) ne doit pas laisser ses boutons piloter le
@@ -497,6 +534,7 @@ class _RideShellPageState extends State<RideShellPage>
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       _decideReturn();
       _updateRadarWake();
+      _updateBatteryWake();
       _checkNativeTurnAlert();
       _updateConditionalPages();
       // Boutons distants : voir `_buttonTick`, plus rapide, pour
@@ -559,6 +597,38 @@ class _RideShellPageState extends State<RideShellPage>
     if (!changed) return;
 
     _applyScreen(_screenPolicy.radarAwake(_radarWake.awake));
+  }
+
+  /// Une batterie vient de franchir le seuil du profil à la baisse : y a-t-il
+  /// quelque chose à dire, et quelque chose à montrer ?
+  void _onBatteryStatus() {
+    final lowered = _batteryVoice.read(_battery.value);
+    if (lowered.isEmpty) return;
+
+    // Un seul son même si plusieurs appareils franchissent le seuil au même
+    // tic — pas une cacophonie au démarrage.
+    if (_preset.battery.sounds) _batterySound.play();
+
+    _batteryAlert.value = lowered;
+    // `trigger` rend vrai seulement sur le front veille → réveil : une
+    // deuxième alerte pendant le maintien prolonge le réveil sans le
+    // redemander à `ScreenPolicy`.
+    if (_batteryWake.trigger(DateTime.now())) {
+      _applyScreen(_screenPolicy.batteryAwake(true));
+    }
+  }
+
+  /// Referme le réveil batterie une fois le maintien passé, et vide le
+  /// bandeau avec lui : les deux partagent la même horloge, pas de minuteur
+  /// séparé pour l'un ou l'autre.
+  void _updateBatteryWake() {
+    if (!mounted) return;
+
+    final changed = _batteryWake.update(DateTime.now());
+    if (!changed) return;
+
+    _applyScreen(_screenPolicy.batteryAwake(_batteryWake.awake));
+    _batteryAlert.value = const [];
   }
 
   /// Faut-il ramener le cycliste sur la carte, ou lui rendre sa page ?
@@ -1255,6 +1325,10 @@ class _RideShellPageState extends State<RideShellPage>
     _radar.dispose();
     _mutedRadar.dispose();
     _radarSound.dispose();
+    _battery.removeListener(_onBatteryStatus);
+    _battery.dispose();
+    _batterySound.dispose();
+    _batteryAlert.dispose();
     unawaited(_nativeTurnSound.dispose());
     // Filet de sécurité : quitter la navigation en veille (bouton retour, page
     // qui plante) ne doit pas laisser l'appareil à 1 % de luminosité.
@@ -1374,6 +1448,7 @@ class _RideShellPageState extends State<RideShellPage>
                   page: _menuPages[index],
                   sources: _sources,
                   radar: _preset.sensors.radar ? _radar : null,
+                  battery: _battery,
                   // Ni liste de pages ni menu d'actions : on referme pour
                   // retrouver ceux de la page d'où l'on vient — `onClose`
                   // l'emporte sur `_actionsMenu()` dans `DashboardPage._header`,
@@ -1596,6 +1671,23 @@ class _RideShellPageState extends State<RideShellPage>
                       RadarFrame(severity: radar.severity),
                 ),
               ),
+            // Le bandeau de batterie faible : au sommet de la pile, visible
+            // quelle que soit la page (contrairement au réveil radar, qui n'a
+            // de sens que sous le voile de la carte) et même par-dessus le
+            // cadre d'alerte radar. Pure information, aucun geste à voler —
+            // voir `BatteryAlertBanner`.
+            Positioned(
+              key: const ValueKey('alerte-batterie'),
+              top: 0,
+              left: 0,
+              right: 0,
+              child: ValueListenableBuilder<List<BatteryStatus>>(
+                valueListenable: _batteryAlert,
+                builder: (context, devices, _) => devices.isEmpty
+                    ? const SizedBox.shrink()
+                    : BatteryAlertBanner(devices: devices),
+              ),
+            ),
           ],
         ),
       ),
@@ -1614,6 +1706,7 @@ class _RideShellPageState extends State<RideShellPage>
       page: page,
       sources: _sources,
       radar: _preset.sensors.radar ? _radar : null,
+      battery: _battery,
       // Les pages rangées derrière le menu se retrouvent depuis n'importe
       // laquelle : elles n'appartiennent à aucune en particulier.
       menuPages: _menuPages,

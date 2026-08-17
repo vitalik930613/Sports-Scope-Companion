@@ -105,6 +105,11 @@ sealed class DashboardBlock {
           color: color,
           textColor: textColor,
         ),
+      'battery' => BatteryBlock(
+          mode: _modeOf(raw['mode'], BatteryMode.values),
+          color: color,
+          textColor: textColor,
+        ),
       'precip_radar' => PrecipRadarBlock(color: color, textColor: textColor),
       'precip_forecast' => PrecipForecastBlock(color: color, textColor: textColor),
       'weather_forecast' => WeatherForecastBlock(color: color, textColor: textColor),
@@ -1144,6 +1149,43 @@ enum RadarMode with BlockMode {
   gauge('gauge');
 
   const RadarMode(this.key);
+
+  @override
+  final String key;
+}
+
+/// L'état des batteries des capteurs BLE connus. Jamais coupé par le profil
+/// (voir `SensorSettings.allows`) : pas de branche « profil éteint » à
+/// dessiner, contrairement à [RadarBlock].
+class BatteryBlock extends DashboardBlock {
+  const BatteryBlock({
+    this.mode = BatteryMode.list,
+    super.color,
+    super.textColor,
+  });
+
+  final BatteryMode mode;
+
+  @override
+  bool operator ==(Object other) =>
+      other is BatteryBlock &&
+      other.mode == mode &&
+      other.color == color &&
+      other.textColor == textColor;
+
+  @override
+  int get hashCode => Object.hash(mode, color, textColor);
+}
+
+enum BatteryMode with BlockMode {
+  /// Une ligne par appareil connu — icône, libellé, pourcentage.
+  list('list'),
+
+  /// Le pire pourcentage connu, un seul chiffre : pour la case qui n'a pas la
+  /// place d'en lister plusieurs.
+  compact('compact');
+
+  const BatteryMode(this.key);
 
   @override
   final String key;

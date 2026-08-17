@@ -15,6 +15,7 @@ import 'package:sports_scope_companion/recording/track_point.dart';
 import 'package:sports_scope_companion/dashboard/dashboard_block.dart';
 import 'package:sports_scope_companion/dashboard/metric_id.dart';
 import 'package:sports_scope_companion/dashboard/ride_preset.dart';
+import 'package:sports_scope_companion/ride/battery_status.dart';
 import 'package:sports_scope_companion/ride/nav_state.dart';
 import 'package:sports_scope_companion/ride/pages/dashboard_page.dart';
 import 'package:sports_scope_companion/ui/zone_colors.dart';
@@ -115,6 +116,7 @@ void main() {
           home: DashboardPage(
             page: effortPage,
             sources: sources,
+            battery: ValueNotifier<List<BatteryStatus>>(const []),
             menuPages: menuPages,
             onOpenMenuPage: onOpenMenuPage,
             onClose: onClose,

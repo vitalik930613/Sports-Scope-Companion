@@ -499,6 +499,10 @@ class RideRecorder extends ChangeNotifier {
       case RemoteButtonSample():
         // Un geste sur le tableau de bord, pas une mesure de la sortie.
         break;
+      case BatterySample():
+        // L'état d'un capteur, pas une mesure de la sortie — voir
+        // `BatteryStatusNotifier`.
+        break;
     }
   }
 

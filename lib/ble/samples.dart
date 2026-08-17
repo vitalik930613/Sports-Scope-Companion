@@ -55,6 +55,18 @@ class GearSample extends SensorSample {
   final Di2Gears gears;
 }
 
+/// Le niveau de la pile du capteur qui l'a émis (Battery Level, 0x2A19).
+///
+/// Pas un scalaire agrégé au niveau du hub comme `latestHeartRate` : la
+/// batterie est une donnée *par appareil*, plusieurs capteurs pouvant en
+/// publier une chacun. Voir `BatteryStatusNotifier` (`lib/ride/battery_status.dart`).
+class BatterySample extends SensorSample {
+  const BatterySample(super.at, this.percent);
+
+  /// 0 à 100.
+  final int percent;
+}
+
 /// Les quatre canaux du D-Fly (satellites/sprinter) du Di2, characteristic
 /// `0x2AC2` — voir `decoders/di2_buttons.dart`. Seuls 1 et 2 sont câblés sur
 /// le matériel testé jusqu'ici ; 3 et 4 suivent le même format, confirmé en

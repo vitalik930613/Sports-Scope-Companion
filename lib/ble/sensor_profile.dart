@@ -8,7 +8,7 @@ import 'sensor_uuids.dart';
 /// C'est la granularité utile partout ailleurs : un même boîtier peut porter
 /// plusieurs profils (un capteur de puissance publie souvent la cadence), et
 /// c'est ce qu'on retient d'un appareil connu — pas son modèle commercial.
-enum SensorKind { heartRate, power, speedCadence, gears, radar }
+enum SensorKind { heartRate, power, speedCadence, gears, radar, battery }
 
 /// Un profil relie une capacité à ce qu'il faut lire en GATT pour l'obtenir.
 ///
@@ -86,6 +86,17 @@ final sensorProfiles = <SensorProfile>[
     service: BleServices.variaRadar,
     characteristic: BleCharacteristics.variaThreats,
     decoder: VariaRadarCharacteristic.new,
+  ),
+  // Service standard du Bluetooth SIG : n'importe quel appareil qui l'expose
+  // (beaucoup de ceintures cardio, le D-Fly du Di2) le rejoint automatiquement
+  // sans rien y connaître de particulier. Un appareil qui ne l'expose pas
+  // n'obtient simplement jamais cette capacité — affiché « — », pas une panne.
+  SensorProfile(
+    kind: SensorKind.battery,
+    label: 'Batterie',
+    service: BleServices.battery,
+    characteristic: BleCharacteristics.batteryLevel,
+    decoder: BatteryCharacteristic.new,
   ),
 ];
 
