@@ -289,23 +289,34 @@ class _RideShellPageState extends State<RideShellPage>
   /// la pente ne changent plus vite que la seconde qui sépare deux tics.
   Set<RidePageSpec> _activeConditional = const {};
 
-  /// Le défilement du moment : les pages toujours-défilantes, puis les pages
-  /// conditionnelles actives, **toujours en fin de liste**. Cet ordre est ce
-  /// qui garde [RidePreset.mapPageIndex] valable tel quel : une page qui
-  /// apparaît ou disparaît ici ne décale jamais la carte ni les pages qui la
-  /// précèdent.
+  /// Les pages du défilement rangées à la main, depuis leur propre menu ⋮
+  /// (« Masquer cette page », voir [_hidePage]). Un geste de l'instant, jamais
+  /// écrit sur le profil : reparti de zéro au prochain lancement, même sortie
+  /// ou non, [_baseRidePages] repart telles que le site les décrit.
+  Set<RidePageSpec> _manuallyHidden = const {};
+
+  /// Le défilement du moment : les pages toujours-défilantes non masquées à la
+  /// main, puis les pages conditionnelles actives, **toujours en fin de
+  /// liste**. Cet ordre garde la carte et les pages qui la précèdent à un
+  /// index stable tant que rien n'est masqué — [_mapPage] se recalcule quand
+  /// même à chaque accès, parce qu'une page masquée avant elle décale bel et
+  /// bien tout ce qui suit.
   List<RidePageSpec> get _ridePages => [
-        ..._baseRidePages,
+        for (final page in _baseRidePages)
+          if (!_manuallyHidden.contains(page)) page,
         for (final page in _conditionalPages)
           if (_activeConditional.contains(page)) page,
       ];
 
-  /// Les pages rangées derrière le menu du moment : les pages sans condition,
-  /// et les pages conditionnelles **inactives** — une page active est dans
-  /// [_ridePages], pas ici, elle n'a donc pas besoin d'être allée chercher.
+  /// Les pages rangées derrière le menu du moment : celles masquées à la main,
+  /// les pages sans condition, et les pages conditionnelles **inactives** —
+  /// une page active est dans [_ridePages], pas ici, elle n'a donc pas besoin
+  /// d'être allée chercher.
   List<RidePageSpec> get _menuPages => [
         for (final page in _baseMenuPages)
           if (!_conditionalPages.contains(page) || !_activeConditional.contains(page)) page,
+        for (final page in _baseRidePages)
+          if (_manuallyHidden.contains(page)) page,
       ];
 
   /// La page ouverte depuis le menu, index dans [_menuPages]. `null` la plupart
@@ -318,7 +329,18 @@ class _RideShellPageState extends State<RideShellPage>
   int get _page => pageOf(_rawPage, count: _pageCount);
 
   /// Où est la carte dans le défilement, `null` quand le profil n'en a pas.
-  int? get _mapPage => _preset.mapPageIndex;
+  ///
+  /// Recalculé sur [_ridePages] et non pris tel quel sur
+  /// [RidePreset.mapPageIndex] : une page masquée à la main avant la carte
+  /// (voir [_hidePage]) décale son index, contrairement aux pages
+  /// conditionnelles, toujours ajoutées en fin de liste.
+  int? get _mapPage {
+    final pages = _ridePages;
+    for (var i = 0; i < pages.length; i++) {
+      if (pages[i] is MapPageSpec) return i;
+    }
+    return null;
+  }
 
   /// La carte est-elle sous les yeux ?
   ///
@@ -336,7 +358,12 @@ class _RideShellPageState extends State<RideShellPage>
 
   /// Le retour automatique sur la carte, et la restitution de la page ensuite.
   final _alerts = RideAlertSource();
-  late final AutoReturnPolicy _autoReturn;
+  // Pas `final` : [_hidePage]/[_showPage] la reconstruisent quand masquer une
+  // page décale l'index de la carte, `mapPage` n'ayant pas d'autre façon
+  // d'être corrigé après coup. Le rare vol d'alerte en cours à cet instant
+  // précis se contente de reperdre la page qu'il devait rendre — un geste
+  // volontaire du menu, jamais aussi pressant qu'un virage.
+  late AutoReturnPolicy _autoReturn;
   static const _proximity = TurnProximity();
 
   /// Filet natif de virages, voir `native_turn_alerts.dart`. `null` tant que le
@@ -747,11 +774,18 @@ class _RideShellPageState extends State<RideShellPage>
       return;
     }
 
+    _reanchorOn(currentSpec);
+  }
+
+  /// Retrouve [currentSpec] dans le défilement qui vient de changer de forme
+  /// (condition qui bascule, page masquée ou remise à la main) et corrige
+  /// l'index brut en conséquence — sans la moindre animation, puisque rien ne
+  /// doit bouger à l'écran pour une page qui n'a pas bougé. Si la page
+  /// regardée vient au contraire de disparaître du défilement, retour à la
+  /// carte, comme tout autre retour automatique.
+  void _reanchorOn(RidePageSpec? currentSpec) {
     final keepIndex = currentSpec == null ? -1 : _ridePages.indexOf(currentSpec);
     if (keepIndex != -1) {
-      // La page regardée existe encore : on ne fait que corriger l'index brut
-      // pour la nouvelle taille du catalogue, sans la moindre animation — rien
-      // ne doit bouger à l'écran.
       final raw = rawPageFor(keepIndex, from: _rawPage, count: _pageCount);
       if (raw != _rawPage && _pages.hasClients) {
         // Marquée `auto` comme `_animateTo` : c'est une correction d'index
@@ -764,10 +798,55 @@ class _RideShellPageState extends State<RideShellPage>
       return;
     }
 
-    // La page regardée vient de disparaître du défilement (sa condition a
-    // cessé pendant qu'on la lisait) : retour à la carte, comme tout autre
-    // retour automatique.
     _goToPage(_mapPage ?? 0, auto: true);
+  }
+
+  /// « Masquer cette page », depuis le menu ⋮ de [page] elle-même — voir
+  /// `DashboardPage.onHidePage`. Range [page] derrière le menu pour la durée
+  /// de la sortie, exactement comme si le site l'y avait mise, mais sans
+  /// toucher au profil ni à rien qui survive au prochain lancement.
+  ///
+  /// Refusé quand [page] est la dernière page hors carte du défilement — même
+  /// garde que `RidePreset._promotedPage` côté profil : une sortie ne doit
+  /// jamais se retrouver sans aucune page à faire défiler.
+  void _hidePage(RidePageSpec page) {
+    if (!_canHide(page)) return;
+
+    _setMenuPage(null);
+    final currentSpec = _pageCount > 0 ? _ridePages[_page] : null;
+
+    setState(() => _manuallyHidden = {..._manuallyHidden, page});
+    // La carte a pu décaler : voir la note sur [_autoReturn].
+    _autoReturn = AutoReturnPolicy(
+      mapPage: _mapPage,
+      holdAfterClear: _autoReturn.holdAfterClear,
+    );
+
+    _reanchorOn(currentSpec);
+  }
+
+  /// L'inverse de [_hidePage], depuis le menu ⋮ de la page ouverte — voir
+  /// `DashboardPage.onShowPage`. Rejoint aussitôt le défilement sur [page],
+  /// plutôt que de la laisser réapparaître dans un coin qu'on ne regarde pas :
+  /// c'est justement pour la regarder qu'on vient de l'aller chercher.
+  void _showPage(RidePageSpec page) {
+    _setMenuPage(null);
+    setState(() => _manuallyHidden = {..._manuallyHidden}..remove(page));
+    // La carte a pu décaler : voir la note sur [_autoReturn].
+    _autoReturn = AutoReturnPolicy(
+      mapPage: _mapPage,
+      holdAfterClear: _autoReturn.holdAfterClear,
+    );
+
+    _goToPage(_ridePages.indexOf(page), auto: true);
+  }
+
+  /// [page] peut-elle rejoindre le menu sans vider le défilement de toute page
+  /// hors carte ? Recalculée à chaque appel plutôt que mise en cache : c'est
+  /// la seule façon de suivre ce que [_manuallyHidden] contient déjà.
+  bool _canHide(RidePageSpec page) {
+    final remaining = _ridePages.where((p) => !identical(p, page));
+    return remaining.any((p) => p is! MapPageSpec);
   }
 
   bool _conditionMet(PageMenuCondition condition) => switch (condition) {
@@ -1365,6 +1444,12 @@ class _RideShellPageState extends State<RideShellPage>
   Widget build(BuildContext context) {
     final bandHeight = RideBottomBand.heightFor(context);
     final webView = _webView;
+    // Calculée ici et pas dans la liste des enfants du `Stack` : `Positioned`
+    // doit rester l'enfant direct du `Stack` pour valoir quelque chose, une
+    // `Builder` intercalée pour ne serait-ce que nommer cette page le
+    // dépositionnerait entièrement.
+    final menuPageIndex = _menuPage;
+    final openedMenuPage = menuPageIndex == null ? null : _menuPages[menuPageIndex];
 
     return PopScope(
       canPop: false,
@@ -1448,7 +1533,7 @@ class _RideShellPageState extends State<RideShellPage>
             // appartiennent à la coquille, et une route par-dessus les
             // emporterait tous. On consulte un bilan **pendant une sortie** —
             // une voiture qui remonte doit se voir de là comme d'ailleurs.
-            if (_menuPage case final index?)
+            if (openedMenuPage case final openedPage?)
               Positioned(
                 key: const ValueKey('menu'),
                 left: 0,
@@ -1456,7 +1541,7 @@ class _RideShellPageState extends State<RideShellPage>
                 top: 0,
                 bottom: bandHeight,
                 child: DashboardPage(
-                  page: _menuPages[index],
+                  page: openedPage,
                   sources: _sources,
                   radar: _preset.sensors.radar ? _radar : null,
                   battery: _battery,
@@ -1480,6 +1565,13 @@ class _RideShellPageState extends State<RideShellPage>
                   onCalibratePower:
                       powerCalibrationAvailable(widget.hub) ? _calibratePower : null,
                   onClose: () => _setMenuPage(null),
+                  // Seulement quand la page qu'on a ouverte a été rangée à la
+                  // main (`_hidePage`) : une page rangée par le site n'a pas
+                  // vocation à rejoindre le défilement d'un tap, c'est un
+                  // choix de l'éditeur, pas le nôtre.
+                  onShowPage: _manuallyHidden.contains(openedPage)
+                      ? () => _showPage(openedPage)
+                      : null,
                 ),
               ),
             // La page radar : le seul écran qui s'invite. Elle ne paraît que
@@ -1742,6 +1834,10 @@ class _RideShellPageState extends State<RideShellPage>
       onSimulateClimb: _toggleDebugClimb,
       onLeaveRide: _leaveRide,
       onGridMeasured: widget.onGridMeasured,
+      // Absente plutôt que grisée quand la retirer viderait le défilement de
+      // toute page hors carte — même convention que les autres commandes qui
+      // n'auraient que « non » à répondre (`onClearRoute`, `onDownloadOffline`).
+      onHidePage: _canHide(page) ? () => _hidePage(page) : null,
     );
   }
 

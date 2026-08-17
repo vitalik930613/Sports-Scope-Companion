@@ -65,6 +65,8 @@ class DashboardPage extends StatelessWidget {
     this.onSimulateClimb,
     this.onLeaveRide,
     this.onGridMeasured,
+    this.onHidePage,
+    this.onShowPage,
   });
 
   /// La description de la page. Jamais une [MapPageSpec] : la carte n'est pas
@@ -170,6 +172,19 @@ class DashboardPage extends StatelessWidget {
   /// en lignes et en colonnes, alors que ce qui décide de ce qu'un composant
   /// peut dessiner, ce sont des pixels.
   final ValueChanged<Size>? onGridMeasured;
+
+  /// « Masquer cette page » — la retire du défilement pour la ranger derrière
+  /// le menu, le temps de la sortie (voir `RideShellPage._hidePage`). Nul sur
+  /// une page déjà ouverte depuis le menu ([onClose] non nul, pas de menu
+  /// d'actions ici) ou quand la retirer viderait le défilement de toute page
+  /// hors carte — la coquille ne propose alors simplement pas la commande.
+  final VoidCallback? onHidePage;
+
+  /// L'inverse de [onHidePage] : remet cette page dans le défilement. Non nul
+  /// seulement quand la page ouverte ici a été masquée à la main — une page
+  /// rangée par le site depuis l'éditeur n'a pas vocation à en sortir d'un tap
+  /// dans l'appli.
+  final VoidCallback? onShowPage;
 
   @override
   Widget build(BuildContext context) {
@@ -470,21 +485,42 @@ class DashboardPage extends StatelessWidget {
         ),
         // Sur une page ouverte depuis le menu : la seule commande est d'en
         // sortir. Pas de menu d'actions par-dessus — on referme d'abord, et la
-        // page qu'on retrouve porte tout le reste.
-        if (onClose case final close?)
+        // page qu'on retrouve porte tout le reste. Seule exception, à côté du
+        // bouton fermer plutôt que dedans : remettre dans le défilement une
+        // page qu'on n'a rangée qu'à la main, puisque c'est justement pour la
+        // regarder qu'on vient de l'ouvrir depuis là.
+        if (onClose case final close?) ...[
+          if (onShowPage case final show?)
+            IconButton(
+              onPressed: show,
+              icon: const Icon(Icons.visibility_outlined, color: Colors.white70),
+              tooltip: 'Afficher dans le défilement',
+            ),
           IconButton(
             onPressed: close,
             icon: const Icon(Icons.close, color: Colors.white70),
             tooltip: 'Fermer',
-          )
-        else if (menuPages.isNotEmpty ||
-            onChooseRoute != null ||
-            onClearRoute != null ||
-            onDownloadOffline != null ||
-            onCalibratePower != null ||
-            onSimulateClimb != null ||
-            onLeaveRide != null)
-          _actionsMenu(),
+          ),
+        ] else ...[
+          // Son propre bouton, à côté du ⋮ et pas dedans : c'est le pendant
+          // direct d'« Afficher dans le défilement » ci-dessus, un geste
+          // aussi réversible d'un tap ne mérite pas d'être enterré dans le
+          // menu.
+          if (onHidePage case final hide?)
+            IconButton(
+              onPressed: hide,
+              icon: const Icon(Icons.visibility_off_outlined, color: Colors.white70),
+              tooltip: 'Masquer cette page',
+            ),
+          if (menuPages.isNotEmpty ||
+              onChooseRoute != null ||
+              onClearRoute != null ||
+              onDownloadOffline != null ||
+              onCalibratePower != null ||
+              onSimulateClimb != null ||
+              onLeaveRide != null)
+            _actionsMenu(),
+        ],
       ],
     );
   }
