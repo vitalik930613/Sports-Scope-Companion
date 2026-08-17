@@ -9,6 +9,7 @@ import '../blocks/climb_profile_block.dart';
 import '../blocks/lap_summary_block.dart';
 import '../blocks/mark_lap_block.dart';
 import '../blocks/metric_view.dart';
+import '../blocks/power_curve_block.dart';
 import '../blocks/zones_block.dart';
 import '../climb_profile.dart' show climbLapSeries;
 import '../route_climbs.dart';
@@ -220,6 +221,12 @@ class _LapListBodyState extends State<LapListBody> {
   /// `RideLap.climbId` — un col déjà grimpé garde ainsi son graphique après le
   /// sommet, quand on revient consulter le tour depuis cette page.
   ///
+  /// `PowerCurveBlock` se dessine ici comme sur une page de mesures (même
+  /// `PowerCurveCard`), mais `statsOverride: lap.stats` borne la courbe au
+  /// tour : `RideStats` la recalcule déjà en continu pour n'importe quelle
+  /// fenêtre, ce tour compris, pas besoin d'une variante « Lap » séparée
+  /// comme pour les zones ou les moyennes.
+  ///
   /// `MarkLapBlock` **fait exception** et se dessine comme partout ailleurs :
   /// c'est en consultant les tours qu'on a le plus de raisons d'en marquer un
   /// nouveau. Sa série (`markLap.series`) n'a par contre **aucun lien** avec
@@ -273,6 +280,14 @@ class _LapListBodyState extends State<LapListBody> {
           statsOverride: lap.stats,
           color: averages.color,
           textColor: averages.textColor,
+        ),
+      final PowerCurveBlock powerCurve => PowerCurveCard(
+          recorder: widget.sources.recorder,
+          riderProfile: widget.sources.riderProfile,
+          mode: powerCurve.mode,
+          statsOverride: lap.stats,
+          color: powerCurve.color,
+          textColor: powerCurve.textColor,
         ),
       final LapSummaryBlock summary => LapSummaryCard(
           lap: lap,

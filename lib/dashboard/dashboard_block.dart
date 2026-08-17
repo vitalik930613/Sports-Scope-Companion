@@ -900,9 +900,15 @@ class LapAveragesBlock extends DashboardBlock {
 }
 
 /// La courbe de puissance : la meilleure moyenne tenue depuis le départ, par
-/// durée (`RideStats.powerCurveW`) — 5 s à 90 min. Pas de variante « tour » :
-/// un tour dure rarement 90 minutes, et la question qu'on pose à cette courbe
-/// (« qu'ai-je de mieux tenu ») porte sur la sortie entière.
+/// durée (`RideStats.powerCurveW`) — 5 s à 90 min. Pas de classe « tour » à
+/// part, contrairement à [LapZonesBlock]/[LapAveragesBlock] : `RideStats` la
+/// calcule déjà en continu pour n'importe quelle fenêtre, `RideLap.stats` y
+/// compris, donc `LapListBody._block` la dessine avec le même
+/// `PowerCurveBlock`, borné au tour via `statsOverride`. Les durées plus
+/// longues que le tour restent simplement à `—` (voire tout le tableau, sur
+/// un tour très court) — la courbe répond alors à « qu'ai-je de mieux tenu
+/// *pendant ce tour* », une question différente de celle posée sur la sortie
+/// entière mais tout aussi lisible.
 class PowerCurveBlock extends DashboardBlock {
   const PowerCurveBlock({
     this.mode = PowerCurveMode.table,
