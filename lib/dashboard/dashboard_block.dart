@@ -120,6 +120,11 @@ sealed class DashboardBlock {
           color: color,
           textColor: textColor,
         ),
+      'power_curve' => PowerCurveBlock(
+          mode: _modeOf(raw['mode'], PowerCurveMode.values),
+          color: color,
+          textColor: textColor,
+        ),
       'climb_list' => ClimbListBlock(
           mode: _modeOf(raw['mode'], ClimbListMode.values),
           color: color,
@@ -722,6 +727,46 @@ class LapAveragesBlock extends DashboardBlock {
 
   @override
   int get hashCode => Object.hash(mode, color, textColor);
+}
+
+/// La courbe de puissance : la meilleure moyenne tenue depuis le départ, par
+/// durée (`RideStats.powerCurveW`) — 5 s à 90 min. Pas de variante « tour » :
+/// un tour dure rarement 90 minutes, et la question qu'on pose à cette courbe
+/// (« qu'ai-je de mieux tenu ») porte sur la sortie entière.
+class PowerCurveBlock extends DashboardBlock {
+  const PowerCurveBlock({
+    this.mode = PowerCurveMode.table,
+    super.color,
+    super.textColor,
+  });
+
+  final PowerCurveMode mode;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PowerCurveBlock &&
+      other.mode == mode &&
+      other.color == color &&
+      other.textColor == textColor;
+
+  @override
+  int get hashCode => Object.hash(mode, color, textColor);
+}
+
+enum PowerCurveMode with BlockMode {
+  /// Une ligne par durée, la meilleure moyenne à droite — ce qu'on relit à
+  /// l'arrêt, chiffre par chiffre. Mode par défaut : c'est lui qui reste
+  /// lisible même dans une case étroite ([StatCard] s'y réduit déjà).
+  table('table'),
+
+  /// La même courbe en graphique, durée en abscisse (échelle log — 5 s et
+  /// 90 min ne se lisent pas sur la même règle), puissance en ordonnée.
+  chart('chart');
+
+  const PowerCurveMode(this.key);
+
+  @override
+  final String key;
 }
 
 /// Le bilan du tour sélectionné : durée, distance, D+, calories, TSS — ce

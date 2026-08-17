@@ -17,6 +17,7 @@ import '../blocks/clock_block.dart';
 import '../blocks/mark_lap_block.dart';
 import '../blocks/metric_view.dart';
 import '../blocks/nav_state_block.dart';
+import '../blocks/power_curve_block.dart';
 import '../blocks/precip_forecast_block.dart';
 import '../blocks/precip_radar_block.dart';
 import '../blocks/weather_forecast_block.dart';
@@ -292,6 +293,13 @@ class DashboardPage extends StatelessWidget {
             mode: averages.mode,
             color: averages.color,
             textColor: averages.textColor,
+          ),
+        final PowerCurveBlock powerCurve => PowerCurveCard(
+            recorder: sources.recorder,
+            riderProfile: sources.riderProfile,
+            mode: powerCurve.mode,
+            color: powerCurve.color,
+            textColor: powerCurve.textColor,
           ),
         final RecordingBlock recording => RecordingControl(
             recorder: sources.recorder,

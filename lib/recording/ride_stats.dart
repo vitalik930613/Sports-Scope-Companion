@@ -145,6 +145,19 @@ class RideStats {
   final Map<int, int> hrHistogram = {};
   final Map<int, int> powerHistogram = {};
 
+  /// Les durées de la courbe de puissance, en secondes — mêmes bornes que les
+  /// compteurs du commerce (Garmin, TrainingPeaks) pour qu'un cycliste n'ait
+  /// pas à réapprendre une échelle.
+  static const powerCurveDurationsS = [
+    5, 15, 30, 60, 120, 300, 600, 1200, 1800, 3600, 5400,
+  ];
+
+  /// La meilleure moyenne de puissance vue depuis le départ, par durée —
+  /// durée → watts. Une entrée n'apparaît que si la sortie a couvert cette
+  /// durée-là ; `powerCurveDurationsS.last` (90 min) reste donc absente sur
+  /// une sortie plus courte.
+  final Map<int, int> powerCurveW = {};
+
   double distanceM = 0;
   double ascentM = 0;
   double descentM = 0;
@@ -257,6 +270,16 @@ class RideStats {
   int _npWindowSum = 0;
   double _npFourthSum = 0;
   int _npCount = 0;
+
+  // Courbe de puissance : une fenêtre glissante par durée de
+  // [powerCurveDurationsS], chacune avec sa propre somme courante — même
+  // principe que [_npWindow], répété une fois par durée.
+  final Map<int, Queue<int>> _powerCurveWindows = {
+    for (final duration in powerCurveDurationsS) duration: Queue<int>(),
+  };
+  final Map<int, int> _powerCurveSums = {
+    for (final duration in powerCurveDurationsS) duration: 0,
+  };
 
   /// Temps passé à avancer, arrêts exclus — le `total_moving_time` du `.fit`.
   ///
@@ -474,6 +497,7 @@ class RideStats {
       minPower = _min(minPower, power);
       _bucket(powerHistogram, power, powerBucketW);
       _addNormalized(power);
+      _addPowerCurve(power);
 
       // L'énergie se compte sur l'intervalle *réel*, pas sur une seconde
       // supposée : la capture peut prendre du retard, et un point sans
@@ -599,6 +623,27 @@ class RideStats {
     _npCount++;
   }
 
+  /// Range une puissance dans chaque fenêtre de la courbe, et retient la
+  /// meilleure moyenne dès qu'une fenêtre est pleine — un record qui ne
+  /// redescend jamais, comme sur un compteur du commerce : la question posée
+  /// est « qu'a-t-on tenu de mieux », pas « quelle est la moyenne courante ».
+  void _addPowerCurve(int power) {
+    for (final duration in powerCurveDurationsS) {
+      final window = _powerCurveWindows[duration]!;
+      window.addLast(power);
+      var sum = _powerCurveSums[duration]! + power;
+      if (window.length > duration) {
+        sum -= window.removeFirst();
+      }
+      _powerCurveSums[duration] = sum;
+      if (window.length < duration) continue;
+
+      final avg = (sum / duration).round();
+      final best = powerCurveW[duration];
+      if (best == null || avg > best) powerCurveW[duration] = avg;
+    }
+  }
+
   /// Remet tout à zéro pour une nouvelle sortie, sans réallouer.
   void reset() {
     distanceM = 0;
@@ -637,6 +682,13 @@ class RideStats {
     _npWindowSum = 0;
     _npFourthSum = 0;
     _npCount = 0;
+    for (final window in _powerCurveWindows.values) {
+      window.clear();
+    }
+    for (final duration in powerCurveDurationsS) {
+      _powerCurveSums[duration] = 0;
+    }
+    powerCurveW.clear();
     hrHistogram.clear();
     powerHistogram.clear();
     _gradeWindow.clear();
