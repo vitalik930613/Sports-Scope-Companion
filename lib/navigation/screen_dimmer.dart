@@ -53,4 +53,17 @@ class ScreenDimmer {
       debugPrint('[screen] luminosité ignorée : $e');
     }
   }
+
+  /// Empêche (ou laisse) l'écran s'éteindre tout seul, pour la fenêtre
+  /// courante seulement — Android l'oublie de lui-même dès que l'appli passe
+  /// en arrière-plan ou meurt, pas besoin d'un rappel explicite au retour.
+  Future<void> setKeepScreenOn(bool keepOn) async {
+    try {
+      await _channel.invokeMethod<void>('setKeepScreenOn', keepOn);
+    } on MissingPluginException {
+      // Rien à faire hors Android : l'écran suit son réglage habituel.
+    } catch (e) {
+      debugPrint('[screen] veille écran ignorée : $e');
+    }
+  }
 }

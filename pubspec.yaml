@@ -61,6 +61,16 @@ dependencies:
   # parle directement au `Vibrator` Android et donne accès à l'amplitude.
   vibration: ^3.2.0
 
+  # Carte interactive de la vue plein écran du radar de précipitations
+  # (precip_radar_block.dart) : zoom/pan qui recharge de vraies tuiles plus
+  # détaillées, pas un agrandissement optique d'une image figée. Pur Dart,
+  # aucun code natif — contrairement à google_maps_flutter/mapbox, pas de
+  # plateforme à configurer ni de clé à gérer. Seulement dans cette page
+  # plein écran, jamais dans une case de grille : une carte qui capte le
+  # geste d'un doigt entrerait en conflit avec le glissé qui change de page.
+  flutter_map: ^8.3.1
+  latlong2: ^0.10.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -23,6 +23,7 @@ class DashboardGrid extends StatelessWidget {
     required this.cols,
     required this.cells,
     required this.cellBuilder,
+    this.dividers = const [],
     this.onMeasured,
   });
 
@@ -30,6 +31,10 @@ class DashboardGrid extends StatelessWidget {
   final int cols;
   final List<GridCell> cells;
   final Widget Function(DashboardBlock block) cellBuilder;
+
+  /// Décoratifs, dessinés dans les gouttières — n'occupent jamais l'espace
+  /// d'une cellule, aucune incidence sur [gridRectsFor].
+  final List<GridDivider> dividers;
 
   /// La place que la grille vient d'avoir, une fois posée — voir
   /// `DashboardPage.onGridMeasured`, dont c'est le même contrat : le site
@@ -55,6 +60,15 @@ class DashboardGrid extends StatelessWidget {
 
           return Stack(
             children: [
+              // Peints avant les cellules : les deux ne se recouvrent jamais
+              // (les séparateurs vivent dans les gouttières, les cellules
+              // dedans), l'ordre n'a donc d'effet que sur des arrondis de
+              // calcul à la frontière, où le trait doit rester visible.
+              for (final divider in dividers)
+                Positioned.fromRect(
+                  rect: dividerRectFor(divider, rows: rows, cols: cols, size: size),
+                  child: ColoredBox(color: divider.color),
+                ),
               for (var i = 0; i < cells.length; i++)
                 Positioned.fromRect(
                   rect: rects[i],

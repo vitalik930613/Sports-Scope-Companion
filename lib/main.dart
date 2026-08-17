@@ -15,7 +15,9 @@ import 'dashboard/companion_settings_fetch.dart';
 import 'dashboard/companion_settings_store.dart';
 import 'dashboard/preset_picker.dart';
 import 'dashboard/ride_preset.dart';
+import 'devices/battery_status_card.dart';
 import 'devices/device_linker.dart';
+import 'devices/gatt_sniff_page.dart';
 import 'devices/known_devices_store.dart';
 import 'devices/sensor_status_strip.dart';
 import 'devices/sensors_page.dart';
@@ -24,8 +26,10 @@ import 'navigation/navigation_picker_sheet.dart';
 import 'navigation/navigation_target.dart';
 import 'navigation/route_catalog_fetch.dart';
 import 'navigation/route_catalog_store.dart';
+import 'phone/debug_log_page.dart';
 import 'phone/phone_sensors.dart';
 import 'phone/rider_compass.dart';
+import 'ride/battery_status.dart';
 import 'ride/climb_debug_page.dart';
 import 'ride/radar_debug_page.dart';
 import 'ride/ride_shell_page.dart';
@@ -210,6 +214,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
       _navigatorKey.currentContext,
       target: target,
       hub: _hub,
+      devices: widget.devices,
       recorder: _recorder,
       compass: _compass,
       session: widget.session,
@@ -271,6 +276,7 @@ Future<void> openNavigation(
   BuildContext? context, {
   required NavigationTarget target,
   required SensorHub hub,
+  required KnownDevicesStore devices,
   required RideRecorder recorder,
   required RiderCompass compass,
   required SiteSession session,
@@ -329,8 +335,13 @@ Future<void> openNavigation(
         target: target,
         preset: preset,
         hub: hub,
+        devices: devices,
         // La boussole ne sert qu'avec une carte, et le profil peut la couper.
         compass: preset.sensors.compass ? compass : null,
+        // Indépendant de la ligne ci-dessus : la batterie du téléphone n'a
+        // pas de réglage pour la couper (voir `RideShellPage.phone`), elle ne
+        // doit pas disparaître avec la boussole.
+        phone: compass.phone,
         recorder: recorder,
         session: session,
         riderProfile: riderProfile,
@@ -525,6 +536,20 @@ class _HomePageState extends State<HomePage> {
   var _adapterState = BluetoothAdapterState.unknown;
   StreamSubscription<BluetoothAdapterState>? _adapterSub;
 
+  /// Le seuil vient du profil actif au moment où l'accueil se construit —
+  /// pas recalculé si on change de profil sans relancer l'appli, même
+  /// simplification que le reste de cet écran (la liste de capteurs qu'un
+  /// profil garde, par exemple, ne se relit pas non plus en direct ici).
+  // Pas de `phone:` ici, volontairement : cette carte n'existe que si un
+  // capteur BLE est connu (voir la tête de `BatteryStatusCard`), et la
+  // batterie du téléphone se lit déjà dans la barre système de l'accueil —
+  // c'est en sortie, plein écran, qu'elle disparaît (voir `RideShellPage`).
+  late final _battery = BatteryStatusNotifier(
+    widget.devices,
+    widget.hub,
+    thresholdPercent: widget.settings.preset.battery.thresholdPercent,
+  );
+
   KnownDevicesStore get _devices => widget.devices;
   SensorHub get _hub => widget.hub;
   RideRecorder get _recorder => widget.recorder;
@@ -541,7 +566,11 @@ class _HomePageState extends State<HomePage> {
 
   void _openRides() {
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => RidesPage(store: widget.rides, recorder: _recorder),
+      builder: (_) => RidesPage(
+        store: widget.rides,
+        recorder: _recorder,
+        riderProfile: widget.riderProfile,
+      ),
     ));
   }
 
@@ -560,6 +589,24 @@ class _HomePageState extends State<HomePage> {
   void _openClimbDebug() {
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => const ClimbDebugPage(),
+    ));
+  }
+
+  /// Banc d'essai temporaire, le temps d'identifier la caractéristique D-Fly
+  /// des boutons Di2 — voir `devices/gatt_sniff_page.dart`.
+  void _openGattSniff() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => GattSniffPage(hub: _hub),
+    ));
+  }
+
+  /// Banc d'essai temporaire, le temps de vérifier en sortie la détection de
+  /// dérive de la boussole — voir `phone/debug_log_page.dart`. Utile en
+  /// particulier loin de tout `adb` : le journal reste lisible sur le
+  /// téléphone, et se copie pour être renvoyé une fois rentré.
+  void _openDebugLog() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => const DebugLogPage(),
     ));
   }
 
@@ -643,6 +690,7 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     widget.session.removeListener(_onSessionChanged);
     _adapterSub?.cancel();
+    _battery.dispose();
     // Le hub n'est pas fermé ici : il survit à cet écran.
     super.dispose();
   }
@@ -688,6 +736,7 @@ class _HomePageState extends State<HomePage> {
         context,
         target: target,
         hub: _hub,
+        devices: widget.devices,
         recorder: widget.recorder,
         compass: widget.compass,
         session: widget.session,
@@ -724,19 +773,47 @@ class _HomePageState extends State<HomePage> {
             tooltip: 'Mes sorties',
           ),
           IconButton(
-            onPressed: _openRadarSimulator,
-            icon: const Icon(Icons.radar),
-            tooltip: 'Simuler le radar',
-          ),
-          IconButton(
-            onPressed: _openClimbDebug,
-            icon: const Icon(Icons.landscape),
-            tooltip: 'Simuler un col',
-          ),
-          IconButton(
             onPressed: _openSensors,
             icon: const Icon(Icons.sensors),
             tooltip: 'Capteurs',
+          ),
+          // Bancs d'essai et journal : utiles en développement, pas au
+          // quotidien — regroupés pour ne pas noyer les boutons qu'on touche
+          // à chaque sortie (Compte, Mes sorties, Capteurs).
+          PopupMenuButton<VoidCallback>(
+            icon: const Icon(Icons.bug_report_outlined),
+            tooltip: 'Debug',
+            onSelected: (action) => action(),
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: _openRadarSimulator,
+                child: const ListTile(
+                  leading: Icon(Icons.radar),
+                  title: Text('Simuler le radar'),
+                ),
+              ),
+              PopupMenuItem(
+                value: _openClimbDebug,
+                child: const ListTile(
+                  leading: Icon(Icons.landscape),
+                  title: Text('Simuler un col'),
+                ),
+              ),
+              PopupMenuItem(
+                value: _openGattSniff,
+                child: const ListTile(
+                  leading: Icon(Icons.bug_report),
+                  title: Text('Sniff GATT (D-Fly)'),
+                ),
+              ),
+              PopupMenuItem(
+                value: _openDebugLog,
+                child: const ListTile(
+                  leading: Icon(Icons.terminal),
+                  title: Text('Journal'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -844,11 +921,19 @@ class _HomePageState extends State<HomePage> {
             onTap: _openSensors,
           ),
           const SizedBox(height: 12),
+          // Juste après : la rangée dit qui répond, cette carte dit combien
+          // il leur reste. Invisible tant qu'aucun capteur n'est connu — même
+          // geste (ouvrir la page Capteurs) que la rangée au-dessus, et pas de
+          // gap manuel autour d'elle pour la même raison que `UpdateCard` /
+          // `_thresholdsCard()` n'en ont pas : une carte parfois absente ne
+          // doit pas laisser un blanc à sa place.
+          BatteryStatusCard(battery: _battery, onTap: _openSensors),
           // L'enregistrement passe avant les valeurs en direct : c'est le geste
           // qu'on cherche avant de partir, les mesures ne sont qu'un contrôle.
           RecordingCard(
             recorder: _recorder,
             store: widget.rides,
+            riderProfile: widget.riderProfile,
             sensors: widget.settings.preset.sensors,
             lapSeries: widget.settings.preset.lapSeries,
           ),

@@ -1,19 +1,31 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import '../../dashboard/dashboard_block.dart';
 import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
+import '../battery_status.dart';
+import '../blocks/altitude_profile_block.dart';
 import '../blocks/averages_block.dart';
+import '../blocks/battery_block.dart';
 import '../blocks/change_route_block.dart';
 import '../blocks/clear_route_block.dart';
 import '../blocks/climb_list_block.dart';
+import '../blocks/climb_profile_block.dart';
+import '../blocks/clock_block.dart';
 import '../blocks/mark_lap_block.dart';
 import '../blocks/metric_view.dart';
 import '../blocks/nav_state_block.dart';
+import '../blocks/power_curve_block.dart';
+import '../blocks/precip_forecast_block.dart';
+import '../blocks/precip_radar_block.dart';
+import '../blocks/weather_forecast_block.dart';
 import '../blocks/radar_block.dart';
 import '../blocks/recording_block.dart';
 import '../blocks/route_block.dart';
+import '../blocks/bell_block.dart';
+import '../blocks/sleep_block.dart';
 import '../blocks/training_budget_block.dart';
 import '../blocks/zones_block.dart';
 import '../nav_state.dart';
@@ -39,11 +51,13 @@ class DashboardPage extends StatelessWidget {
     required this.page,
     required this.sources,
     this.radar,
+    required this.battery,
     this.menuPages = const [],
     this.onOpenMenuPage,
     this.onClose,
     this.onChooseRoute,
     this.onClearRoute,
+    this.onSleep,
     this.offlineMap,
     this.onDownloadOffline,
     this.onCalibratePower,
@@ -51,6 +65,8 @@ class DashboardPage extends StatelessWidget {
     this.onSimulateClimb,
     this.onLeaveRide,
     this.onGridMeasured,
+    this.onHidePage,
+    this.onShowPage,
   });
 
   /// La description de la page. Jamais une [MapPageSpec] : la carte n'est pas
@@ -61,6 +77,10 @@ class DashboardPage extends StatelessWidget {
 
   /// Nul quand le profil a coupé le radar.
   final ValueListenable<RadarView>? radar;
+
+  /// Jamais nul : contrairement au radar, la batterie n'est pas une capacité
+  /// que le profil peut couper (voir `SensorSettings.allows`).
+  final ValueListenable<List<BatteryStatus>> battery;
 
   /// Les pages que le profil range derrière le menu, dans son ordre.
   ///
@@ -92,6 +112,13 @@ class DashboardPage extends StatelessWidget {
   /// que pas de commande.
   final VoidCallback? onChooseRoute;
   final VoidCallback? onClearRoute;
+
+  /// Mettre la carte en veille depuis cette page de données — voir
+  /// `SleepBlock` et `NavigationWebController.requestSleep`.
+  ///
+  /// Nul sur un profil sans carte (voir `RideShellPage.onSleep`) : il n'y a
+  /// personne à endormir.
+  final VoidCallback? onSleep;
 
   /// Où en est la carte hors-ligne du tracé affiché, poussée par la page — voir
   /// `OfflineMapNotifier`. Le téléchargement lui-même reste entièrement côté
@@ -146,6 +173,19 @@ class DashboardPage extends StatelessWidget {
   /// peut dessiner, ce sont des pixels.
   final ValueChanged<Size>? onGridMeasured;
 
+  /// « Masquer cette page » — la retire du défilement pour la ranger derrière
+  /// le menu, le temps de la sortie (voir `RideShellPage._hidePage`). Nul sur
+  /// une page déjà ouverte depuis le menu ([onClose] non nul, pas de menu
+  /// d'actions ici) ou quand la retirer viderait le défilement de toute page
+  /// hors carte — la coquille ne propose alors simplement pas la commande.
+  final VoidCallback? onHidePage;
+
+  /// L'inverse de [onHidePage] : remet cette page dans le défilement. Non nul
+  /// seulement quand la page ouverte ici a été masquée à la main — une page
+  /// rangée par le site depuis l'éditeur n'a pas vocation à en sortir d'un tap
+  /// dans l'appli.
+  final VoidCallback? onShowPage;
+
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
@@ -173,20 +213,12 @@ class DashboardPage extends StatelessWidget {
         // La carte ne passe jamais par ici : la coquille la peint au fond de la
         // pile, et cette page-ci n'est même pas construite pour elle.
         MapPageSpec() => const SizedBox.shrink(),
-        final ListPageSpec list => ListView(
-            padding: const EdgeInsets.only(bottom: 24),
-            children: [
-              for (final block in list.blocks)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _block(block),
-                ),
-            ],
-          ),
+        final ListPageSpec list => _listBody(list),
         final GridPageSpec grid => DashboardGrid(
             rows: grid.rows,
             cols: grid.cols,
             cells: grid.cells,
+            dividers: grid.dividers,
             cellBuilder: _block,
             onMeasured: onGridMeasured,
           ),
@@ -197,6 +229,52 @@ class DashboardPage extends StatelessWidget {
           ),
       };
 
+  /// Une colonne (le cas courant), ou plusieurs côte à côte quand le profil
+  /// le demande.
+  ///
+  /// Toute la page défile d'un bloc, colonnes comprises : les faire défiler
+  /// chacune pour son compte ferait perdre le repère commun (« où en est
+  /// l'autre colonne ? ») à chaque glissé, et une liste n'a de toute façon pas
+  /// à tenir dans l'écran comme une grille.
+  Widget _listBody(ListPageSpec list) {
+    if (list.cols <= 1) {
+      return ListView(
+        padding: const EdgeInsets.only(bottom: 24),
+        children: [
+          for (final placement in list.blocks)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _block(placement.block),
+            ),
+        ],
+      );
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var col = 0; col < list.cols; col++) ...[
+            if (col > 0) const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                children: [
+                  for (final placement in list.blocks)
+                    if (placement.col == col)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _block(placement.block),
+                      ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   /// Le composant d'un bloc. `switch` exhaustif sur la hiérarchie scellée :
   /// ajouter un composant fait échouer la compilation ici, plutôt que de le
   /// laisser disparaître silencieusement de l'écran.
@@ -204,8 +282,10 @@ class DashboardPage extends StatelessWidget {
         final MetricBlock metric => MetricView(
             metric: metric.metric,
             sources: sources,
-            mode: metric.mode,
+            layout: metric.layout,
             format: metric.format,
+            icon: metric.icon,
+            label: metric.label,
             min: metric.min,
             max: metric.max,
             color: metric.color,
@@ -228,6 +308,13 @@ class DashboardPage extends StatelessWidget {
             mode: averages.mode,
             color: averages.color,
             textColor: averages.textColor,
+          ),
+        final PowerCurveBlock powerCurve => PowerCurveCard(
+            recorder: sources.recorder,
+            riderProfile: sources.riderProfile,
+            mode: powerCurve.mode,
+            color: powerCurve.color,
+            textColor: powerCurve.textColor,
           ),
         final RecordingBlock recording => RecordingControl(
             recorder: sources.recorder,
@@ -285,6 +372,28 @@ class DashboardPage extends StatelessWidget {
             mode: radarBlock.mode,
             color: radarBlock.color,
           ),
+        final BatteryBlock batteryBlock => BatteryBlockView(
+            battery: battery,
+            mode: batteryBlock.mode,
+            sensor: batteryBlock.sensor,
+            color: batteryBlock.color,
+            textColor: batteryBlock.textColor,
+          ),
+        final PrecipRadarBlock precip => PrecipRadarBlockView(
+            recorder: sources.recorder,
+            color: precip.color,
+            textColor: precip.textColor,
+          ),
+        final PrecipForecastBlock precipForecast => PrecipForecastBlockView(
+            recorder: sources.recorder,
+            color: precipForecast.color,
+            textColor: precipForecast.textColor,
+          ),
+        final WeatherForecastBlock weatherForecast => WeatherForecastBlockView(
+            recorder: sources.recorder,
+            color: weatherForecast.color,
+            textColor: weatherForecast.textColor,
+          ),
         final TrainingBudgetBlock budget => TrainingBudgetCard(
             budgets: sources.trainingBudget,
             recorder: sources.recorder,
@@ -299,6 +408,39 @@ class DashboardPage extends StatelessWidget {
             mode: climbs.mode,
             color: climbs.color,
             textColor: climbs.textColor,
+          ),
+        final ClimbProfileBlock climbProfile => ClimbProfileCard(
+            climbProfile: sources.climbProfile,
+            nav: sources.nav,
+            color: climbProfile.color,
+            textColor: climbProfile.textColor,
+          ),
+        final AltitudeProfileBlock altitudeProfile => AltitudeProfileCard(
+            routeProfile: sources.routeProfile,
+            nav: sources.nav,
+            recorder: sources.recorder,
+            windowKm: altitudeProfile.windowKm,
+            color: altitudeProfile.color,
+            textColor: altitudeProfile.textColor,
+          ),
+        final ClockBlock clock => ClockCard(
+            mode: clock.mode,
+            layout: clock.layout,
+            icon: clock.icon,
+            color: clock.color,
+            textColor: clock.textColor,
+          ),
+        final SleepBlock sleep => SleepControl(
+            onSleep: onSleep,
+            mode: sleep.mode,
+            color: sleep.color,
+            textColor: sleep.textColor,
+          ),
+        final BellBlock bell => BellControl(
+            mode: bell.mode,
+            sound: bell.sound,
+            color: bell.color,
+            textColor: bell.textColor,
           ),
         EmptyBlock() => const SizedBox.shrink(),
       };
@@ -320,6 +462,15 @@ class DashboardPage extends StatelessWidget {
   Widget _header() {
     return Row(
       children: [
+        // La même icône que celle du menu ⋮ — on l'a choisie pour repérer la
+        // page, autant qu'elle serve aussi une fois dessus et pas seulement
+        // avant d'y arriver. Même gris discret que le titre qu'elle précède,
+        // pour la même raison : on sait déjà sur quelle page on vient de
+        // glisser, elle ne fait que la nommer.
+        if (page.icon case final icon?) ...[
+          FaIcon(icon, size: 16, color: Colors.white70),
+          const SizedBox(width: 8),
+        ],
         Expanded(
           child: Text(
             page.title,
@@ -334,21 +485,42 @@ class DashboardPage extends StatelessWidget {
         ),
         // Sur une page ouverte depuis le menu : la seule commande est d'en
         // sortir. Pas de menu d'actions par-dessus — on referme d'abord, et la
-        // page qu'on retrouve porte tout le reste.
-        if (onClose case final close?)
+        // page qu'on retrouve porte tout le reste. Seule exception, à côté du
+        // bouton fermer plutôt que dedans : remettre dans le défilement une
+        // page qu'on n'a rangée qu'à la main, puisque c'est justement pour la
+        // regarder qu'on vient de l'ouvrir depuis là.
+        if (onClose case final close?) ...[
+          if (onShowPage case final show?)
+            IconButton(
+              onPressed: show,
+              icon: const Icon(Icons.visibility_outlined, color: Colors.white70),
+              tooltip: 'Afficher dans le défilement',
+            ),
           IconButton(
             onPressed: close,
             icon: const Icon(Icons.close, color: Colors.white70),
             tooltip: 'Fermer',
-          )
-        else if (menuPages.isNotEmpty ||
-            onChooseRoute != null ||
-            onClearRoute != null ||
-            onDownloadOffline != null ||
-            onCalibratePower != null ||
-            onSimulateClimb != null ||
-            onLeaveRide != null)
-          _actionsMenu(),
+          ),
+        ] else ...[
+          // Son propre bouton, à côté du ⋮ et pas dedans : c'est le pendant
+          // direct d'« Afficher dans le défilement » ci-dessus, un geste
+          // aussi réversible d'un tap ne mérite pas d'être enterré dans le
+          // menu.
+          if (onHidePage case final hide?)
+            IconButton(
+              onPressed: hide,
+              icon: const Icon(Icons.visibility_off_outlined, color: Colors.white70),
+              tooltip: 'Masquer cette page',
+            ),
+          if (menuPages.isNotEmpty ||
+              onChooseRoute != null ||
+              onClearRoute != null ||
+              onDownloadOffline != null ||
+              onCalibratePower != null ||
+              onSimulateClimb != null ||
+              onLeaveRide != null)
+            _actionsMenu(),
+        ],
       ],
     );
   }
@@ -399,14 +571,21 @@ class DashboardPage extends StatelessWidget {
                 value: () => open(index),
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(
-                    switch (menuPage) {
-                      GridPageSpec() => Icons.grid_view,
-                      LapListPageSpec(layout: LapGridLayout()) =>
-                        Icons.grid_view,
-                      _ => Icons.view_agenda_outlined,
-                    },
-                  ),
+                  // L'icône choisie dans l'éditeur l'emporte — c'est elle qui
+                  // laisse retrouver une page au coup d'œil quand plusieurs
+                  // partagent le même genre (deux grilles, par exemple).
+                  // Sans elle, on retombe sur l'icône déduite du genre, comme
+                  // avant ce réglage.
+                  leading: menuPage.icon != null
+                      ? FaIcon(menuPage.icon)
+                      : Icon(
+                          switch (menuPage) {
+                            GridPageSpec() => Icons.grid_view,
+                            LapListPageSpec(layout: LapGridLayout()) =>
+                              Icons.grid_view,
+                            _ => Icons.view_agenda_outlined,
+                          },
+                        ),
                   title: Text(menuPage.title),
                 ),
               ),

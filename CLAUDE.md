@@ -155,8 +155,25 @@ en mémoire — soit un rechargement complet en pleine sortie.
 
 | Sens | Mécanisme |
 |---|---|
-| appli → page | JavaScript injecté : `window.sportsScopeCompanion.push(…)`, `.setOccluded(…)` |
+| appli → page | JavaScript injecté : `window.sportsScopeCompanion.push(…)`, `.setOccluded(…)`, `.configureTraveledPath(…)` |
 | page → appli | canal `SportsScopeCompanion`, un JSON par message |
+
+`push()` porte, en plus des mesures de capteurs, une clé optionnelle
+`traveledPath: {points: [{lat, lng}], reset}` — le trajet réellement parcouru,
+tel qu'accumulé par `TraveledPathTracker` (`lib/navigation/traveled_path_tracker.dart`)
+à partir de `RideRecorder.lastFix`. Contrairement au reste de `push()`, ce n'est
+**pas** un instantané complet à chaque tic : seuls les points nouveaux depuis le
+dernier envoi partent, sous peine de réexpédier une sortie de plusieurs heures
+chaque seconde. `reset: true` (et alors `points` porte tout l'historique) marque
+les envois qui suivent un rechargement de page (`SensorBridge.notifyPageReloaded`,
+appelé sur `onPageFinished` et sur le message `ready` — jamais par un `pushNow()`
+ordinaire, qui n'a aucune raison de tout réexpédier pour un simple capteur qui se
+reconnecte). `.configureTraveledPath({color, width, opacity})` transporte le style
+du profil de sortie (`RidePreset.traveledPath`), envoyé une fois au démarrage du
+pont et re-envoyé avec chaque renvoi complet. Coordonnées en objets `{lat, lng}`
+nommés et non en tuple : GeoJSON attend `[lng, lat]`, l'inverse de l'ordre GPS
+habituel, et c'est côté Rails (le seul endroit qui construit le `LineString`)
+que se fait la conversion.
 
 Messages reçus, triés dans `_onPageMessage` (`ride_shell_page.dart`) :
 
@@ -271,7 +288,7 @@ dépôt Rails) rend un document : `presets[]`, chacun avec `pages[]`, `bands[]`,
 |---|---|
 | `map` | La carte du site. **Facultative et déplaçable comme les autres.** |
 | `grid` | `rows` × `cols`, chaque composant occupant un rectangle (`row_span`, `col_span`). **Ne défile pas** : elle se lit en roulant, tout doit tenir. |
-| `list` | La page qui défile — celle qu'on consulte à l'arrêt. |
+| `list` | La page qui défile — celle qu'on consulte à l'arrêt. Peut se répartir en 1 à 4 colonnes (`cols`), chaque bloc visant la sienne (`col`) ; contrairement à la grille, une colonne peut déborder verticalement. |
 
 Chaque composant porte un **`mode`** (`metric` : `big`/`compact`/`gauge`/`zone` ;
 `zones` : `bar`/`bar_only`/`legend` ; …), parce que le même contenu ne se dessine
@@ -296,9 +313,20 @@ garanties de `CompanionSettings.parse`, chacune gardée par un test :
    posé), une origine hors grille est rejetée (on ne devine pas où le cycliste
    voulait la mettre), et sur un recouvrement **la première posée gagne** —
    l'ordre du document, donc celui que l'éditeur affiche.
-5. **Bandes : 1 à 4 mesures**, au-delà on tronque.
-6. **Capteur non mentionné = capteur activé** (voir plus bas).
-7. Clés et modes inconnus **ignorés** : le site peut être plus récent que l'appli.
+5. **Liste : chaque bloc vise une colonne existante.** `cols` est borné à 4
+   (au-delà, une colonne devient trop étroite pour un composant lisible en
+   portrait — même borne que le bandeau) et la colonne d'un bloc est **ramenée**
+   dans cet intervalle plutôt que rejetée : contrairement à l'origine d'une
+   cellule de grille, il y a toujours une colonne la plus proche, et perdre un
+   composant entier pour un mauvais numéro de colonne serait pire qu'un
+   rangement approximatif. Une colonne peut déborder verticalement — c'est ce
+   qui distingue une liste d'une grille — et toute la page défile d'un bloc,
+   colonnes comprises : elles ne défilent jamais chacune pour son compte. Même
+   règle pour une page `laps` en liste défilante (`LapBlocksLayout`) : c'est
+   la même disposition, seule la série de tours change autour.
+6. **Bandes : 1 à 4 mesures**, au-delà on tronque.
+7. **Capteur non mentionné = capteur activé** (voir plus bas).
+8. Clés et modes inconnus **ignorés** : le site peut être plus récent que l'appli.
 
 Le menu d'actions, lui, **n'est pas configurable** et reste sur chaque page de
 données : c'est le seul chemin nommé pour sortir d'une sortie, et un profil mal
@@ -405,6 +433,83 @@ Quatre règles, chacune gardée par un test :
 connus font, pas ce qu'un profil demande ; y ajouter un quatrième état visuel
 ferait trois façons différentes d'être gris. L'exclusion se lit en toutes lettres
 dans la feuille de départ, à côté du nom du profil.
+
+## Les boutons du D-Fly (Di2)
+
+Trois étages, du signal radio au geste qui compte, chacun testable seul.
+
+1. **Décodage** (`ble/decoders/di2_buttons.dart`, `Di2ButtonChannels`) : le
+   D-Fly classe lui-même le geste dans le quartet haut du compteur de chaque
+   canal — `single`, `doubleClick`, `holdStart`/`holdContinue`/`holdEnd`. Rien
+   à deviner par un délai de silence, contrairement à un double-clic de souris.
+2. **Résolution** (`ride/di2_button_gesture_policy.dart`,
+   `Di2ButtonGesturePolicy`) : réduit ce classement à trois gestes —
+   `click`/`doubleClick`/`longPress` — résolus **instantanément** dans la
+   plupart des cas, puisque c'est déjà le D-Fly qui a tranché. `resolve()`,
+   piloté par un tic dédié (`RideShellPage._buttonTick`, plus rapide que celui
+   de la coquille), ne sert qu'en filet de sécurité : une trame de fin de
+   maintien perdue en route, ou un classement inconnu de cette version.
+3. **Répartition** (`_dispatchButtonGesture`/`_performButtonAction`,
+   `ride_shell_page.dart`) : le geste résolu, sur son canal, cherche son
+   action dans `RidePreset.buttons` (`ButtonSettings`, `dashboard/
+   ride_preset.dart`) et l'exécute — rien si le profil n'y a rien mis.
+
+### Les actions (`ButtonAction`, `dashboard/ride_preset.dart`)
+
+Un jeton de chaîne par action, pas un `enum` à plat : certaines portent un
+réglage (`RingBellAction.sound`, `GoToPageAction.pageKey`). `ButtonAction.
+parse` ne lève jamais et rend `null` sur un jeton absent ou inconnu de cette
+version — un geste sans action assignée, ou dont le site est plus récent que
+l'appli, ne fait simplement rien.
+
+`GoToPageAction` vise une page par sa **clé stable** (`RidePageSpec.key`),
+jamais par un index qui se décale au moindre réordonnancement du profil dans
+l'éditeur. Elle cherche d'abord dans le défilement, puis dans le menu ; sans
+effet si aucune page ne porte cette clé — profil réédité entre-temps, ou site
+plus ancien que ce réglage.
+
+`EnterSleepAction`/`ExitSleepAction` empruntent le même chemin que l'appui
+long/le tap sur la carte — `NavigationWebController.requestSleep`/
+`requestWake`, qui appellent `sleepEnter`/`sleepExit` côté pont
+(`companionBridge.ts`, dépôt Rails). Un site plus ancien que `sleepExit` (ou
+un profil sans carte, donc sans pont du tout) laisse le bouton sans effet,
+jamais une exception. `ToggleSleepAction` couvre les deux en un seul bouton —
+le cas courant, un bouton unique pour la veille plutôt que deux gestes ou deux
+canaux séparés. Elle ne porte aucune donnée : c'est `RideShellPage.
+_performButtonAction`, seul à connaître `ScreenPolicy.dimmed`, qui tranche
+entre `requestSleep`/`requestWake` au moment du geste. Pendant une alerte
+radar, `dimmed` retombe à faux le temps de l'alerte (l'écran se rallume) sans
+que la page ait renoncé à sa veille : le bouton rejoue alors une entrée en
+veille déjà demandée, sans effet côté site (`enter` s'y sait idempotent, voir
+`registerSleepHandlers` dans `RouteNavigation.vue`). `RingBellAction` ne
+rejoue pas le `BellPlayer` d'un
+`BellControl` posé sur le tableau de bord — un geste Di2 n'a pas de widget à
+lui, `RideShellPage` en garde une instance à part (`_buttonBell`).
+
+`ButtonSettings` couvre les quatre canaux, chacun avec ses trois gestes
+(`ButtonGestureActions`). **Absent vaut le comportement d'avant ce
+réglage** — canal 1 = page précédente au clic, canal 2 = page suivante au
+clic, rien sur 3 et 4 — pour qu'un document sans section `buttons` (site plus
+ancien, ou `RidePreset.builtIn`) ne change rien à l'existant.
+
+### Le site : des clés de page à générer
+
+`CompanionSettings` (dépôt Rails) assainit `buttons` avec la même règle que
+partout ailleurs dans ce document : **plus indulgent que l'appli, jamais
+moins**. Une clé de canal absente disparaît (`nil`, pas une structure creuse),
+et `go_to_page:<clé>` n'est gardé que si `<clé>` désigne une page qui existe
+réellement dans **ce profil-ci**, une fois assaini — sinon le bouton
+composerait un geste qui ne ferait jamais rien, sans qu'on le sache.
+
+C'est ce qui a demandé la seule pièce manquante côté site : les pages n'avaient
+jusque-là **aucune clé**. `CompanionSettings.page_key` en fabrique une au
+même titre que `unique_key` pour un profil (parameterize du titre, ou
+`page-N` de repli), mais **unique par profil seulement**, pas globalement — un
+bouton ne vise jamais une page d'un autre profil. Elle n'existe qu'une fois le
+document passé par l'assainisseur : une page tout juste ajoutée dans
+l'éditeur n'a donc pas encore de clé, et n'apparaît dans « Aller à… » qu'après
+un premier « Enregistrer » — l'éditeur le dit en toutes lettres plutôt que de
+laisser deviner pourquoi la page manque à l'appel.
 
 ## Le tableau de bord de sortie (`lib/ride/`)
 

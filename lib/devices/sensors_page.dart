@@ -145,6 +145,22 @@ class _SensorsPageState extends State<SensorsPage> {
     if (mounted) setState(() {});
   }
 
+  /// Un nom plus simple que ce que le capteur annonce lui-même — souvent une
+  /// suite de lettres et de chiffres. Disponible connecté ou non : c'est un
+  /// libellé qu'on choisit une fois pour toutes, pas un réglage de la
+  /// connexion en cours.
+  Future<void> _rename(KnownDevice known) async {
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => _RenameDialog(
+        initialName: known.name,
+        originalName: known.originalName,
+      ),
+    );
+    if (name == null) return; // annulé
+    await _devices.rename(known.remoteId, name);
+  }
+
   void _toast(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -278,17 +294,31 @@ class _SensorsPageState extends State<SensorsPage> {
         ),
         isThreeLine: true,
         trailing: PopupMenuButton<String>(
-          onSelected: (action) => switch (action) {
-            'forget' => _forget(known),
-            'auto' =>
-              _devices.setAutoConnect(known.remoteId, !known.autoConnect),
-            'connect' => _connect(
-                BluetoothDevice.fromId(known.remoteId),
-                label: known.name.isEmpty ? null : known.name,
-              ),
-            'calibrate' => showPowerCalibrationFor(context, connection),
-            _ => null,
-          },
+          // `onSelected` se déclenche pendant que la route du menu se referme
+          // encore (son animation de sortie n'est pas finie) : y ouvrir une
+          // autre route dans la foulée — notre boîte « Renommer » — plante
+          // Flutter (`_dependents.isEmpty is not true`, bug connu du
+          // framework, cf. flutter/flutter#127519 et consorts). Un cran de
+          // délai suffit à laisser la première route disparaître avant d'en
+          // pousser une seconde.
+          onSelected: (action) => Future.delayed(Duration.zero, () {
+            if (!mounted) return;
+            switch (action) {
+              case 'forget':
+                _forget(known);
+              case 'rename':
+                _rename(known);
+              case 'auto':
+                _devices.setAutoConnect(known.remoteId, !known.autoConnect);
+              case 'connect':
+                _connect(
+                  BluetoothDevice.fromId(known.remoteId),
+                  label: known.name.isEmpty ? null : known.name,
+                );
+              case 'calibrate':
+                showPowerCalibrationFor(context, connection);
+            }
+          }),
           itemBuilder: (context) => [
             if (connection == null)
               const PopupMenuItem(value: 'connect', child: Text('Connecter')),
@@ -300,6 +330,7 @@ class _SensorsPageState extends State<SensorsPage> {
                 status == SensorStatus.connected)
               const PopupMenuItem(
                   value: 'calibrate', child: Text('Calibrer la puissance')),
+            const PopupMenuItem(value: 'rename', child: Text('Renommer')),
             PopupMenuItem(
               value: 'auto',
               child: Text(known.autoConnect
@@ -373,9 +404,87 @@ class _SensorsPageState extends State<SensorsPage> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Text(
-        frame.hex,
+        '${_frameTime(frame.at)}  ${frame.hex}',
         style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
       ),
+    );
+  }
+
+  // Précision à la milliseconde : le seul moyen de voir, à l'œil, si un
+  // appui maintenu répète des trames ou n'en envoie qu'une — la question qui
+  // tranche si un « appui long » est détectable côté Di2 (voir
+  // `ble/decoders/di2_buttons.dart`).
+  String _frameTime(DateTime at) =>
+      '${at.hour.toString().padLeft(2, '0')}:'
+      '${at.minute.toString().padLeft(2, '0')}:'
+      '${at.second.toString().padLeft(2, '0')}.'
+      '${at.millisecond.toString().padLeft(3, '0')}';
+}
+
+/// La boîte de dialogue « Renommer », à part pour une seule raison : le
+/// `TextEditingController` doit se fermer sur le cycle de vie **du widget qui
+/// l'utilise**, pas sur celui de l'appelant. `await showDialog(...)` rend la
+/// main dès que la boîte se referme (`Navigator.pop`), mais elle reste montée
+/// et visible pendant son animation de sortie — un `dispose()` appelé juste
+/// après cet `await` désarme donc le contrôleur pendant que le `TextField`
+/// s'en sert encore le temps de l'animation (« A TextEditingController was
+/// used after being disposed »). Un `State.dispose()` propre, lui, n'arrive
+/// que lorsque le widget est réellement retiré de l'arbre.
+class _RenameDialog extends StatefulWidget {
+  const _RenameDialog({required this.initialName, required this.originalName});
+
+  final String initialName;
+
+  /// Ce que le capteur annonçait à sa toute première connexion — voir
+  /// `KnownDevice.originalName`. Sert seulement à l'indication sous le champ ;
+  /// c'est `KnownDevicesStore.rename` qui restaure réellement ce nom-là si le
+  /// champ est vidé.
+  final String originalName;
+
+  @override
+  State<_RenameDialog> createState() => _RenameDialogState();
+}
+
+class _RenameDialogState extends State<_RenameDialog> {
+  late final _controller = TextEditingController(text: widget.initialName);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Rien à dire si le nom courant est déjà l'original : vider le champ ne
+    // « restaurerait » alors rien de différent.
+    final helperText = widget.originalName.isNotEmpty &&
+            widget.originalName != widget.initialName
+        ? 'Laisser vide pour revenir à « ${widget.originalName} »'
+        : null;
+
+    return AlertDialog(
+      title: const Text('Renommer'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        decoration: InputDecoration(
+          hintText: 'Nom du capteur',
+          helperText: helperText,
+          helperMaxLines: 2,
+        ),
+        onSubmitted: (value) => Navigator.pop(context, value),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Annuler'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, _controller.text),
+          child: const Text('Enregistrer'),
+        ),
+      ],
     );
   }
 }

@@ -3,24 +3,29 @@ import 'package:flutter/services.dart';
 
 /// Ce que le téléphone sait mesurer de lui-même.
 ///
-/// Les trois capteurs sont facultatifs et le restent : le baromètre manque sur
+/// Les capteurs sont facultatifs et le restent : le baromètre manque sur
 /// une bonne part des appareils d'entrée de gamme, et rien de ce dossier ne doit
 /// cesser de fonctionner sans lui. D'où le `null` partout plutôt qu'une valeur
-/// par défaut — voir [PhoneSensorAvailability].
+/// par défaut — voir [PhoneSensorAvailability]. `battery` est toujours vrai en
+/// pratique (même un appareil sans batterie amovible répond à l'intent
+/// collant), mais gardé dans la structure par symétrie et jamais supposé côté
+/// Dart.
 class PhoneSensorAvailability {
   const PhoneSensorAvailability({
     this.pressure = false,
     this.light = false,
     this.heading = false,
+    this.battery = false,
   });
 
   final bool pressure;
   final bool light;
   final bool heading;
+  final bool battery;
 
   @override
   String toString() =>
-      'baromètre=$pressure lumière=$light boussole=$heading';
+      'baromètre=$pressure lumière=$light boussole=$heading batterie=$battery';
 }
 
 /// D'où viennent les mesures du téléphone.
@@ -45,6 +50,11 @@ abstract class PhoneSensors {
   /// Cap du téléphone, en degrés depuis le nord géographique (0 = nord).
   Stream<double> headingDeg();
 
+  /// Charge de la batterie du téléphone, en pourcentage (0-100). Un abonnement
+  /// rend tout de suite la dernière valeur connue (intent collant côté natif),
+  /// contrairement aux autres flux qui attendent un premier changement.
+  Stream<int> batteryPercent();
+
   /// Donne au natif la position courante, dont il tire la déclinaison
   /// magnétique. Sans elle, [headingDeg] rend un cap magnétique — juste à
   /// quelques degrés près chez nous, faux de quinze ailleurs.
@@ -64,6 +74,7 @@ class AndroidPhoneSensors implements PhoneSensors {
   static const _pressure = EventChannel('$_namespace/pressure');
   static const _light = EventChannel('$_namespace/light');
   static const _heading = EventChannel('$_namespace/heading');
+  static const _battery = EventChannel('$_namespace/battery');
 
   @override
   Future<PhoneSensorAvailability> available() async {
@@ -74,6 +85,7 @@ class AndroidPhoneSensors implements PhoneSensors {
         pressure: raw['pressure'] == true,
         light: raw['light'] == true,
         heading: raw['heading'] == true,
+        battery: raw['battery'] == true,
       );
     } catch (e) {
       // Canal absent : appareil non Android, ou test de widget sans moteur.
@@ -91,6 +103,13 @@ class AndroidPhoneSensors implements PhoneSensors {
 
   @override
   Stream<double> headingDeg() => _doubles(_heading, 'cap');
+
+  @override
+  Stream<int> batteryPercent() => _battery
+      .receiveBroadcastStream()
+      .where((raw) => raw is num)
+      .map((raw) => (raw as num).toInt())
+      .handleError((Object e) => debugPrint('[capteurs] batterie téléphone en erreur : $e'));
 
   @override
   Future<void> setLocation({

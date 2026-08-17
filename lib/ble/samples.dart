@@ -1,4 +1,5 @@
 import 'decoders/di2.dart';
+import 'decoders/di2_buttons.dart' show Di2ButtonPressKind;
 
 /// Une mesure horodatée issue d'un capteur.
 ///
@@ -52,6 +53,45 @@ class GearSample extends SensorSample {
   const GearSample(super.at, this.gears);
 
   final Di2Gears gears;
+}
+
+/// Le niveau de la pile du capteur qui l'a émis (Battery Level, 0x2A19).
+///
+/// Pas un scalaire agrégé au niveau du hub comme `latestHeartRate` : la
+/// batterie est une donnée *par appareil*, plusieurs capteurs pouvant en
+/// publier une chacun. Voir `BatteryStatusNotifier` (`lib/ride/battery_status.dart`).
+class BatterySample extends SensorSample {
+  const BatterySample(super.at, this.percent);
+
+  /// 0 à 100.
+  final int percent;
+}
+
+/// Les quatre canaux du D-Fly (satellites/sprinter) du Di2, characteristic
+/// `0x2AC2` — voir `decoders/di2_buttons.dart`. Seuls 1 et 2 sont câblés sur
+/// le matériel testé jusqu'ici ; 3 et 4 suivent le même format, confirmé en
+/// réassignant les deux mêmes boutons dessus côté E-Tube.
+///
+/// Le canal brut, pas une direction déjà décidée : depuis que le profil de
+/// sortie (`RidePreset.buttons`) peut assigner une action différente à
+/// chaque canal et à chaque geste (clic, double-clic, appui long), c'est lui
+/// qui porte la convention « canal 1 = page précédente, canal 2 = page
+/// suivante » — par défaut, pas par nécessité. Le décodeur ne doit plus rien
+/// en savoir.
+enum Di2ButtonChannel { one, two, three, four }
+
+/// Une pression sur un bouton distant.
+///
+/// [pressKind] est ce que le D-Fly classe lui-même dans l'octet du compteur
+/// (voir `decoders/di2_buttons.dart`) — `null` pour une valeur non reconnue,
+/// en pratique jamais observée. Le double-clic et l'appui long s'y lisent
+/// directement, instantanément : voir `Di2ButtonGesturePolicy` (`lib/ride/`)
+/// pour comment [RideShellPage] les distingue du clic simple.
+class RemoteButtonSample extends SensorSample {
+  const RemoteButtonSample(super.at, this.channel, this.pressKind);
+
+  final Di2ButtonChannel channel;
+  final Di2ButtonPressKind? pressKind;
 }
 
 /// Un véhicule détecté par le radar arrière.

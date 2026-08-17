@@ -97,3 +97,38 @@ class Di2Gears {
   @override
   String toString() => '$frontPosition × $rearPosition/$rearCount';
 }
+
+// Les boutons satellites/sprinter (D-Fly) notifient sur une characteristic
+// distincte de celle-ci, `0x2AC2` — voir `decoders/di2_buttons.dart`.
+
+// Batterie des cocottes (leviers sans fil, pile CR1632 — pas la batterie
+// principale du Di2, déjà lue via le Battery Service standard 0x2A19) :
+// cherchée par sniff GATT complet (table entière des caractéristiques,
+// lectures et écritures, capture HCI Bluetooth Android en mode « complet »
+// pour ne rien tronquer) puis par corrélation d'une capture avec deux
+// cocottes à niveaux connus (une quasi vide, une à 100 %) — sans succès.
+//
+// Ce qu'on sait : un service propriétaire distinct, `0x18FF` (même base
+// vendeur `SHIMANO_BLE`, caractéristiques `0x2AF3`-`0x2AFF`), porte un
+// protocole requête/réponse par appareil D-Fly — poignée de main sur
+// `0x2AF3`/`0x2AF4`, puis lecture de « registres » (écriture sur `0x2AFA`
+// ou `0x2AFE`, réponse en notification sur `0x2AF9`/`0x2AFD`) identifiés par
+// un octet d'appareil (`0x00`/`0x0D` pour les deux leviers de l'essai) et une
+// adresse. C'est ce protocole qu'utilise E-Tube derrière son bouton
+// « Rafraîchir l'état » — qui exige d'appuyer physiquement sur chaque
+// cocotte : la pile bouton ne répond que sur sollicitation, elle n'émet rien
+// spontanément. Un octet candidat (nibble bas d'un registre à l'adresse
+// `0x4118`) a semblé suivre l'écart de batterie sur un premier essai, puis
+// l'a contredit sur un second (voir historique de session) : pas assez fiable
+// pour un décodeur, laissé de côté plutôt que d'afficher un état faux.
+//
+// Aucune prior art publique trouvée non plus (recherche web, aucun projet
+// open source ne documente ce protocole au niveau octet — les seuls efforts
+// connus de rétro-ingénierie Di2 portent sur l'ANT+, jamais sur ce service
+// BLE propriétaire). L'ANT+ privé de Shimano (utilisé par les compteurs type
+// Garmin/Geoid) semble porter cette info directement — hors de portée du
+// téléphone, qui n'a pas de radio ANT+.
+//
+// Si quelqu'un reprend ce chantier : il faudrait soit la doc Shimano, soit
+// capturer plusieurs sessions à niveaux de batterie connus et bien espacés
+// (pas juste vide/pleine) pour distinguer un vrai signal du bruit de trame.

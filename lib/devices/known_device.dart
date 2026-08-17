@@ -11,15 +11,24 @@ class KnownDevice {
   const KnownDevice({
     required this.remoteId,
     required this.name,
+    String? originalName,
     this.kinds = const {},
     this.lastConnectedAt,
     this.autoConnect = true,
-  });
+  }) : originalName = originalName ?? name;
 
   /// Adresse MAC (Android) ou UUID (iOS). Stable pour un capteur donné.
   final String remoteId;
 
+  /// Le nom affiché, choisi par le cycliste (« Renommer ») ou, faute de mieux,
+  /// celui que l'appareil annonçait à sa première connexion.
   final String name;
+
+  /// Ce que l'appareil annonçait à sa toute première connexion, jamais
+  /// retouché ensuite — même quand un renommage se répète. C'est ce que
+  /// vider le champ de renommage restaure : « Assioma DUO » plutôt qu'une
+  /// suite de lettres qu'on avait fini par oublier être le nom d'origine.
+  final String originalName;
 
   /// Capacités constatées à la dernière connexion réussie.
   final Set<SensorKind> kinds;
@@ -33,6 +42,7 @@ class KnownDevice {
 
   KnownDevice copyWith({
     String? name,
+    String? originalName,
     Set<SensorKind>? kinds,
     DateTime? lastConnectedAt,
     bool? autoConnect,
@@ -40,6 +50,10 @@ class KnownDevice {
     return KnownDevice(
       remoteId: remoteId,
       name: name ?? this.name,
+      // Ne se substitue jamais tout seul à `name` ici — contrairement au
+      // constructeur, appelé une fois à la création : un renommage plus tard
+      // ne doit jamais faire bouger ce que ce champ garde.
+      originalName: originalName ?? this.originalName,
       kinds: kinds ?? this.kinds,
       lastConnectedAt: lastConnectedAt ?? this.lastConnectedAt,
       autoConnect: autoConnect ?? this.autoConnect,
@@ -49,6 +63,7 @@ class KnownDevice {
   Map<String, dynamic> toJson() => {
         'remoteId': remoteId,
         'name': name,
+        'originalName': originalName,
         'kinds': [for (final kind in kinds) kind.name],
         'lastConnectedAt': lastConnectedAt?.toIso8601String(),
         'autoConnect': autoConnect,
@@ -75,9 +90,16 @@ class KnownDevice {
     }
 
     final rawDate = json['lastConnectedAt'];
+    final name = json['name'] is String ? json['name'] as String : '';
     return KnownDevice(
       remoteId: remoteId,
-      name: json['name'] is String ? json['name'] as String : '',
+      name: name,
+      // Absent d'un fichier écrit avant ce champ : le nom courant est le
+      // meilleur candidat qu'on ait pour « l'original », faute d'avoir jamais
+      // gardé l'annonce BLE d'origine.
+      originalName: json['originalName'] is String
+          ? json['originalName'] as String
+          : name,
       kinds: kinds,
       lastConnectedAt:
           rawDate is String ? DateTime.tryParse(rawDate) : null,

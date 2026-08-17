@@ -8,7 +8,7 @@ import 'sensor_uuids.dart';
 /// C'est la granularité utile partout ailleurs : un même boîtier peut porter
 /// plusieurs profils (un capteur de puissance publie souvent la cadence), et
 /// c'est ce qu'on retient d'un appareil connu — pas son modèle commercial.
-enum SensorKind { heartRate, power, speedCadence, gears, radar }
+enum SensorKind { heartRate, power, speedCadence, gears, radar, battery }
 
 /// Un profil relie une capacité à ce qu'il faut lire en GATT pour l'obtenir.
 ///
@@ -67,12 +67,36 @@ final sensorProfiles = <SensorProfile>[
     characteristic: BleCharacteristics.di2Gears,
     decoder: Di2Characteristic.new,
   ),
+  // Même capacité que la position des vitesses, à dessein : désactiver
+  // « gears » dans un profil de sortie (vélo prêté, boîtier de l'autre vélo)
+  // doit aussi couper les boutons, pas seulement l'affichage du braquet. Un
+  // Di2 dont les canaux D-Fly ne sont pas configurés n'expose simplement pas
+  // cette characteristic — `_subscribeAll` s'en accommode déjà (voir
+  // `sensor_connection.dart`), rien de plus à faire ici.
+  SensorProfile(
+    kind: SensorKind.gears,
+    label: 'Boutons D-Fly (Di2)',
+    service: BleServices.di2,
+    characteristic: BleCharacteristics.di2Buttons,
+    decoder: Di2ButtonsCharacteristic.new,
+  ),
   SensorProfile(
     kind: SensorKind.radar,
     label: 'Radar',
     service: BleServices.variaRadar,
     characteristic: BleCharacteristics.variaThreats,
     decoder: VariaRadarCharacteristic.new,
+  ),
+  // Service standard du Bluetooth SIG : n'importe quel appareil qui l'expose
+  // (beaucoup de ceintures cardio, le D-Fly du Di2) le rejoint automatiquement
+  // sans rien y connaître de particulier. Un appareil qui ne l'expose pas
+  // n'obtient simplement jamais cette capacité — affiché « — », pas une panne.
+  SensorProfile(
+    kind: SensorKind.battery,
+    label: 'Batterie',
+    service: BleServices.battery,
+    characteristic: BleCharacteristics.batteryLevel,
+    decoder: BatteryCharacteristic.new,
   ),
 ];
 

@@ -1,24 +1,29 @@
 package ch.logicraft.sports.companion
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.hardware.GeomagneticField
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.os.BatteryManager
+import android.os.Build
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
 /**
- * Les capteurs du téléphone lui-même — baromètre, luminosité, boussole — offerts
- * à Dart en flux.
+ * Les capteurs du téléphone lui-même — baromètre, luminosité, boussole, batterie
+ * — offerts à Dart en flux.
  *
  * Pourquoi du natif plutôt qu'un paquet : `sensors_plus` ne couvre que la
  * centrale inertielle (ni pression, ni lumière), et les greffons qui exposent
  * les autres sont peu maintenus. Ce fichier est la totalité du code de
- * plateforme — trois abonnements à `SensorManager` — pour une dépendance de
- * moins au cœur de l'enregistrement.
+ * plateforme — trois abonnements à `SensorManager` plus un à la batterie —
+ * pour une dépendance de moins au cœur de l'enregistrement.
  *
  * Un flux par capteur, et non un canal unique porteur d'un type : chacun a sa
  * cadence propre (la boussole doit suivre un guidon qui tourne, la pression
@@ -26,7 +31,7 @@ import io.flutter.plugin.common.MethodChannel
  * qui permet de n'allumer le magnétomètre qu'en navigation, sans réveiller le
  * baromètre.
  */
-class PhoneSensors(context: Context, private val messenger: BinaryMessenger) {
+class PhoneSensors(private val context: Context, private val messenger: BinaryMessenger) {
 
     private val sensors = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
 
@@ -53,6 +58,12 @@ class PhoneSensors(context: Context, private val messenger: BinaryMessenger) {
                         // quand le téléphone est incliné sur une potence, et il
                         // absorbe les perturbations d'un cadre en acier.
                         "heading" to has(Sensor.TYPE_ROTATION_VECTOR),
+                        // Toujours vrai : même un appareil sans batterie amovible
+                        // (branché en continu) répond à l'intent collant avec une
+                        // charge simulée à 100 %. Gardé dans la carte quand même,
+                        // par symétrie avec les trois autres — jamais supposé côté
+                        // Dart.
+                        "battery" to true,
                     )
                 )
                 "setLocation" -> {
@@ -83,6 +94,8 @@ class PhoneSensors(context: Context, private val messenger: BinaryMessenger) {
         // franchissements de canal en pure perte.
         stream("$NAMESPACE/heading", Sensor.TYPE_ROTATION_VECTOR, SensorManager.SENSOR_DELAY_UI,
             minGapMs = 100, minDelta = 0.5f) { azimuthOf(it) }
+
+        batteryStream()
     }
 
     private fun has(type: Int): Boolean = sensors.getDefaultSensor(type) != null
@@ -168,6 +181,49 @@ class PhoneSensors(context: Context, private val messenger: BinaryMessenger) {
             override fun onCancel(arguments: Any?) {
                 listener?.let { sensors.unregisterListener(it) }
                 listener = null
+            }
+        })
+    }
+
+    /**
+     * Le pourcentage de charge du téléphone (0-100). Pas un capteur
+     * `SensorManager` : on écoute l'intent COLLANT `ACTION_BATTERY_CHANGED`, qui
+     * rend sa dernière valeur connue dès l'enregistrement — pas d'attente pour
+     * la première lecture, contrairement aux trois flux ci-dessus.
+     *
+     * Utile en particulier pendant une sortie : l'appli passe l'écran en plein
+     * immersif (barres système masquées), donc la pastille de batterie
+     * d'Android disparaît avec elles.
+     */
+    private fun batteryStream() {
+        EventChannel(messenger, "$NAMESPACE/battery").setStreamHandler(object : EventChannel.StreamHandler {
+            private var receiver: BroadcastReceiver? = null
+
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                val handler = object : BroadcastReceiver() {
+                    override fun onReceive(receiverContext: Context?, intent: Intent?) {
+                        val level = intent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                        val scale = intent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+                        if (level < 0 || scale <= 0) return
+                        events?.success((level * 100) / scale)
+                    }
+                }
+                receiver = handler
+                val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+                // Android 13+ (API 33) refuse un `registerReceiver` dynamique sans
+                // préciser s'il est exporté, sous peine de `SecurityException` au
+                // lancement. Non exporté : rien d'extérieur à l'appli n'a besoin
+                // d'émettre cet intent, seul le système le fait.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    context.registerReceiver(handler, filter, Context.RECEIVER_NOT_EXPORTED)
+                } else {
+                    context.registerReceiver(handler, filter)
+                }
+            }
+
+            override fun onCancel(arguments: Any?) {
+                receiver?.let { context.unregisterReceiver(it) }
+                receiver = null
             }
         })
     }

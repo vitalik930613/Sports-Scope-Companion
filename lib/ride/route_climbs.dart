@@ -1,14 +1,17 @@
 import 'package:flutter/foundation.dart';
 
+import 'climb_profile.dart';
 import 'nav_state.dart';
 
 /// Un col détecté sur le tracé en cours, tel que le site le calcule
 /// (`detectClimbs`, routeHelpers.ts). L'appli ne redétecte jamais les cols
 /// elle-même : elle affiche la liste reçue, dans l'ordre reçu.
 ///
-/// Volontairement sans son profil gradué (voir [ClimbProfile] dans
-/// climb_profile.dart, poussé à part et une seule fois, pour le seul col en
-/// cours) — cette liste vaut pour le tracé entier, elle doit rester légère.
+/// Porte son profil gradué ([profile]) : reçu une fois pour tout le tracé, en
+/// même temps que cette liste, donc disponible hors ligne pour toute la
+/// sortie — voir la doc de [ClimbProfile]. `null` face à un site plus ancien
+/// qui n'envoie pas encore ce champ (voir [ClimbProfile.fromJson], repli sur
+/// le message `climb_profile` classique, poussé col par col).
 @immutable
 class RouteClimb {
   const RouteClimb({
@@ -19,11 +22,12 @@ class RouteClimb {
     required this.avgGrade,
     this.category,
     this.name,
+    this.profile,
   });
 
   /// Clé de dédoublonnage : l'index de départ du col côté site — même
-  /// convention que [ClimbProfile.id]. Ne sert qu'à comparer deux entrées
-  /// entre elles, jamais affichée.
+  /// convention que [ClimbProfile.id], puisque c'est la même clé. Ne sert qu'à
+  /// comparer deux entrées entre elles, jamais affichée.
   final int id;
 
   /// Distance cumulée depuis le départ du tracé, en mètres — même repère que
@@ -37,6 +41,10 @@ class RouteClimb {
   /// Nom donné à la main côté site (`routes.climb_names`), absent si le col
   /// n'a jamais été renommé — l'appli garde alors « Col N » à l'affichage.
   final String? name;
+
+  /// Le profil gradué de ce col, si le site l'a inclus (voir la doc de
+  /// [ClimbProfile]). [ClimbProfile.id] vaut toujours [id] : c'est le même col.
+  final ClimbProfile? profile;
 
   double get endDistM => startDistM + lengthM;
 
@@ -62,6 +70,7 @@ class RouteClimb {
       avgGrade: avgGrade,
       category: raw['category'] is String ? raw['category'] as String : null,
       name: raw['name'] is String ? raw['name'] as String : null,
+      profile: ClimbProfile.fromRouteClimbEntry(raw),
     );
   }
 }

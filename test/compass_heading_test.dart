@@ -124,4 +124,55 @@ void main() {
     expect(compass.offsetDeg, isNull);
     expect(compass.headingDeg, isNull);
   });
+
+  group('montage qui change en roulant', () {
+    test('un désaccord ponctuel (un virage) ne rouvre pas le calibrage', () {
+      final compass = CompassHeading();
+      ride(compass, offsetDeg: 0);
+      final trustedBefore = compass.isTrusted;
+
+      // Une poignée de trames prises dans un virage : l'écart bouge un
+      // instant, mais ne persiste pas.
+      for (var i = 0; i < 3; i++) {
+        compass.addCompass(90 + 90);
+        compass.addCourse(courseDeg: 90, speedMps: 8);
+      }
+
+      expect(trustedBefore, isTrue);
+      expect(compass.isTrusted, isTrue);
+      expect(compass.offsetDeg, closeTo(0, 5));
+    });
+
+    test('un désaccord qui persiste rouvre le calibrage puis reconverge',
+        () {
+      // Le téléphone était monté droit sur le vélo (écart 0°). On le remonte
+      // — un autre vélo, un support qui a glissé — avec un écart de 90°, et on
+      // continue de rouler assez vite pour comparer à la course GPS.
+      final compass = CompassHeading();
+      ride(compass, offsetDeg: 0);
+      expect(compass.isTrusted, isTrue);
+      expect(compass.offsetDeg, closeTo(0, 5));
+
+      // Le nouveau désaccord doit persister driftStreak comparaisons de suite
+      // avant que le calibrage ne rouvre : le voici en cours de route.
+      for (var i = 0; i < compass.driftStreak; i++) {
+        compass.addCompass(90 + 90);
+        compass.addCourse(courseDeg: 90, speedMps: 8);
+      }
+
+      // Le temps de confirmer la dérive, la boussole redevient « non
+      // vérifiée » plutôt que de continuer à afficher l'ancien montage.
+      expect(compass.isTrusted, isFalse);
+
+      // On continue de rouler avec le nouveau montage : le calibrage
+      // reconverge sur le nouvel écart, pas sur l'ancien.
+      ride(compass, offsetDeg: 90, fixes: 40);
+      expect(compass.isTrusted, isTrue);
+      expect(compass.offsetDeg, closeTo(90, 5));
+
+      compass.addCourse(courseDeg: 90, speedMps: 0);
+      compass.addCompass(0); // boussole brute, décalée de 90° du nouveau montage
+      expect(compass.headingDeg, closeTo(90, 5));
+    });
+  });
 }

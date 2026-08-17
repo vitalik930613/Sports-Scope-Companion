@@ -57,6 +57,10 @@ class BleCharacteristics {
   /// observation — voir `decoders/di2.dart`.
   static final di2Gears = Guid(shimanoUuid(0x2AC1));
 
+  /// Boutons D-Fly (satellites/sprinter) du Di2. Characteristic distincte de
+  /// [di2Gears], établie par sniff GATT — voir `decoders/di2_buttons.dart`.
+  static final di2Buttons = Guid(shimanoUuid(0x2AC2));
+
   /// Liste des cibles détectées par le Varia (notify). Format non documenté par
   /// Garmin — voir `decoders/varia.dart`, la disposition reste à confirmer.
   static final variaThreats = Guid(variaUuid(0x6A4E3203));

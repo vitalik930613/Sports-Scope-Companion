@@ -113,6 +113,32 @@ class KnownDevicesStore extends ChangeNotifier {
     await _flush();
   }
 
+  /// Renomme un appareil connu — le libellé simple qu'on préfère à ce que le
+  /// capteur annonce lui-même (souvent une suite de lettres et de chiffres).
+  ///
+  /// Le nom choisi survit aux reconnexions : `DeviceLinker` ne redemande
+  /// jamais que celui déjà retenu ici (voir `_reconnect`/`attachNow`), donc
+  /// [remember] ne reçoit ce nom-là en retour, jamais un nom annoncé par le
+  /// capteur — un renommage ne peut pas être écrasé au prochain rattachement.
+  ///
+  /// Un champ vidé **restaure le nom d'origine** ([KnownDevice.originalName])
+  /// plutôt que de ne rien faire : c'est le geste naturel pour revenir en
+  /// arrière, plus direct que de retaper le nom annoncé par le capteur de
+  /// mémoire.
+  Future<void> rename(String remoteId, String name) async {
+    final index = _devices.indexWhere((d) => d.remoteId == remoteId);
+    if (index < 0) return;
+
+    final trimmed = name.trim();
+    final restored = trimmed.isEmpty
+        ? _devices[index].originalName
+        : trimmed;
+    if (restored.isEmpty) return; // jamais annoncé de nom, rien à restaurer
+
+    _devices[index] = _devices[index].copyWith(name: restored);
+    await _flush();
+  }
+
   /// Les écritures en attente, mises à la queue leu leu.
   ///
   /// Elles arrivent par rafales — plusieurs capteurs qui se connectent en même

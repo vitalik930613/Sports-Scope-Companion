@@ -70,14 +70,15 @@ class RadarWakePage extends StatelessWidget {
           children: [
             Icon(Icons.directions_car, size: 44, color: color),
             // Le compte n'est écrit que s'il y a de quoi compter : « ×1 » sous
-            // une seule voiture ferait chercher la deuxième.
+            // une seule voiture ferait chercher la deuxième. Même taille que
+            // l'icône juste avant — même règle que `RadarBlockView._count`.
             if (view.count > 1) ...[
               const SizedBox(width: 8),
               Text(
                 '×${view.count}',
                 style: TextStyle(
                   color: color,
-                  fontSize: 40,
+                  fontSize: 44,
                   fontWeight: FontWeight.w700,
                   height: 1,
                 ),

@@ -145,6 +145,19 @@ class RideStats {
   final Map<int, int> hrHistogram = {};
   final Map<int, int> powerHistogram = {};
 
+  /// Les durées de la courbe de puissance, en secondes — mêmes bornes que les
+  /// compteurs du commerce (Garmin, TrainingPeaks) pour qu'un cycliste n'ait
+  /// pas à réapprendre une échelle.
+  static const powerCurveDurationsS = [
+    5, 15, 30, 60, 120, 300, 600, 1200, 1800, 3600, 5400,
+  ];
+
+  /// La meilleure moyenne de puissance vue depuis le départ, par durée —
+  /// durée → watts. Une entrée n'apparaît que si la sortie a couvert cette
+  /// durée-là ; `powerCurveDurationsS.last` (90 min) reste donc absente sur
+  /// une sortie plus courte.
+  final Map<int, int> powerCurveW = {};
+
   double distanceM = 0;
   double ascentM = 0;
   double descentM = 0;
@@ -170,6 +183,16 @@ class RideStats {
   int? maxPower;
   double? maxSpeedMps;
 
+  /// La dernière altitude résolue (baromètre si la sortie en a, GPS sinon) —
+  /// même préférence que [ascentM], mais sans l'hystérésis qui la retarde de
+  /// [altitudeNoiseM] : ici on veut l'altitude du moment, pas une référence de
+  /// dénivelé.
+  double? currentAltitudeM;
+
+  /// L'altitude la plus haute vue depuis le départ, même source que
+  /// [currentAltitudeM].
+  double? maxAltitudeM;
+
   /// La pente la plus raide vue depuis le départ — signée, donc c'est bien un
   /// mur qu'on cherche ici et jamais un plongeon (cf. [gradePercent]).
   /// Échantillonnée sur les mêmes lectures que [avgGrade] : une valeur qui n'a
@@ -181,6 +204,11 @@ class RideStats {
   /// la plongée la plus marquée vue depuis le départ, pas une pente proche de
   /// zéro.
   double? minGrade;
+
+  /// La vitesse ascensionnelle la plus forte vue depuis le départ, en m/h —
+  /// même échantillonnage que [maxGrade] (la même fenêtre [_gradeWindow] sert
+  /// aux deux), signée pour la même raison.
+  double? maxClimbRateMph;
 
   /// Les minima, sur **exactement la même population que les moyennes** : tout
   /// point qui porte la mesure, zéros compris. C'est ce qui les rend lisibles
@@ -209,6 +237,8 @@ class RideStats {
   int _speedCount = 0;
   double _gradeSum = 0;
   int _gradeCount = 0;
+  double _altitudeSum = 0;
+  int _altitudeCount = 0;
 
   // Le travail mécanique, cumulé point par point : la seule grandeur d'ici qui
   // dépende de la *durée* d'un point et pas seulement de sa valeur.
@@ -241,6 +271,16 @@ class RideStats {
   double _npFourthSum = 0;
   int _npCount = 0;
 
+  // Courbe de puissance : une fenêtre glissante par durée de
+  // [powerCurveDurationsS], chacune avec sa propre somme courante — même
+  // principe que [_npWindow], répété une fois par durée.
+  final Map<int, Queue<int>> _powerCurveWindows = {
+    for (final duration in powerCurveDurationsS) duration: Queue<int>(),
+  };
+  final Map<int, int> _powerCurveSums = {
+    for (final duration in powerCurveDurationsS) duration: 0,
+  };
+
   /// Temps passé à avancer, arrêts exclus — le `total_moving_time` du `.fit`.
   ///
   /// À distinguer du temps *chronométré*, qui est le nombre de points capturés :
@@ -260,10 +300,26 @@ class RideStats {
 
   double? get avgSpeedMps => _speedCount > 0 ? _speedSum / _speedCount : null;
 
+  /// La vitesse ascensionnelle moyenne, en m/h : le dénivelé total sur le temps
+  /// *en mouvement*, pas chronométré — un arrêt ravito ne doit pas diluer le
+  /// chiffre, même raison que [avgSpeedMps] côté vitesse. Volontairement pas une
+  /// moyenne des échantillons de [climbRateMph] : ceux-là sont signés et
+  /// tendraient vers un solde net qui inclut les descentes, alors qu'on veut
+  /// savoir à quelle vitesse on grimpe. `null` tant qu'on n'a pas encore roulé.
+  double? get avgClimbRateMph {
+    final movingHours = _movingMs / 1000 / 3600;
+    if (movingHours <= 0) return null;
+    return ascentM / movingHours;
+  }
+
   /// La pente moyenne depuis le départ, signée — une sortie qui boucle tend
   /// donc vers 0 malgré le relief parcouru, même moyenne « par échantillon »
   /// que les autres mesures d'ici plutôt qu'un ratio D+ / distance.
   double? get avgGrade => _gradeCount > 0 ? _gradeSum / _gradeCount : null;
+
+  /// L'altitude moyenne depuis le départ, même source que [currentAltitudeM].
+  double? get avgAltitudeM =>
+      _altitudeCount > 0 ? _altitudeSum / _altitudeCount : null;
 
   /// Puissance normalisée, `null` tant que la fenêtre n'est pas pleine : sur
   /// moins de 30 s la valeur n'aurait aucun sens, et un chiffre faux vaut moins
@@ -310,6 +366,24 @@ class RideStats {
   }
 
   double get _gradeSpanM => hasBaroAltitude ? gradeWindowM : gpsGradeWindowM;
+
+  /// La vitesse ascensionnelle sous les roues, en m/h et **signée** — miroir de
+  /// [gradePercent] sur la même fenêtre [_gradeWindow], mais rapportée au temps
+  /// écoulé entre ses deux bornes plutôt qu'à la distance parcourue. Mêmes
+  /// gardes que la pente, pour les mêmes raisons : une fenêtre pas encore assez
+  /// large ou périmée ne dirait qu'un bruit amplifié.
+  double? get climbRateMph {
+    if (_gradeWindow.length < 2) return null;
+
+    final oldest = _gradeWindow.first;
+    final newest = _gradeWindow.last;
+    final run = newest.distanceM - oldest.distanceM;
+    if (run < _gradeSpanM) return null;
+
+    final seconds = newest.at.difference(oldest.at).inMilliseconds / 1000;
+    if (seconds <= 0) return null;
+    return (newest.altitudeM - oldest.altitudeM) / seconds * 3600;
+  }
 
   /// La vitesse d'un point : celle du GPS, ou à défaut celle du capteur de roue.
   ///
@@ -370,6 +444,12 @@ class RideStats {
     // dénivelé reprend exactement où il s'était arrêté.
     final altitude = hasBaroAltitude ? point.baroAltitudeM : point.altitudeM;
     if (altitude != null) {
+      currentAltitudeM = altitude;
+      _altitudeSum += altitude;
+      _altitudeCount++;
+      maxAltitudeM =
+          maxAltitudeM == null || altitude > maxAltitudeM! ? altitude : maxAltitudeM;
+
       _addAltitude(altitude, point.at, moving);
       _addGrade(altitude, point.at, point.distanceM);
 
@@ -379,6 +459,13 @@ class RideStats {
         _gradeCount++;
         maxGrade = maxGrade == null || grade > maxGrade! ? grade : maxGrade;
         minGrade = minGrade == null || grade < minGrade! ? grade : minGrade;
+      }
+
+      final climbRate = climbRateMph;
+      if (climbRate != null) {
+        maxClimbRateMph = maxClimbRateMph == null || climbRate > maxClimbRateMph!
+            ? climbRate
+            : maxClimbRateMph;
       }
     }
 
@@ -410,6 +497,7 @@ class RideStats {
       minPower = _min(minPower, power);
       _bucket(powerHistogram, power, powerBucketW);
       _addNormalized(power);
+      _addPowerCurve(power);
 
       // L'énergie se compte sur l'intervalle *réel*, pas sur une seconde
       // supposée : la capture peut prendre du retard, et un point sans
@@ -535,6 +623,27 @@ class RideStats {
     _npCount++;
   }
 
+  /// Range une puissance dans chaque fenêtre de la courbe, et retient la
+  /// meilleure moyenne dès qu'une fenêtre est pleine — un record qui ne
+  /// redescend jamais, comme sur un compteur du commerce : la question posée
+  /// est « qu'a-t-on tenu de mieux », pas « quelle est la moyenne courante ».
+  void _addPowerCurve(int power) {
+    for (final duration in powerCurveDurationsS) {
+      final window = _powerCurveWindows[duration]!;
+      window.addLast(power);
+      var sum = _powerCurveSums[duration]! + power;
+      if (window.length > duration) {
+        sum -= window.removeFirst();
+      }
+      _powerCurveSums[duration] = sum;
+      if (window.length < duration) continue;
+
+      final avg = (sum / duration).round();
+      final best = powerCurveW[duration];
+      if (best == null || avg > best) powerCurveW[duration] = avg;
+    }
+  }
+
   /// Remet tout à zéro pour une nouvelle sortie, sans réallouer.
   void reset() {
     distanceM = 0;
@@ -547,8 +656,13 @@ class RideStats {
     maxSpeedMps = null;
     maxGrade = null;
     minGrade = null;
+    maxClimbRateMph = null;
     minHeartRate = minCadence = minPower = null;
     minSpeedMps = null;
+    currentAltitudeM = null;
+    maxAltitudeM = null;
+    _altitudeSum = 0;
+    _altitudeCount = 0;
     _hrSum = _hrCount = 0;
     _cadenceSum = 0;
     _cadenceCount = 0;
@@ -568,6 +682,13 @@ class RideStats {
     _npWindowSum = 0;
     _npFourthSum = 0;
     _npCount = 0;
+    for (final window in _powerCurveWindows.values) {
+      window.clear();
+    }
+    for (final duration in powerCurveDurationsS) {
+      _powerCurveSums[duration] = 0;
+    }
+    powerCurveW.clear();
     hrHistogram.clear();
     powerHistogram.clear();
     _gradeWindow.clear();

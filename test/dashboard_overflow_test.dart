@@ -16,6 +16,7 @@ import 'package:sports_scope_companion/recording/gps_source.dart';
 import 'package:sports_scope_companion/recording/ride_recorder.dart';
 import 'package:sports_scope_companion/recording/ride_store.dart';
 import 'package:sports_scope_companion/recording/track_point.dart';
+import 'package:sports_scope_companion/ride/battery_status.dart';
 import 'package:sports_scope_companion/ride/nav_state.dart';
 import 'package:sports_scope_companion/ride/pages/dashboard_page.dart';
 import 'package:sports_scope_companion/training/training_budget.dart';
@@ -173,6 +174,7 @@ void main() {
             cells: cells,
           ),
           sources: sources,
+          battery: ValueNotifier<List<BatteryStatus>>(const []),
           onGridMeasured: onGridMeasured,
         ),
       ),
@@ -180,6 +182,16 @@ void main() {
   }
 
   /// Tout ce qu'un profil peut poser, dans son mode le plus encombrant.
+  ///
+  /// `PrecipRadarBlock` n'y figure délibérément pas : contrairement aux blocs
+  /// ci-dessous, sa vue (`PrecipRadarBlockView`) fait un vrai appel réseau et
+  /// démarre un `Timer.periodic` pour l'animation — un test de mise en page
+  /// n'a pas à dépendre du réseau, et un minuteur périodique encore actif à la
+  /// fin d'un test le fait échouer (« A Timer is still pending »), sans rapport
+  /// avec un débordement. Son risque de débordement est structurel et déjà
+  /// couvert par construction : même composition taille-naturelle-fixe →
+  /// `BlockSurface` → `ScaleToFit` que tous les blocs ci-dessous, et ses états
+  /// « pas de GPS »/« indisponible » sont des `BlockCard` ordinaires.
   List<DashboardBlock> everything() => const [
         ZonesBlock(source: ZonesSource.power),
         ZonesBlock(source: ZonesSource.hr),
@@ -188,9 +200,33 @@ void main() {
         NavStateBlock(),
         TrainingBudgetBlock(),
         TrainingBudgetBlock(mode: TrainingBudgetMode.week),
-        MetricBlock(metric: MetricId.duration, mode: MetricMode.gauge),
-        MetricBlock(metric: MetricId.power, mode: MetricMode.gauge),
-        MetricBlock(metric: MetricId.heartRate, mode: MetricMode.compact),
+        // Mêmes dispositions que les anciens modes `gauge`/`compact` (voir
+        // `MetricLayout.forLegacyMode`), inlinées : un appel de fonction
+        // statique n'est pas une expression `const`.
+        MetricBlock(
+          metric: MetricId.duration,
+          layout: MetricLayout(
+            value: GridPosition(0, GridColumn.center),
+            gaugeRow: 1,
+            unit: GridPosition(2, GridColumn.center),
+          ),
+        ),
+        MetricBlock(
+          metric: MetricId.power,
+          layout: MetricLayout(
+            value: GridPosition(0, GridColumn.center),
+            gaugeRow: 1,
+            unit: GridPosition(2, GridColumn.center),
+          ),
+        ),
+        MetricBlock(
+          metric: MetricId.heartRate,
+          layout: MetricLayout(
+            icon: GridPosition(0, GridColumn.center),
+            value: GridPosition(1, GridColumn.center),
+            unit: GridPosition(2, GridColumn.center),
+          ),
+        ),
         MetricBlock(metric: MetricId.speed),
       ];
 
@@ -290,8 +326,14 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: DashboardPage(
-          page: ListPageSpec(title: 'Effort', blocks: everything()),
+          page: ListPageSpec(
+            title: 'Effort',
+            blocks: [
+              for (final block in everything()) ListBlockPlacement(block: block),
+            ],
+          ),
           sources: sources,
+          battery: ValueNotifier<List<BatteryStatus>>(const []),
         ),
       ),
     );

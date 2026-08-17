@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../recording/elevation_profile_point.dart';
+
 /// Nom de la série de tours que la coquille marque toute seule, sur les
 /// fronts de [NavClimb] (montant et descendant — voir
 /// `RideShellPage._onPageMessage`, cas `'nav'`) : un profil qui pose une page
@@ -9,23 +11,24 @@ import 'package:flutter/foundation.dart';
 /// nom différent des deux côtés ferait un bouton muet.
 const climbLapSeries = 'cols';
 
-/// Un point du profil d'un col : distance depuis le départ du col, altitude.
-@immutable
-class ClimbProfilePoint {
-  const ClimbProfilePoint({required this.distM, required this.altM});
-  final double distM;
-  final double altM;
-}
-
-/// Le profil gradué d'un col, reçu une fois par col (voir la doc de
-/// [NavClimb] dans nav_state.dart : « il aura son propre message le jour où
-/// on le dessinera » — c'est ce message).
+/// Le profil gradué d'un col.
 ///
 /// Volontairement dépourvu de toute mise en forme (pas de chemin SVG, pas de
 /// couleur) : c'est `gradeColorOf` (lib/ui/grade_colors.dart) qui colore
 /// chaque segment, et cette classe qui calcule elle-même la mise à l'échelle
 /// 0-100 — même division du travail que companionNav/NavState, où la page
 /// envoie des mesures brutes et l'appli choisit sa mise en scène.
+///
+/// Reçu de deux façons, voir `RouteClimb.profile` (route_climbs.dart) pour
+/// laquelle fait autorité :
+///
+/// - dans chaque entrée de `route_climbs`, poussé une fois par tracé pour
+///   TOUS les cols d'un coup ([fromRouteClimbEntry]) — la source normale, qui
+///   rend le profil disponible hors ligne dès le chargement du tracé ;
+/// - dans le message `climb_profile` ([fromJson]), poussé une seule fois à
+///   l'entrée du col en cours — repli pour un site plus ancien que ce champ
+///   de `route_climbs` (voir `climbProfileFor` côté Rails, qui continue de
+///   l'envoyer pour cette seule raison).
 @immutable
 class ClimbProfile {
   const ClimbProfile({
@@ -48,7 +51,7 @@ class ClimbProfile {
   final String? category;
 
   /// Ordonnés par distance croissante, au moins 2 points.
-  final List<ClimbProfilePoint> points;
+  final List<ElevationProfilePoint> points;
 
   /// Pente lissée de chaque segment [points[i], points[i+1]] — length ==
   /// points.length - 1. Déjà lissée côté site (fenêtre par sport, réglable) :
@@ -61,18 +64,29 @@ class ClimbProfile {
 
   static ClimbProfile? fromJson(Object? raw) {
     if (raw is! Map || raw['type'] != 'climb_profile') return null;
+    return _parse(raw);
+  }
+
+  /// Reconstruit un profil depuis une entrée de la liste `climbs` du message
+  /// `route_climbs` — même champs que [fromJson], sans l'enveloppe `type`.
+  static ClimbProfile? fromRouteClimbEntry(Object? raw) {
+    if (raw is! Map) return null;
+    return _parse(raw);
+  }
+
+  static ClimbProfile? _parse(Map raw) {
     final id = raw['id'];
     final rawPoints = raw['points'];
     final rawGrades = raw['segmentGrades'];
     if (id is! num || rawPoints is! List || rawGrades is! List) return null;
 
-    final points = <ClimbProfilePoint>[];
+    final points = <ElevationProfilePoint>[];
     for (final p in rawPoints) {
       if (p is! Map) return null;
       final distM = _toDouble(p['distM']);
       final altM = _toDouble(p['altM']);
       if (distM == null || altM == null) return null;
-      points.add(ClimbProfilePoint(distM: distM, altM: altM));
+      points.add(ElevationProfilePoint(distM: distM, altM: altM));
     }
     final grades = <double>[];
     for (final g in rawGrades) {

@@ -5,10 +5,13 @@ import '../account/rider_profile.dart';
 import '../account/rider_profile_store.dart';
 import '../ble/sensor_hub.dart';
 import '../drivetrain.dart';
+import '../recording/ride_lap.dart';
 import '../recording/ride_recorder.dart';
 import '../recording/ride_stats.dart';
+import '../ride/climb_profile.dart';
 import '../ride/nav_state.dart';
 import '../ride/route_climbs.dart';
+import '../ride/route_profile.dart';
 import '../training/ride_load.dart';
 import '../training/training_budget_store.dart';
 import '../ui/formats.dart';
@@ -28,50 +31,63 @@ import 'dashboard_block.dart' show DurationFormat;
 /// ses dépendances dans [dependencies]. Le site pourra s'en servir dès qu'il
 /// connaîtra la clé ; l'appli plus ancienne, elle, l'ignorera sans broncher.
 enum MetricId {
-  duration('duration', 'durée', Icons.timer_outlined),
-  movingTime('moving_time', 'Durée en mouvement', Icons.directions_bike),
-  pauseTime('pause_time', 'Durée pause', Icons.pause_circle_outline),
-  distance('distance', 'distance', Icons.straighten),
-  speed('speed', 'km/h', Icons.speed),
-  speedAvg('speed_avg', 'Vitesse moyenne', Icons.speed),
-  speedMax('speed_max', 'km/h max', Icons.speed),
-  heartRate('heart_rate', 'bpm', Icons.favorite),
-  hrZone('hr_zone', 'zone bpm', Icons.favorite),
-  hrAvg('hr_avg', 'bpm moy', Icons.favorite_border),
-  hrMax('hr_max', 'bpm max', Icons.favorite_border),
-  power('power', 'W', Icons.bolt),
-  powerZone('power_zone', 'zone W', Icons.bolt),
-  powerAvg('power_avg', 'W moy', Icons.bolt),
-  powerNormalized('power_np', 'W NP', Icons.bolt),
-  powerMax('power_max', 'W max', Icons.bolt),
-  cadence('cadence', 'tr/min', Icons.autorenew),
-  cadenceAvg('cadence_avg', 'tr/min moy', Icons.autorenew),
-  cadenceMax('cadence_max', 'tr/min max', Icons.autorenew),
-  ascent('ascent', 'D+', Icons.trending_up),
-  altitude('altitude', 'm', Icons.terrain),
-  grade('grade', '% pente', Icons.north_east),
-  gradeAvg('grade_avg', '% pente moy', Icons.north_east),
-  gradeMax('grade_max', '% pente max', Icons.north_east),
-  calories('calories', 'kcal', Icons.local_fire_department),
-  caloriesPerHour('calories_per_hour', 'kcal/h', Icons.local_fire_department),
-  tss('tss', 'TSS', Icons.bar_chart),
-  gears('gears', 'braquet', Icons.settings),
-  chainringPosition('chainring_position', 'plateau', Icons.donut_large),
-  sprocketPosition('sprocket_position', 'pignon', Icons.album),
-  gearRatio('gear_ratio', 'rapport', Icons.compare_arrows),
-  routeRemaining('route_remaining', 'Distance restante', Icons.flag_outlined),
-  routeRemainingGain('route_remaining_gain', 'D+ restant', Icons.trending_up),
-  routeEta('route_eta', 'Durée restante', Icons.schedule);
+  duration('duration', 'Durée', '', Icons.timer_outlined),
+  movingTime('moving_time', 'Temps en mouvement', '', Icons.directions_bike),
+  pauseTime('pause_time', 'Durée pause', '', Icons.pause_circle_outline),
+  distance('distance', 'Distance', 'km', Icons.straighten),
+  speed('speed', 'Vitesse', 'km/h', Icons.speed),
+  speedAvg('speed_avg', 'Vitesse moyenne', 'km/h', Icons.speed),
+  speedMax('speed_max', 'Vitesse max', 'km/h', Icons.speed),
+  heartRate('heart_rate', 'Cardio', 'bpm', Icons.favorite),
+  hrZone('hr_zone', 'Zone cardio', 'bpm', Icons.favorite),
+  hrAvg('hr_avg', 'Cardio moyen', 'bpm', Icons.favorite_border),
+  hrMax('hr_max', 'Cardio max', 'bpm', Icons.favorite_border),
+  power('power', 'Puissance', 'W', Icons.bolt),
+  powerZone('power_zone', 'Zone de puissance', 'W', Icons.bolt),
+  powerAvg('power_avg', 'Puissance moyenne', 'W', Icons.bolt),
+  powerNormalized('power_np', 'Puissance normalisée', 'W', Icons.bolt),
+  powerMax('power_max', 'Puissance max', 'W', Icons.bolt),
+  powerBalance('power_balance', 'Équilibre G/D', '%', Icons.balance),
+  cadence('cadence', 'Cadence', 'tr/min', Icons.autorenew),
+  cadenceAvg('cadence_avg', 'Cadence moyenne', 'tr/min', Icons.autorenew),
+  cadenceMax('cadence_max', 'Cadence max', 'tr/min', Icons.autorenew),
+  ascent('ascent', 'Dénivelé positif', 'm', Icons.trending_up),
+  altitude('altitude', 'Altitude', 'm', Icons.terrain),
+  altitudeAvg('altitude_avg', 'Altitude moyenne', 'm', Icons.terrain),
+  altitudeMax('altitude_max', 'Altitude max', 'm', Icons.terrain),
+  grade('grade', 'Pente', '%', Icons.north_east),
+  gradeAvg('grade_avg', 'Pente moyenne', '%', Icons.north_east),
+  gradeMax('grade_max', 'Pente max', '%', Icons.north_east),
+  climbRate('climb_rate', 'Vitesse ascensionnelle', 'm/h', Icons.upgrade),
+  climbRateAvg('climb_rate_avg', 'Vitesse ascensionnelle moyenne', 'm/h', Icons.upgrade),
+  climbRateMax('climb_rate_max', 'Vitesse ascensionnelle max', 'm/h', Icons.upgrade),
+  calories('calories', 'Calories', 'kcal', Icons.local_fire_department),
+  caloriesPerHour('calories_per_hour', 'Calories par heure', 'kcal/h', Icons.local_fire_department),
+  tss('tss', 'TSS', 'TSS', Icons.bar_chart),
+  gears('gears', 'Braquet', '', Icons.settings),
+  chainringPosition('chainring_position', 'Plateau', '', Icons.donut_large),
+  sprocketPosition('sprocket_position', 'Pignon', '', Icons.album),
+  gearRatio('gear_ratio', 'Rapport', '', Icons.compare_arrows),
+  routeRemaining('route_remaining', 'Distance restante', 'km', Icons.flag_outlined),
+  routeRemainingGain('route_remaining_gain', 'D+ restant', 'm', Icons.trending_up),
+  routeEta('route_eta', 'Temps restant', '', Icons.schedule);
 
-  const MetricId(this.key, this.unit, this.icon);
+  const MetricId(this.key, this.name, this.unit, this.icon);
 
-  /// La clé du contrat JSON. Écrite à la main plutôt que dérivée de [name] :
+  /// La clé du contrat JSON. Écrite à la main plutôt que dérivée du nom Dart :
   /// renommer une valeur Dart ne doit pas casser les documents déjà servis par
   /// le site.
   final String key;
 
-  /// Ce qui s'écrit sous le chiffre. Court à dessein — c'est une case de
-  /// bandeau, pas une légende.
+  /// Le nom de la mesure, ex. « Cardio » — l'étiquette d'un bloc `metric` qui
+  /// en pose une (voir [DashboardBlock]/`MetricLayoutToken.label`). Distinct
+  /// d'[unit] depuis la disposition libre du tableau de bord : avant, un seul
+  /// champ faisait les deux, tantôt un nom tantôt une unité selon la mesure.
+  final String name;
+
+  /// L'unité physique, ex. « bpm » — vide pour les mesures qui n'en ont pas
+  /// (une durée, une position de plateau…). Ce qui s'écrit sous le chiffre
+  /// (`MetricView`) ou à côté du nom, selon la disposition composée.
   final String unit;
 
   final IconData icon;
@@ -121,7 +137,9 @@ enum MetricId {
   ///   deux mesures sont des cumuls, un min/max « observé » n'y voudrait rien
   ///   dire (le min vaudrait toujours 0, le max toujours la valeur du moment).
   (double, double)? liveRangeOf(MetricSources sources) {
-    final stats = sources.recorder.stats;
+    // Un tour a sa propre plage : le min/max observés depuis l'ouverture du
+    // tour, pas depuis le départ de la sortie — même source que [read].
+    final stats = sources.lap?.stats ?? sources.recorder.stats;
     return switch (this) {
       MetricId.cadence =>
         _bounds(stats.minCadence?.toDouble(), stats.maxCadence?.toDouble()),
@@ -192,6 +210,7 @@ enum MetricId {
       // il lui faut donc les seuils en plus de l'agrégat de l'enregistreur.
       MetricId.tss => [sources.recorder, sources.riderProfile],
       MetricId.cadence => [sources.hub.latestCadence],
+      MetricId.powerBalance => [sources.hub.latestPowerBalance],
       MetricId.gears ||
       MetricId.chainringPosition ||
       MetricId.sprocketPosition ||
@@ -223,44 +242,53 @@ enum MetricId {
     MetricSources sources, {
     DurationFormat format = DurationFormat.hm,
   }) {
-    final stats = sources.recorder.stats;
+    // Une page Tours pose ce même catalogue sur le tour choisi plutôt que sur
+    // la sortie entière (`LapListBody._block`) : `sources.lap` porte alors ce
+    // tour, et c'est lui qui fait foi pour tout ce qui est cumulé — durée,
+    // distance, moyennes, dénivelé, calories, TSS. `RideLap.stats` est nourri
+    // exactement comme celui de la sortie (même doc sur `RideLap`), donc tout
+    // ce qui se lit déjà sur `stats` ci-dessous suit sans rien changer de plus
+    // ; seules la durée et la distance n'y sont pas et gardent leur propre
+    // repli. Les mesures instantanées (cardio, cadence, vitesse, altitude…)
+    // restent celles du hub/GPS : un tour n'a pas de « cardio de l'instant »
+    // distinct de celui de la sortie.
+    final lap = sources.lap;
+    final stats = lap?.stats ?? sources.recorder.stats;
     final active = sources.recorder.isActive;
     final profile = sources.riderProfile.profile;
+    final rideDuration =
+        lap != null ? Duration(seconds: lap.pointCount) : sources.recorder.recorded;
+    final rideDistanceM = lap != null ? lap.distanceM : sources.recorder.distanceM;
     String fmt(Duration d) =>
         format == DurationFormat.hms ? formatDurationHms(d) : formatDurationHm(d);
 
     return switch (this) {
-      // Durée et distance viennent de l'enregistreur et pas de la page : hors
-      // enregistrement elles n'existent pas, et un zéro ferait croire à un
-      // compteur remis à zéro plutôt qu'à une sortie non lancée.
-      MetricId.duration => MetricReading(
-          active ? fmt(sources.recorder.recorded) : null,
-        ),
+      // Durée et distance viennent de l'enregistreur (ou du tour) et pas de la
+      // page : hors enregistrement elles n'existent pas, et un zéro ferait
+      // croire à un compteur remis à zéro plutôt qu'à une sortie non lancée.
+      MetricId.duration => MetricReading(active ? fmt(rideDuration) : null),
       MetricId.movingTime =>
         MetricReading(active ? fmt(stats.movingTime) : null),
       // Le complément de la durée en mouvement : arrêts aux feux, ravito,
       // discussion sur le bas-côté. Les deux viennent de la même horloge —
-      // `recorded` ne tourne pas non plus pendant une pause manuelle — donc la
-      // soustraction ne peut pas passer sous zéro.
+      // `rideDuration` ne tourne pas non plus pendant une pause manuelle — donc
+      // la soustraction ne peut pas passer sous zéro.
       MetricId.pauseTime => MetricReading(
-          active ? fmt(sources.recorder.recorded - stats.movingTime) : null,
+          active ? fmt(rideDuration - stats.movingTime) : null,
         ),
       // Sans GPS (home-trainer), la distance n'a pas de source : un « 0 m » se
       // lirait comme « je n'ai pas bougé », alors que la question ne se pose
       // même pas. Le tiret dit la bonne chose — on ne mesure pas ça ici.
       MetricId.distance => MetricReading(
-          active && sources.recorder.gpsEnabled
-              ? formatDistanceKm(sources.recorder.distanceM)
-              : null,
-          numericValue: active && sources.recorder.gpsEnabled
-              ? sources.recorder.distanceM / 1000
-              : null,
+          active && sources.recorder.gpsEnabled ? formatKm(rideDistanceM) : null,
+          numericValue:
+              active && sources.recorder.gpsEnabled ? rideDistanceM / 1000 : null,
         ),
       MetricId.speed => _speedReading(sources),
       // Moyenne en roulant, pas la moyenne des échantillons bruts : sans ça,
       // un feu rouge dilue la case pendant que la sortie continue.
       MetricId.speedAvg => MetricReading(
-          _kmhUnit(_movingAvgSpeedMps(stats)),
+          _kmh(_movingAvgSpeedMps(stats)),
           numericValue: _kmhValue(_movingAvgSpeedMps(stats)),
         ),
       MetricId.speedMax => MetricReading(
@@ -286,10 +314,12 @@ enum MetricId {
       MetricId.hrAvg => MetricReading(
           stats.avgHeartRate?.toString(),
           numericValue: stats.avgHeartRate?.toDouble(),
+          zoneKey: stats.avgHeartRate == null ? null : profile.hrZoneFor(stats.avgHeartRate!)?.key,
         ),
       MetricId.hrMax => MetricReading(
           stats.maxHeartRate?.toString(),
           numericValue: stats.maxHeartRate?.toDouble(),
+          zoneKey: stats.maxHeartRate == null ? null : profile.hrZoneFor(stats.maxHeartRate!)?.key,
         ),
       MetricId.power => _zoned(
           sources.hub.latestPower.value,
@@ -310,15 +340,20 @@ enum MetricId {
       MetricId.powerAvg => MetricReading(
           stats.avgPower?.toString(),
           numericValue: stats.avgPower?.toDouble(),
+          zoneKey: stats.avgPower == null ? null : profile.powerZoneFor(stats.avgPower!)?.key,
         ),
       MetricId.powerNormalized => MetricReading(
           stats.normalizedPowerW?.toString(),
           numericValue: stats.normalizedPowerW?.toDouble(),
+          zoneKey: stats.normalizedPowerW == null ? null : profile.powerZoneFor(stats.normalizedPowerW!)?.key,
         ),
       MetricId.powerMax => MetricReading(
           stats.maxPower?.toString(),
           numericValue: stats.maxPower?.toDouble(),
+          zoneKey: stats.maxPower == null ? null : profile.powerZoneFor(stats.maxPower!)?.key,
         ),
+      MetricId.powerBalance =>
+        _balanceReading(sources.hub.latestPowerBalance.value),
       MetricId.cadence => MetricReading(
           sources.hub.latestCadence.value?.round().toString(),
           numericValue: sources.hub.latestCadence.value,
@@ -335,13 +370,27 @@ enum MetricId {
       // et un cumul avant le départ vaut « rien », pas « zéro mètre ».
       MetricId.ascent => MetricReading(
           active && sources.recorder.gpsEnabled
-              ? '${stats.ascentM.round()} m'
+              ? stats.ascentM.round().toString()
               : null,
           numericValue: active && sources.recorder.gpsEnabled ? stats.ascentM : null,
         ),
+      // Mesure instantanée (voir la tête de [read]) : toujours celle de la
+      // sortie entière, jamais celle d'un tour qu'on est en train de
+      // consulter. Baromètre préféré au GPS dès qu'il y en a un, même
+      // préférence collante que [RideStats.ascentM] — sinon la valeur
+      // sauterait de plusieurs mètres au moment même où le baromètre prend le
+      // relais.
       MetricId.altitude => MetricReading(
-          sources.recorder.lastFix?.altitudeM?.round().toString(),
-          numericValue: sources.recorder.lastFix?.altitudeM,
+          sources.recorder.stats.currentAltitudeM?.round().toString(),
+          numericValue: sources.recorder.stats.currentAltitudeM,
+        ),
+      MetricId.altitudeAvg => MetricReading(
+          stats.avgAltitudeM?.round().toString(),
+          numericValue: stats.avgAltitudeM,
+        ),
+      MetricId.altitudeMax => MetricReading(
+          stats.maxAltitudeM?.round().toString(),
+          numericValue: stats.maxAltitudeM,
         ),
       // La pente vient de l'enregistreur et pas du dernier point : c'est un
       // rapport entre deux endroits du parcours, elle n'existe pas avant le
@@ -351,6 +400,20 @@ enum MetricId {
       // rouleau sans distance parcourue, la fenêtre ne s'est jamais remplie.
       MetricId.gradeAvg => _gradeReading(active ? stats.avgGrade : null),
       MetricId.gradeMax => _gradeReading(active ? stats.maxGrade : null),
+      // Même garde que la pente : la vitesse ascensionnelle se lit sur la même
+      // fenêtre, qui reste naturellement vide sans altitude.
+      MetricId.climbRate => MetricReading(
+          active ? stats.climbRateMph?.round().toString() : null,
+          numericValue: active ? stats.climbRateMph : null,
+        ),
+      MetricId.climbRateAvg => MetricReading(
+          active ? stats.avgClimbRateMph?.round().toString() : null,
+          numericValue: active ? stats.avgClimbRateMph : null,
+        ),
+      MetricId.climbRateMax => MetricReading(
+          active ? stats.maxClimbRateMph?.round().toString() : null,
+          numericValue: active ? stats.maxClimbRateMph : null,
+        ),
       MetricId.calories => MetricReading(
           stats.calories?.toString(),
           numericValue: stats.calories?.toDouble(),
@@ -420,7 +483,7 @@ enum MetricId {
     if (nav == null || !nav.onRoute || nav.isStale(DateTime.now())) {
       return const MetricReading(null);
     }
-    return MetricReading(formatDistanceKm(nav.remainingM), numericValue: nav.remainingM / 1000);
+    return MetricReading(formatKm(nav.remainingM), numericValue: nav.remainingM / 1000);
   }
 
   static MetricReading _remainingGainReading(MetricSources sources) {
@@ -428,7 +491,7 @@ enum MetricId {
     if (nav == null || !nav.onRoute || nav.isStale(DateTime.now())) {
       return const MetricReading(null);
     }
-    return MetricReading('${nav.remainingGainM.round()} m', numericValue: nav.remainingGainM);
+    return MetricReading(nav.remainingGainM.round().toString(), numericValue: nav.remainingGainM);
   }
 
   /// Vitesse moyenne « en roulant » : la distance parcourue sur le seul temps
@@ -505,6 +568,15 @@ enum MetricId {
     return MetricReading(ratio == null ? null : _decimal(ratio), numericValue: ratio);
   }
 
+  /// L'équilibre gauche/droite sous la forme lue sur un compteur — les deux
+  /// pourcentages côte à côte, pas un seul chiffre qu'il faudrait soustraire
+  /// de 100 pour connaître l'autre jambe.
+  static MetricReading _balanceReading(double? leftPercent) {
+    if (leftPercent == null) return const MetricReading(null);
+    final left = leftPercent.round();
+    return MetricReading('$left / ${100 - left}', numericValue: leftPercent);
+  }
+
   static MetricReading _zoned(
     int? value, {
     required RiderProfile profile,
@@ -534,14 +606,6 @@ enum MetricId {
     return value == null ? null : _decimal(value);
   }
 
-  /// La vitesse moyenne porte son unité sur le chiffre lui-même : sa case
-  /// affiche un titre (« Vitesse moyenne ») là où les autres cases de vitesse
-  /// gardent l'unité en dessous.
-  static String? _kmhUnit(double? metresPerSecond) {
-    final value = _kmh(metresPerSecond);
-    return value == null ? null : '$value km/h';
-  }
-
   static String _decimal(double value) =>
       value.toStringAsFixed(1).replaceAll('.', ',');
 }
@@ -561,6 +625,9 @@ class MetricSources {
     this.drivetrain = Drivetrain.road,
     this.nav,
     this.routeClimbs,
+    this.climbProfile,
+    this.routeProfile,
+    this.lap,
   });
 
   final SensorHub hub;
@@ -588,6 +655,39 @@ class MetricSources {
   /// La liste des cols du tracé en cours, poussée par la page. **Nulle dans un
   /// profil sans carte**, même raison que [nav] — voir [ClimbListBlock].
   final ValueListenable<RouteClimbs?>? routeClimbs;
+
+  /// Le profil gradué du col en cours, poussé une fois par col. **Nul dans un
+  /// profil sans carte**, même raison que [routeClimbs] — voir
+  /// [ClimbProfileBlock].
+  final ValueListenable<ClimbProfile?>? climbProfile;
+
+  /// Le profil d'altitude du tracé entier, poussé une fois par (re)chargement.
+  /// **Nul dans un profil sans carte**, même raison que [routeClimbs] — mais
+  /// contrairement à lui, son absence n'empêche pas [AltitudeProfileBlock] de
+  /// s'afficher : il se rabat alors sur `recorder.elevationTrack`.
+  final ValueListenable<RouteProfile?>? routeProfile;
+
+  /// Le tour affiché par une page Tours ([LapListPageSpec]), `null` partout
+  /// ailleurs. Quand il est posé, [MetricId.read]/[MetricId.liveRangeOf]
+  /// lisent leurs mesures cumulées sur **ce tour** plutôt que sur la sortie
+  /// entière — voir [forLap].
+  final RideLap? lap;
+
+  /// La même source, bornée à [lap] — voir `LapListBody._block`. Rien d'autre
+  /// ne change : le hub, le GPS et la page web restent ceux de la sortie en
+  /// cours, seules les mesures cumulées ([MetricId.read]) suivent le tour.
+  MetricSources forLap(RideLap lap) => MetricSources(
+        hub: hub,
+        recorder: recorder,
+        riderProfile: riderProfile,
+        trainingBudget: trainingBudget,
+        drivetrain: drivetrain,
+        nav: nav,
+        routeClimbs: routeClimbs,
+        climbProfile: climbProfile,
+        routeProfile: routeProfile,
+        lap: lap,
+      );
 }
 
 /// Une mesure prête à peindre : son texte, et la zone qui la colore.

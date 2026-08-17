@@ -61,7 +61,7 @@ void main() {
       expect(builtIn.pages.first, isA<MapPageSpec>());
       expect(builtIn.mapPageIndex, 0);
       expect(builtIn.bands, hasLength(2));
-      expect(builtIn.bands.first.metrics.first, MetricId.duration);
+      expect(builtIn.bands.first.slots.first, const BandMetricSlot(MetricId.duration));
     });
   });
 
@@ -338,7 +338,7 @@ void main() {
       });
 
       expect(block, const MetricBlock(metric: MetricId.power));
-      expect((block! as MetricBlock).mode, MetricMode.big);
+      expect((block! as MetricBlock).layout, MetricLayout.fallback);
     });
 
     test('la jauge radar se pose depuis la clé du site', () {
@@ -390,7 +390,7 @@ void main() {
         ],
       });
 
-      expect(settings.presets.single.bands.single.metrics, hasLength(4));
+      expect(settings.presets.single.bands.single.slots, hasLength(4));
     });
 
     test('un jeu sans mesure connue est retiré', () {

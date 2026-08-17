@@ -5,8 +5,10 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../account/rider_profile_store.dart';
 import '../ui/formats.dart';
 import 'fit_writer.dart';
+import 'ride_detail_page.dart';
 import 'ride_recorder.dart';
 import 'ride_session.dart';
 import 'ride_store.dart';
@@ -19,13 +21,21 @@ import 'ride_store.dart';
 /// sports-scope. Un téléversement direct supposerait de tenir une session
 /// authentifiée hors du WebView, pour un gain nul sur la route.
 class RidesPage extends StatefulWidget {
-  const RidesPage({super.key, required this.store, required this.recorder});
+  const RidesPage({
+    super.key,
+    required this.store,
+    required this.recorder,
+    required this.riderProfile,
+  });
 
   final RideStore store;
 
   /// L'enregistreur, seulement pour reconnaître la sortie en cours : elle
   /// s'affiche, mais ne s'exporte ni ne se supprime tant qu'elle écrit.
   final RideRecorder recorder;
+
+  /// Transmis tel quel à l'écran de détail, pour ses zones et son TSS.
+  final RiderProfileStore riderProfile;
 
   @override
   State<RidesPage> createState() => _RidesPageState();
@@ -48,6 +58,11 @@ class _RidesPageState extends State<RidesPage> {
 
   bool _isActive(RideSession session) =>
       widget.recorder.session?.id == session.id;
+
+  /// Les sorties qu'un « tout supprimer » emporterait : jamais celle en cours,
+  /// même règle que la suppression individuelle (menu désactivé sur sa tuile).
+  List<RideSession> _deletable(List<RideSession> sessions) =>
+      sessions.where((s) => !_isActive(s)).toList();
 
   /// Construit le `.fit` puis ouvre le partage d'Android.
   ///
@@ -143,6 +158,56 @@ class _RidesPageState extends State<RidesPage> {
     await _reload();
   }
 
+  Future<void> _deleteAll() async {
+    final deletable = _deletable(_sessions ?? const []);
+    if (deletable.isEmpty) return;
+
+    final count = deletable.length;
+    final noun = count > 1 ? 'sorties' : 'sortie';
+    final verb = count > 1 ? 'seront perdues' : 'sera perdue';
+    final keepsActive = deletable.length != (_sessions?.length ?? 0);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Supprimer toutes les sorties ?'),
+        content: Text(
+          '$count $noun $verb. Pense à exporter celles qui comptent avant.'
+          '${keepsActive ? '\n\nLa sortie en cours n\'est pas concernée.' : ''}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Tout supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    for (final session in deletable) {
+      await widget.store.delete(session.id);
+    }
+    await _reload();
+  }
+
+  /// Ouvre le détail d'une sortie — bilan, profil d'altitude, zones, tours.
+  /// Sans garde particulière au-delà de ça : c'est une lecture seule, sans
+  /// le risque qui justifie `enabled: !active` sur le menu export/suppression.
+  void _openDetail(RideSession session) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => RideDetailPage(
+        session: session,
+        store: widget.store,
+        riderProfile: widget.riderProfile,
+      ),
+    ));
+  }
+
   void _toast(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -159,6 +224,12 @@ class _RidesPageState extends State<RidesPage> {
       appBar: AppBar(
         title: const Text('Mes sorties'),
         actions: [
+          IconButton(
+            onPressed:
+                _deletable(sessions ?? const []).isEmpty ? null : _deleteAll,
+            icon: const Icon(Icons.delete_sweep),
+            tooltip: 'Tout supprimer',
+          ),
           IconButton(
             onPressed: _reload,
             icon: const Icon(Icons.refresh),
@@ -195,6 +266,7 @@ class _RidesPageState extends State<RidesPage> {
     final busy = _busyId == session.id;
 
     return ListTile(
+      onTap: () => _openDetail(session),
       leading: Icon(
         active ? Icons.fiber_manual_record : Icons.route,
         color: active ? Colors.red : null,

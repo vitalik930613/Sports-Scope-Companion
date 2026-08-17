@@ -150,9 +150,12 @@ class TrainingBudgetCard extends StatelessWidget {
         children: [
           Row(
             children: [
+              // Même hauteur que le titre à côté : sur la même ligne, une
+              // icône plus petite que la lettre qui la suit se lit comme
+              // ratatinée, pas comme discrète.
               FaIcon(
                 FontAwesomeIcons.weightHanging,
-                size: metrics.titleSize * 0.85,
+                size: metrics.titleSize,
                 color: ink.withValues(alpha: 0.7),
               ),
               SizedBox(width: metrics.gap * 0.6),
@@ -487,7 +490,11 @@ class _Chip extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: metrics.iconSize, color: Colors.white54),
+        // Taille du chiffre à côté, pas [BlockMetrics.iconSize] : sur cette
+        // ligne l'icône n'est qu'un repère devant le chiffre, pas un pictogramme
+        // à part entière — la doubler de hauteur l'aurait fait dominer la
+        // pastille entière.
+        Icon(icon, size: metrics.unitSize, color: Colors.white54),
         const SizedBox(width: 4),
         Container(
           width: metrics.unitSize * 0.7,

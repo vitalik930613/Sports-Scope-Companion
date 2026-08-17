@@ -7,9 +7,12 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../account/site_session.dart';
 import '../ble/sensor_hub.dart';
+import '../dashboard/ride_preset.dart' show TraveledPathSettings;
 import '../navigation/navigation_target.dart';
 import '../navigation/sensor_bridge.dart';
+import '../phone/debug_log.dart';
 import '../phone/rider_compass.dart';
+import '../recording/ride_recorder.dart';
 
 /// La page de navigation du site, et rien d'autre.
 ///
@@ -32,6 +35,8 @@ class NavigationWebController {
   NavigationWebController({
     required this.hub,
     this.compass,
+    required this.recorder,
+    this.traveledPath = const TraveledPathSettings(),
     required NavigationTarget target,
     required this.baseUrl,
     required this.onMessage,
@@ -48,6 +53,14 @@ class NavigationWebController {
   /// Passée telle quelle au pont : le cap à l'arrêt est une mesure de plus à
   /// pousser dans la page, au même titre qu'un cardio.
   final RiderCompass? compass;
+
+  /// Seulement pour sa dernière position et l'identifiant de la sortie en
+  /// cours : c'est ce que le pont pousse comme trajet réellement parcouru.
+  final RideRecorder recorder;
+
+  /// Couleur, largeur, opacité de la ligne du trajet parcouru — vient du
+  /// profil de sortie.
+  final TraveledPathSettings traveledPath;
 
   final String baseUrl;
 
@@ -83,8 +96,9 @@ class NavigationWebController {
         onProgress: (value) => progress.value = value,
         onPageFinished: (_) {
           // La page peut avoir été rechargée (retour de veille, perte de
-          // réseau) : on republie l'état plutôt que d'attendre une trame.
-          bridge.pushNow();
+          // réseau) : on republie l'état plutôt que d'attendre une trame, et
+          // le trajet parcouru repart à neuf puisque son état JS l'est aussi.
+          bridge.notifyPageReloaded();
           // Les cartes hors-ligne (OPFS) sont un stockage « best-effort » côté
           // Android : sans cet appel, l'OS peut les évincer sous pression
           // disque — silencieusement, précisément le jour où il n'y a plus de
@@ -108,13 +122,16 @@ class NavigationWebController {
     // une erreur JavaScript côté navigation serait invisible : le WebView
     // afficherait juste une carte figée, sans rien dire.
     webView.setOnConsoleMessage((message) {
-      debugPrint('[web] ${message.level.name}: ${message.message}');
+      DebugLog.instance.add('[web] ${message.level.name}: ${message.message}');
     });
 
     bridge = SensorBridge(
       hub: hub,
       compass: compass,
       send: webView.runJavaScript,
+      latestFix: () => recorder.lastFix,
+      rideSessionId: () => recorder.session?.id,
+      traveledPath: traveledPath,
     )..start();
 
     _configureAndroid();
@@ -218,6 +235,45 @@ class NavigationWebController {
     } catch (e) {
       // Page en cours de rechargement : la prochaine occultation repartira.
       debugPrint('[web] occultation ignorée : $e');
+    }
+  }
+
+  /// Demande à la page d'entrer en veille — même geste que l'appui long
+  /// qu'elle sait déjà détecter, mais déclenché ici par un bouton natif
+  /// (`SleepControl`, sur une page de données sans carte sous les yeux).
+  /// Reprend le chemin exact de `toggleScreenOffManual` côté site
+  /// (`RouteNavigation.vue`) : la page dessine son propre voile, coupe sa
+  /// boucle de rendu, et renvoie le message `screen` habituel — `ScreenPolicy`
+  /// n'a donc rien de plus à apprendre pour dimmer l'écran que pour un appui
+  /// long réel.
+  ///
+  /// `?.` sur l'objet ET sur la méthode : un site plus ancien n'expose pas
+  /// `sleepEnter`, et l'appeler ne doit pas lever d'exception — le bouton
+  /// reste alors sans effet plutôt que de faire planter la sortie.
+  Future<void> requestSleep() async {
+    try {
+      await webView.runJavaScript(
+        'void (window.sportsScopeCompanion?.sleepEnter?.());',
+      );
+    } catch (e) {
+      debugPrint('[web] veille ignorée : $e');
+    }
+  }
+
+  /// Miroir de [requestSleep] dans l'autre sens — pour un geste natif (bouton
+  /// Di2 configuré en « sortie de veille ») qui doit réveiller la carte sans
+  /// attendre le virage qui la sort seule de son voile.
+  ///
+  /// `?.` sur l'objet ET sur la méthode, même garantie que [requestSleep] :
+  /// un site plus ancien que `sleepExit` (`companionBridge.ts`, dépôt Rails)
+  /// laisse le bouton sans effet plutôt que de faire planter la sortie.
+  Future<void> requestWake() async {
+    try {
+      await webView.runJavaScript(
+        'void (window.sportsScopeCompanion?.sleepExit?.());',
+      );
+    } catch (e) {
+      debugPrint('[web] réveil ignoré : $e');
     }
   }
 

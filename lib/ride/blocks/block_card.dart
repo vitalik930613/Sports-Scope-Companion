@@ -73,7 +73,7 @@ class BlockCard extends StatelessWidget {
           SizedBox(height: metrics.gap),
           for (final line in lines)
             Padding(
-              padding: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.only(bottom: 2),
               child: Text(
                 line,
                 style: TextStyle(
@@ -91,7 +91,13 @@ class BlockCard extends StatelessWidget {
 /// Une ligne de [StatCard] : ce qu'on mesure à gauche, ce que ça vaut à droite.
 @immutable
 class StatRow {
-  const StatRow(this.label, this.value, {this.background});
+  const StatRow(
+    this.label,
+    this.value, {
+    this.background,
+    this.icon,
+    this.dimmed = false,
+  });
 
   final String label;
   final String value;
@@ -100,6 +106,21 @@ class StatRow {
   /// `null` sans seuil connu ou pour une mesure qui n'a pas de zone (cadence,
   /// vitesse) — la ligne garde alors le texte blanc uni.
   final Color? background;
+
+  /// La valeur vient d'un appareil qui n'est plus connecté : elle reste
+  /// affichée (une batterie ne se remet pas à zéro toute seule en se
+  /// débranchant, contrairement à un capteur en direct — même règle que
+  /// `SensorHub.latest*`), mais grisée pour dire *ce n'est plus mesuré en
+  /// direct*, plutôt qu'un chiffre à jour qu'on croirait actuel.
+  final bool dimmed;
+
+  /// Devant le libellé, `null` la plupart du temps : la mesure d'une carte
+  /// (moyennes, bilan de tour) est déjà dite par l'icône du titre, une par
+  /// ligne serait redondante. Sert quand chaque ligne est un *appareil*
+  /// différent plutôt qu'un chiffre différent de la même mesure — voir le
+  /// composant `battery`, où chaque ligne a son propre capteur donc sa
+  /// propre icône.
+  final IconData? icon;
 }
 
 /// La carte des moyennes : un titre, puis des lignes en **deux colonnes**.
@@ -110,18 +131,27 @@ class StatRow {
 /// et c'est tout ce qu'on demande à un bilan de moyennes.
 ///
 /// L'unité est dans le titre et pas sur chaque ligne : elle vaut pour les
-/// trois, et la colonne des valeurs tient alors dans une demi-case.
+/// trois, et la colonne des valeurs tient alors dans une demi-case. Rendue
+/// plus petite que le titre ([StatCard.unit]) : sur la même ligne qu'un
+/// libellé ou une icône, elle ne doit jamais rivaliser avec eux.
 class StatCard extends StatelessWidget {
   const StatCard({
     super.key,
     required this.title,
     required this.rows,
+    this.unit,
     this.icon,
     this.color,
     this.textColor,
   });
 
   final String title;
+
+  /// Affichée après le titre, plus petite — jamais concaténée dedans : sur
+  /// la même ligne qu'un libellé, l'unité doit toujours se lire plus
+  /// discrète que lui.
+  final String? unit;
+
   final List<StatRow> rows;
 
   /// Devant le titre : dit quelle mesure on regarde avant même de lire le nom
@@ -159,13 +189,23 @@ class StatCard extends StatelessWidget {
                 SizedBox(width: metrics.gap / 2),
               ],
               Expanded(
-                child: Text(
-                  title.toUpperCase(),
+                child: RichText(
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: dimInk,
-                    fontSize: metrics.titleSize,
+                  text: TextSpan(
+                    text: title.toUpperCase(),
+                    style: TextStyle(
+                      color: dimInk,
+                      fontSize: metrics.titleSize,
+                    ),
+                    children: unit == null
+                        ? null
+                        : [
+                            TextSpan(
+                              text: ' (${unit!.toUpperCase()})',
+                              style: TextStyle(fontSize: metrics.titleSize * 0.8),
+                            ),
+                          ],
                   ),
                 ),
               ),
@@ -174,28 +214,35 @@ class StatCard extends StatelessWidget {
           SizedBox(height: metrics.gap),
           for (final row in rows)
             Padding(
-              padding: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.only(bottom: 2),
               // Pas de `baseline` ici : le fond de zone met la valeur dans un
               // `Container` (pour son rembourrage et son coin arrondi), qui
               // n'a pas de ligne de base à offrir — un Row en `baseline` la
               // recalerait sur son bord haut plutôt que sur le texte du
               // libellé.
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      row.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: dimInk,
-                        fontSize: metrics.lineSize,
+              child: Opacity(
+                opacity: row.dimmed ? 0.45 : 1,
+                child: Row(
+                  children: [
+                    if (row.icon != null) ...[
+                      Icon(row.icon, size: metrics.lineSize, color: dimInk),
+                      SizedBox(width: metrics.gap / 2),
+                    ],
+                    Expanded(
+                      child: Text(
+                        row.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: dimInk,
+                          fontSize: metrics.lineSize,
+                        ),
                       ),
                     ),
-                  ),
-                  SizedBox(width: metrics.gap),
-                  _value(row, metrics, ink),
-                ],
+                    SizedBox(width: metrics.gap),
+                    _value(row, metrics, ink),
+                  ],
+                ),
               ),
             ),
         ],

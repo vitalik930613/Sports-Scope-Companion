@@ -29,7 +29,7 @@ class BlockMetrics {
   /// Les tailles naturelles, indépendantes de la case : il n'y a plus qu'un
   /// seul jeu de valeurs.
   static const natural = BlockMetrics._(
-    padding: 16,
+    padding: 10,
     gap: 12,
     titleSize: 13,
     lineSize: 16,

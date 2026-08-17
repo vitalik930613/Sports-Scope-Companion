@@ -93,9 +93,12 @@ class RadarBlockView extends StatelessWidget {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Même taille que le compte à côté (`× N`) : c'est la seule
+                // façon de faire lire icône et chiffre comme une seule
+                // information plutôt que comme deux tailles rivales.
                 Icon(
                   Icons.directions_car,
-                  size: BlockMetrics.natural.iconSize + 2,
+                  size: BlockMetrics.natural.iconSize,
                   color: severityColor,
                 ),
                 // Le compte n'est écrit que s'il y a de quoi compter : « ×1 »
@@ -216,22 +219,15 @@ class RadarBlockView extends StatelessWidget {
 
   /// Un simple aplat de couleur, sans chiffre ni icône : ce qui se lit le
   /// plus vite du coin de l'œil, pour la case la plus petite de la grille.
-  /// Mêmes couleurs que partout ailleurs sur ce bloc — orange qui approche,
-  /// rouge qui est proche — plus le vert et le gris des états sans alerte,
-  /// via [_emptyState].
+  /// La couleur de sévérité **est** le fond de la carte — pas un carré
+  /// dedans — pour qu'elle se voie même en case minuscule, où un carré de 64
+  /// px ne tiendrait plus. Mêmes couleurs que partout ailleurs sur ce bloc —
+  /// orange qui approche, rouge qui est proche — plus le vert et le gris des
+  /// états sans alerte, via [_emptyState].
   Widget _gauge(RadarView view) {
     final severityColor = _emptyState(view.severity)?.$2 ??
         (view.severity == RadarSeverity.close ? _close : _approaching);
 
-    return BlockSurface(
-      background: color,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: severityColor,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: const SizedBox.square(dimension: 64),
-      ),
-    );
+    return BlockSurface(background: severityColor, child: const SizedBox());
   }
 }

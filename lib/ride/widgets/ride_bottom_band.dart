@@ -1,8 +1,14 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../dashboard/dashboard_block.dart' show BellMode, BellSound, RadarMode, SleepMode;
 import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
-import '../../ui/zone_colors.dart';
+import '../blocks/bell_block.dart';
+import '../blocks/radar_block.dart';
+import '../blocks/sleep_block.dart';
+import '../radar_severity.dart';
+import 'band_metric_tile.dart';
 import 'swipe_zone.dart';
 
 /// Le bandeau du bas : les valeurs instantanées de la sortie.
@@ -37,7 +43,9 @@ class RideBottomBand extends StatefulWidget {
     super.key,
     required this.bands,
     required this.sources,
+    this.radar,
     this.onCalibratePower,
+    this.onSleep,
   });
 
   /// Les jeux de valeurs du profil, dans l'ordre. Au moins un.
@@ -45,6 +53,16 @@ class RideBottomBand extends StatefulWidget {
 
   /// D'où les mesures se lisent — et de quoi elles dépendent.
   final MetricSources sources;
+
+  /// Nul quand le profil a coupé le radar — même source que la page de
+  /// données (`DashboardPage.radar`) et le cadre d'alerte, pas une seconde
+  /// écoute du capteur.
+  final ValueListenable<RadarView>? radar;
+
+  /// Demander la veille, sur un tap de la case `sleep` — voir [SleepControl].
+  /// `null` sur un profil sans carte, comme la commande de la grille : rien
+  /// à endormir.
+  final VoidCallback? onSleep;
 
   /// Calibrer le capteur de puissance, sur un tap des watts ou de leur zone.
   ///
@@ -107,8 +125,8 @@ class _RideBottomBandState extends State<RideBottomBand> {
           ),
           child: Row(
             children: [
-              for (final (index, metric) in widget.bands[_set].metrics.indexed)
-                Expanded(child: _metric(metric, index)),
+              for (final (index, slot) in widget.bands[_set].slots.indexed)
+                Expanded(child: _slot(slot, index)),
             ],
           ),
         ),
@@ -122,19 +140,48 @@ class _RideBottomBandState extends State<RideBottomBand> {
   /// une, garde toujours la priorité : c'est elle, l'information.
   static const _alternateBackgrounds = [Color(0xFF101214), Color(0xFF1F2226)];
 
-  Widget _metric(MetricId? metric, int index) {
+  Widget _slot(BandSlot? slot, int index) {
     // Une case vide reste dans la rangée — le glissé de largeur du `Row`
     // parent dépend du nombre de cases, pas de leur contenu — mais n'y
     // dessine rien.
-    if (metric == null) return const SizedBox.shrink();
+    if (slot == null) return const SizedBox.shrink();
 
+    return switch (slot) {
+      BandMetricSlot(:final metric) => _metric(metric, index),
+      BandActionSlot(:final action) => _action(action),
+      BandBellSlot(:final sound) => _bell(sound),
+      BandRadarSlot(:final mode) => _radar(mode),
+    };
+  }
+
+  // Même marge que `BandMetricTile` : sans elle, l'icône touchait ses
+  // voisines alors que chaque case de mesure en garde une.
+  Widget _action(BandAction action) => switch (action) {
+        BandAction.sleep => Padding(
+            padding: const EdgeInsets.fromLTRB(2, 3, 2, 3),
+            child: SleepControl(onSleep: widget.onSleep, mode: SleepMode.compact),
+          ),
+      };
+
+  Widget _bell(BellSound sound) => Padding(
+        padding: const EdgeInsets.fromLTRB(2, 3, 2, 3),
+        child: BellControl(mode: BellMode.compact, sound: sound),
+      );
+
+  // Pas de marge supplémentaire : [BlockSurface] (`block_card.dart`) porte
+  // déjà son propre padding, comme dans une case de grille.
+  Widget _radar(RadarMode mode) => RadarBlockView(radar: widget.radar, mode: mode);
+
+  Widget _metric(MetricId metric, int index) {
     final tile = ListenableBuilder(
       listenable: Listenable.merge(metric.dependencies(widget.sources)),
       builder: (context, _) {
         final reading = metric.read(widget.sources);
-        return _BandMetric(
+        return BandMetricTile(
           value: reading.value,
-          label: metric.unit,
+          // Le nom de la mesure, pas son unité : dans une case sans icône,
+          // c'est ce qui dit laquelle on regarde (« Cardio », pas « bpm »).
+          label: metric.name,
           zoneKey: reading.zoneKey,
           background: reading.background,
           altBackground: _alternateBackgrounds[index % 2],
@@ -157,89 +204,4 @@ class _RideBottomBandState extends State<RideBottomBand> {
 
   static bool _isPower(MetricId metric) =>
       metric == MetricId.power || metric == MetricId.powerZone;
-}
-
-/// Une valeur du bandeau : le chiffre, puis son unité en dessous.
-///
-/// Un tiret quand la mesure manque, jamais un zéro — même règle que
-/// [MetricTile], pour que le bandeau et l'écran de diagnostic ne racontent pas
-/// deux histoires différentes du même capteur muet.
-class _BandMetric extends StatelessWidget {
-  const _BandMetric({
-    required this.value,
-    required this.label,
-    this.zoneKey,
-    this.background,
-    this.altBackground,
-  });
-
-  final String? value;
-  final String label;
-
-  /// `z1`…`z7` pour peindre la case aux couleurs de la zone, `null` pour la
-  /// laisser sur le fond du bandeau.
-  final String? zoneKey;
-
-  /// Couleur de fond directe (la pente, sur sa tranche de difficulté), quand
-  /// la mesure ne se range pas en zone d'entraînement. Même priorité que
-  /// [MetricView] : elle l'emporte sur l'alternance noir/anthracite.
-  final Color? background;
-
-  /// Le noir ou l'anthracite de l'alternance, quand la case ne porte pas de
-  /// zone — c'est elle qui recule dès qu'une zone donne une vraie couleur.
-  final Color? altBackground;
-
-  @override
-  Widget build(BuildContext context) {
-    final zoneColor = background ?? zoneColorOf(zoneKey);
-    final foreground = zoneColor == null ? Colors.white : foregroundOf(zoneColor);
-
-    final content = Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        // Les valeurs sont de longueurs très inégales (« 8 » et « 1:12:34 ») et
-        // le bandeau partage sa largeur en parts égales : sans réduction, la
-        // durée déborderait sur un téléphone étroit.
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            value ?? '—',
-            maxLines: 1,
-            style: TextStyle(
-              color: foreground,
-              fontSize: 24,
-              fontWeight: FontWeight.w500,
-              height: 1.1,
-            ),
-          ),
-        ),
-        Text(
-          label,
-          maxLines: 1,
-          // Sur un aplat de zone, le libellé passe de « discret » à « lisible » :
-          // le blanc à 54 % disparaît sur le jaune comme sur le rouge.
-          style: TextStyle(
-            color: zoneColor == null ? Colors.white54 : foreground.withValues(alpha: 0.75),
-            fontSize: 11,
-          ),
-        ),
-      ],
-    );
-
-    final surface = zoneColor ?? altBackground;
-    if (surface == null) return content;
-
-    // Symétrique depuis que les pastilles du jeu de valeurs ont quitté le bord
-    // haut : la marge de 9 pt qui les dégageait ne tenait plus qu'à elles, et
-    // l'aplat de zone gagne à couvrir toute la hauteur de sa case — c'est aussi
-    // une surface de lecture.
-    return Container(
-      margin: const EdgeInsets.fromLTRB(2, 3, 2, 3),
-      decoration: BoxDecoration(
-        color: surface,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: content,
-    );
-  }
 }

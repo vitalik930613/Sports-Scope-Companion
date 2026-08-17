@@ -12,6 +12,7 @@ import '../phone/barometric_altitude.dart';
 import '../phone/phone_sensors.dart';
 import 'gps_fix.dart';
 import 'gps_source.dart';
+import 'ride_elevation_track.dart';
 import 'ride_lap.dart';
 import 'ride_session.dart';
 import 'ride_stats.dart';
@@ -138,6 +139,11 @@ class RideRecorder extends ChangeNotifier {
   /// résume la sortie à l'export : l'écran et le `.fit` ne peuvent pas diverger.
   final stats = RideStats();
 
+  /// Le profil (distance, altitude) de la sortie en cours, pour le composant
+  /// « Profil d'altitude » quand aucun tracé n'est chargé — voir
+  /// `ride_elevation_track.dart`. Local au téléphone, jamais transmis.
+  final elevationTrack = RideElevationTrack();
+
   /// Les séries de tours de la sortie en cours, par clé de série. Plusieurs
   /// séries tournent en parallèle sans se fermer l'une l'autre — voir
   /// [markLap]. Connues dès [start] (le paramètre `lapSeries`) : une série
@@ -197,6 +203,7 @@ class RideRecorder extends ChangeNotifier {
     _pointCount = 0;
     _recordedSeconds = 0;
     stats.reset();
+    elevationTrack.reset();
     _lastFix = null;
     _referenceFix = null;
     _lastMetaSave = DateTime.now();
@@ -271,6 +278,21 @@ class RideRecorder extends ChangeNotifier {
       startedAt: DateTime.now(),
       startDistanceM: _distanceM,
     ));
+    _notify();
+  }
+
+  /// Étiquette le tour courant de [series] avec l'identifiant d'un col — voir
+  /// [RideLap.climbId]. Toujours le **dernier** tour de la série : un profil
+  /// de col arrive juste après le tour que le front montant du col vient
+  /// d'ouvrir (`RideShellPage._onPageMessage`), jamais avant, donc jamais sur
+  /// un tour déjà clos.
+  ///
+  /// Sans effet — jamais une exception — si [series] n'a pas été déclarée ou
+  /// si rien n'est enregistré, même garde que [markLap].
+  void tagClimb(String series, int climbId) {
+    final laps = _series[series];
+    if (!isActive || laps == null || laps.isEmpty) return;
+    laps.last.climbId = climbId;
     _notify();
   }
 
@@ -374,6 +396,11 @@ class RideRecorder extends ChangeNotifier {
     // Avant l'écriture : un disque plein ne doit pas effacer le point de
     // l'affichage, où il vient tout juste d'être mesuré.
     stats.add(point);
+    // Même préférence de source que RideStats._addAltitude : une fois le
+    // baromètre vu, il ne rend jamais la main au GPS, même sur un point où il
+    // manque — deux sources décalées de plusieurs mètres feraient une marche.
+    final altitude = stats.hasBaroAltitude ? point.baroAltitudeM : point.altitudeM;
+    if (altitude != null) elevationTrack.add(point.distanceM, altitude);
     for (final laps in _series.values) {
       final lap = laps.last;
       lap.stats.add(point);
@@ -468,6 +495,13 @@ class RideRecorder extends ChangeNotifier {
       case RadarSample():
         // Le radar dit ce qui arrive derrière, pas ce que fait le cycliste :
         // rien à enregistrer dans la trace.
+        break;
+      case RemoteButtonSample():
+        // Un geste sur le tableau de bord, pas une mesure de la sortie.
+        break;
+      case BatterySample():
+        // L'état d'un capteur, pas une mesure de la sortie — voir
+        // `BatteryStatusNotifier`.
         break;
     }
   }

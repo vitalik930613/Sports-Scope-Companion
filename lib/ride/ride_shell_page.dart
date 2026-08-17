@@ -12,17 +12,24 @@ import '../ble/samples.dart';
 import '../ble/sensor_hub.dart';
 import '../dashboard/metric_id.dart';
 import '../dashboard/ride_preset.dart';
+import '../devices/known_devices_store.dart';
 import '../navigation/navigation_picker_sheet.dart';
 import '../navigation/navigation_target.dart';
 import '../navigation/route_catalog_store.dart';
 import '../navigation/screen_dimmer.dart';
+import '../phone/phone_sensors.dart';
 import '../phone/rider_compass.dart';
 import '../recording/ride_recorder.dart';
 import '../ui/offline_download_dialog.dart';
 import '../ui/power_calibration_dialog.dart';
 import 'auto_return_policy.dart';
+import 'battery_alert_sound.dart';
+import 'battery_status.dart';
+import 'battery_wake_policy.dart';
+import 'blocks/bell_player.dart';
 import 'climb_debug_data.dart';
 import 'climb_profile.dart';
+import 'di2_button_gesture_policy.dart';
 import 'native_turn_alerts.dart';
 import 'nav_state.dart';
 import 'navigation_web_view.dart';
@@ -33,17 +40,21 @@ import 'radar_severity.dart';
 import 'radar_wake_policy.dart';
 import 'ride_pages.dart';
 import 'route_climbs.dart';
+import 'route_profile.dart';
 import 'screen_policy.dart';
 import 'turn_proximity.dart';
+import 'widgets/battery_alert_banner.dart';
 import 'widgets/climb_badge.dart';
+import 'widgets/compass_badge.dart';
 import 'widgets/climb_profile_overlay.dart';
 import 'widgets/map_edge_handle.dart';
 import 'widgets/map_swipe_zone.dart';
-import 'widgets/radar_distance_badges.dart';
+import 'widgets/notch_band.dart';
 import 'widgets/radar_frame.dart';
 import 'widgets/radar_side_gauge.dart';
 import 'widgets/radar_wake_page.dart';
 import 'widgets/ride_bottom_band.dart';
+import 'widgets/ride_button_flash.dart';
 import 'widgets/ride_page_flash.dart';
 
 /// La coquille d'une sortie : ce qui appartient à l'écran, pas à la page web.
@@ -76,8 +87,10 @@ class RideShellPage extends StatefulWidget {
     required this.target,
     required this.preset,
     required this.hub,
+    required this.devices,
     required this.recorder,
     this.compass,
+    this.phone,
     required this.session,
     required this.riderProfile,
     required this.trainingBudget,
@@ -95,6 +108,11 @@ class RideShellPage extends StatefulWidget {
 
   final SensorHub hub;
 
+  /// Les appareils appairés, pour construire la rangée de batteries — même
+  /// magasin que l'accueil (`SensorStatusStrip`), source des lignes du bloc
+  /// `battery` (voir `BatteryStatusNotifier`).
+  final KnownDevicesStore devices;
+
   /// Les itinéraires du compte, pour en choisir un autre en pleine sortie. Le
   /// même magasin que l'écran des capteurs : son cache est ce qui rend le choix
   /// possible là où le réseau manque, c'est-à-dire sur la route.
@@ -110,6 +128,14 @@ class RideShellPage extends StatefulWidget {
   /// réveille le processeur pour une flèche que personne ne regarde. Nulle sur
   /// un appareil sans magnétomètre, dans un test, ou quand le profil l'a coupée.
   final RiderCompass? compass;
+
+  /// Les capteurs du téléphone lui-même — ici, seulement pour sa batterie
+  /// (voir `BatteryStatusNotifier`). Volontairement **pas** tiré de
+  /// [compass] : ce dernier est nul dès que le profil coupe la boussole
+  /// (`preset.sensors.compass`), et la batterie du téléphone n'a pas de
+  /// réglage pour la couper — elle ne doit pas disparaître avec un capteur
+  /// sans rapport.
+  final PhoneSensors? phone;
 
   /// Pas pour authentifier la page — le cookie du WebView s'en charge — mais
   /// pour tenir à jour ce que l'appli affiche de la session.
@@ -151,8 +177,9 @@ class _RideShellPageState extends State<RideShellPage>
   /// Sans carte, personne ne l'alimente jamais — et personne ne l'écoute.
   final _nav = NavStateNotifier();
 
-  /// Le profil du col en cours, poussé une fois par col (voir
-  /// climb_profile.dart). Sans carte, personne ne l'alimente ni ne l'écoute —
+  /// Le profil du col en cours, résolu depuis [_routeClimbs] par id à chaque
+  /// trame `nav` (voir `_onPageMessage`) — donc disponible hors ligne dès que
+  /// le tracé est chargé. Sans carte, personne ne l'alimente ni ne l'écoute —
   /// même sort que [_nav].
   final _climbProfile = ClimbProfileNotifier();
 
@@ -160,6 +187,33 @@ class _RideShellPageState extends State<RideShellPage>
   /// route_climbs.dart). Sans carte, personne ne l'alimente ni ne l'écoute —
   /// même sort que [_nav] et [_climbProfile].
   final _routeClimbs = RouteClimbsNotifier();
+
+  /// Le profil d'altitude du tracé en cours, poussé une fois par tracé (voir
+  /// route_profile.dart). Sans carte, personne ne l'alimente ni ne l'écoute —
+  /// même sort que [_routeClimbs]. Contrairement à eux,
+  /// `AltitudeProfileCard` reste utile même quand cette source est nulle : elle
+  /// se rabat alors sur `recorder.elevationTrack`.
+  final _routeProfile = RouteProfileNotifier();
+
+  /// La boussole, pour la pastille de la carte — `(cap corrigé, calibrage
+  /// vérifié)`, mis à jour une fois par seconde comme [RiderCompass.addFix]
+  /// ci-dessous. `null` tant que rien n'est mesurable (pas de magnétomètre,
+  /// profil sans boussole, ou aucune trame encore reçue) : la pastille
+  /// disparaît alors plutôt que d'offrir un bouton qui ne ferait rien.
+  final _compassReading = ValueNotifier<(double, bool)?>(null);
+
+  /// Tap sur la pastille de boussole : force ou relâche sa priorité sur la
+  /// course GPS (voir [RiderCompass.forced]). Rien à faire si le profil n'a
+  /// pas de boussole — la pastille n'est de toute façon jamais montrée.
+  void _toggleCompassForced() {
+    final compass = widget.compass;
+    if (compass == null) return;
+    setState(() => compass.forced = !compass.forced);
+    // Le pont n'envoie une mise à jour que si un capteur BLE l'a marqué
+    // « sale » entre-temps (`SensorBridge._dirty`) : sans capteur connecté,
+    // le nouveau cap ne partirait jamais vers la carte tout seul.
+    _web?.bridge.pushNow();
+  }
 
   /// La pastille de col est-elle dépliée en graphique ? Un simple booléen
   /// possédé par la coquille suffit ici — pas de politique séparée comme
@@ -169,6 +223,17 @@ class _RideShellPageState extends State<RideShellPage>
   /// s'ouvre grand tout seul recouvrirait la carte au moment précis où le
   /// cycliste a le plus besoin de voir la route devant lui.
   final _climbExpanded = ValueNotifier<bool>(false);
+
+  /// Cherche l'entrée de [_routeClimbs] qui correspond à [id] — voir son
+  /// usage dans `_onPageMessage`, cas `'nav'`. `null` sans liste encore reçue,
+  /// col sans id (site plus ancien) ou id qui ne matche aucune entrée.
+  RouteClimb? _findRouteClimb(int? id) {
+    if (id == null) return null;
+    for (final climb in _routeClimbs.value?.climbs ?? const <RouteClimb>[]) {
+      if (climb.id == id) return climb;
+    }
+    return null;
+  }
 
   /// Un col de démonstration, affiché par-dessus la sortie réelle (carte,
   /// bandeau, radar) — voir le bouton « Simuler un col » du menu d'actions.
@@ -206,13 +271,53 @@ class _RideShellPageState extends State<RideShellPage>
 
   RidePreset get _preset => widget.preset;
 
-  /// Le défilement et le menu, séparés une fois pour toutes.
-  ///
-  /// Calculés au montage et non à chaque trame : le profil est figé pour la
-  /// durée de la sortie, et ces deux listes sont lues par le `build`, le numéro
-  /// de page et le retour automatique.
-  late final List<RidePageSpec> _ridePages;
-  late final List<RidePageSpec> _menuPages;
+  /// Le défilement et le menu, tels que le profil les décrit **structurel-
+  /// lement** — calculés au montage et non à chaque trame, comme le profil lui-
+  /// même. Une page qui porte une condition (voir [_conditionalPages]) reste
+  /// classée ici côté menu : c'est [_activeConditional] qui, en roulant, la
+  /// fait apparaître dans [_ridePages].
+  late final List<RidePageSpec> _baseRidePages;
+  late final List<RidePageSpec> _baseMenuPages;
+
+  /// Les pages du menu qui portent une condition de sortie — sous-ensemble de
+  /// [_baseMenuPages]. Vide pour l'immense majorité des profils, qui n'en
+  /// posent aucune : [_updateConditionalPages] sort alors tout de suite.
+  late final List<RidePageSpec> _conditionalPages;
+
+  /// Les pages conditionnelles actuellement actives — réévaluées à chaque tic
+  /// (voir [_updateConditionalPages]), jamais à chaque trame : ni [NavState] ni
+  /// la pente ne changent plus vite que la seconde qui sépare deux tics.
+  Set<RidePageSpec> _activeConditional = const {};
+
+  /// Les pages du défilement rangées à la main, depuis leur propre menu ⋮
+  /// (« Masquer cette page », voir [_hidePage]). Un geste de l'instant, jamais
+  /// écrit sur le profil : reparti de zéro au prochain lancement, même sortie
+  /// ou non, [_baseRidePages] repart telles que le site les décrit.
+  Set<RidePageSpec> _manuallyHidden = const {};
+
+  /// Le défilement du moment : les pages toujours-défilantes non masquées à la
+  /// main, puis les pages conditionnelles actives, **toujours en fin de
+  /// liste**. Cet ordre garde la carte et les pages qui la précèdent à un
+  /// index stable tant que rien n'est masqué — [_mapPage] se recalcule quand
+  /// même à chaque accès, parce qu'une page masquée avant elle décale bel et
+  /// bien tout ce qui suit.
+  List<RidePageSpec> get _ridePages => [
+        for (final page in _baseRidePages)
+          if (!_manuallyHidden.contains(page)) page,
+        for (final page in _conditionalPages)
+          if (_activeConditional.contains(page)) page,
+      ];
+
+  /// Les pages rangées derrière le menu du moment : celles masquées à la main,
+  /// les pages sans condition, et les pages conditionnelles **inactives** —
+  /// une page active est dans [_ridePages], pas ici, elle n'a donc pas besoin
+  /// d'être allée chercher.
+  List<RidePageSpec> get _menuPages => [
+        for (final page in _baseMenuPages)
+          if (!_conditionalPages.contains(page) || !_activeConditional.contains(page)) page,
+        for (final page in _baseRidePages)
+          if (_manuallyHidden.contains(page)) page,
+      ];
 
   /// La page ouverte depuis le menu, index dans [_menuPages]. `null` la plupart
   /// du temps — c'est une page qu'on va chercher, pas une page où l'on est.
@@ -224,7 +329,18 @@ class _RideShellPageState extends State<RideShellPage>
   int get _page => pageOf(_rawPage, count: _pageCount);
 
   /// Où est la carte dans le défilement, `null` quand le profil n'en a pas.
-  int? get _mapPage => _preset.mapPageIndex;
+  ///
+  /// Recalculé sur [_ridePages] et non pris tel quel sur
+  /// [RidePreset.mapPageIndex] : une page masquée à la main avant la carte
+  /// (voir [_hidePage]) décale son index, contrairement aux pages
+  /// conditionnelles, toujours ajoutées en fin de liste.
+  int? get _mapPage {
+    final pages = _ridePages;
+    for (var i = 0; i < pages.length; i++) {
+      if (pages[i] is MapPageSpec) return i;
+    }
+    return null;
+  }
 
   /// La carte est-elle sous les yeux ?
   ///
@@ -242,7 +358,12 @@ class _RideShellPageState extends State<RideShellPage>
 
   /// Le retour automatique sur la carte, et la restitution de la page ensuite.
   final _alerts = RideAlertSource();
-  late final AutoReturnPolicy _autoReturn;
+  // Pas `final` : [_hidePage]/[_showPage] la reconstruisent quand masquer une
+  // page décale l'index de la carte, `mapPage` n'ayant pas d'autre façon
+  // d'être corrigé après coup. Le rare vol d'alerte en cours à cet instant
+  // précis se contente de reperdre la page qu'il devait rendre — un geste
+  // volontaire du menu, jamais aussi pressant qu'un virage.
+  late AutoReturnPolicy _autoReturn;
   static const _proximity = TurnProximity();
 
   /// Filet natif de virages, voir `native_turn_alerts.dart`. `null` tant que le
@@ -259,8 +380,42 @@ class _RideShellPageState extends State<RideShellPage>
   /// temps qui passe.
   Timer? _tick;
 
+  /// Boutons distants (D-Fly du Di2) — voir `RemoteButtonSample`
+  /// (`ble/samples.dart`) pour le canal brut, [Di2ButtonGesturePolicy] pour
+  /// sa classification en clic/double-clic/appui long, et
+  /// [_performButtonAction] pour l'exécution.
+  StreamSubscription<SensorSample>? _remoteButtonSub;
+
+  /// Tic dédié à [Di2ButtonGesturePolicy.resolve], plus rapide que celui d'une
+  /// seconde qui pilote le reste de la coquille : l'appui long se déclenche
+  /// entre deux trames de maintien (répétées à ~1 s d'écart), et un tic à
+  /// 1 Hz ferait attendre jusqu'à la trame suivante — près d'une seconde de
+  /// retard en plus du seuil lui-même — avant de le voir. Séparé plutôt que
+  /// fondu dans `_tick` : accélérer *tout* le reste (retour auto, réveil
+  /// radar) n'a aucune raison d'accompagner ce seul réglage.
+  Timer? _buttonTick;
+  final _buttonGestures = Di2ButtonGesturePolicy();
+
+  /// La sonnette/le klaxon déclenchés par un geste de bouton distant —
+  /// indépendante de tout [BellControl] posé sur le tableau de bord, comme
+  /// deux `BellControl` le seraient déjà entre eux.
+  final _buttonBell = BellPlayer();
+
+  /// Le dernier geste de bouton résolu, pour [RideButtonFlash] — `seq`
+  /// incrémenté à chaque geste, y compris deux fois le même de suite, sinon
+  /// le second ne changerait rien à l'œil du widget et ne s'afficherait pas.
+  ButtonGestureFlash? _buttonFlash;
+  int _buttonFlashSeq = 0;
+
   /// Le cycliste a-t-il changé de page de sa main depuis la dernière décision ?
   bool _userMoved = false;
+
+  /// L'état retenu de la condition `descending`, avec hystérésis — voir
+  /// [_conditionMet]. Seule des trois conditions à porter sur un échantillon
+  /// brut plutôt qu'un état déjà poussé par la page (`onRoute`, `climb`) : sans
+  /// bande morte, la page basculerait dedans et dehors à chaque tic autour du
+  /// seuil.
+  bool _descending = false;
 
   /// L'alerte vue au tic précédent — pour ne fermer la page du menu qu'au
   /// **front montant**, voir [_decideReturn].
@@ -288,6 +443,23 @@ class _RideShellPageState extends State<RideShellPage>
   /// veille ensuite.
   late final RadarWakePolicy _radarWake;
 
+  /// La batterie de chaque appareil connu, et sa voix — mêmes principes que
+  /// le radar, mais jamais coupée par le profil (voir
+  /// `SensorSettings.allows(SensorKind.battery)`).
+  late final BatteryStatusNotifier _battery;
+  final _batteryVoice = BatteryAlertVoice();
+  final _batterySound = BatteryAlertPlayer();
+
+  /// Ce qui décide de rallumer l'écran pour une alerte batterie, et de le
+  /// rendre à la veille ensuite — impulsion plutôt qu'état continu, voir
+  /// `BatteryWakePolicy`.
+  late final BatteryWakePolicy _batteryWake;
+
+  /// Les appareils à nommer dans le bandeau d'alerte, vide = rien à montrer.
+  /// Partage l'horloge de [_batteryWake] : pas de minuteur séparé pour le
+  /// bandeau, voir `_updateBatteryWake`.
+  final _batteryAlert = ValueNotifier<List<BatteryStatus>>(const []);
+
   late final MetricSources _sources;
 
   /// Construit une fois : un changement de page ne doit pas reconstruire l'arbre
@@ -304,14 +476,19 @@ class _RideShellPageState extends State<RideShellPage>
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     WidgetsBinding.instance.addObserver(this);
 
-    _ridePages = _preset.ridePages;
-    _menuPages = _preset.menuPages;
+    _baseRidePages = _preset.ridePages;
+    _baseMenuPages = _preset.menuPages;
+    _conditionalPages = [
+      for (final page in _baseMenuPages)
+        if (page.menuCondition != null) page,
+    ];
 
     _rawPage = rawPageOriginFor(_pageCount);
     _pages = PageController(initialPage: _rawPage);
 
     _autoReturn = AutoReturnPolicy(mapPage: _mapPage);
     _radarWake = RadarWakePolicy(hold: _preset.radar.wakeHold);
+    _batteryWake = BatteryWakePolicy();
 
     _mutedRadar = ValueNotifier<RadarSample?>(null);
     _radar = RadarViewNotifier(
@@ -326,6 +503,35 @@ class _RideShellPageState extends State<RideShellPage>
       unawaited(_radarSound.warmUp());
     }
 
+    _battery = BatteryStatusNotifier(
+      widget.devices,
+      widget.hub,
+      phone: widget.phone,
+      thresholdPercent: _preset.battery.thresholdPercent,
+    );
+    _battery.addListener(_onBatteryStatus);
+    if (_preset.battery.sounds) unawaited(_batterySound.warmUp());
+
+    // Même garde que pour le radar : un profil qui écarte le Di2 (vélo prêté,
+    // boîtier de l'autre vélo) ne doit pas laisser ses boutons piloter le
+    // tableau de bord. `_stepPage` marque déjà le geste comme manuel
+    // (`_autoMoves == 0` dans `_onPageChanged`), donc une pression suspend le
+    // retour auto exactement comme un glissé de bandeau.
+    if (_preset.sensors.gears) {
+      _remoteButtonSub = widget.hub.samples.listen((sample) {
+        if (sample is! RemoteButtonSample) return;
+        if (_buttonGestures.onPress(sample.channel, sample.at, sample.pressKind)
+            case final gesture?) {
+          _dispatchButtonGesture(sample.channel, gesture);
+        }
+      });
+      _buttonTick = Timer.periodic(const Duration(milliseconds: 200), (_) {
+        for (final event in _buttonGestures.resolve(DateTime.now())) {
+          _dispatchButtonGesture(event.channel, event.gesture);
+        }
+      });
+    }
+
     // La boussole ne sert qu'avec une carte — c'est la page qui consomme le cap
     // — et ne mesure rien tant qu'on n'a pas comparé ses caps à la course GPS.
     if (_preset.sensors.compass && _preset.hasMap) widget.compass?.start();
@@ -334,6 +540,8 @@ class _RideShellPageState extends State<RideShellPage>
       _web = NavigationWebController(
         hub: widget.hub,
         compass: _preset.sensors.compass ? widget.compass : null,
+        recorder: widget.recorder,
+        traveledPath: _preset.traveledPath,
         target: widget.target,
         baseUrl: widget.baseUrl,
         onMessage: _onPageMessage,
@@ -354,6 +562,8 @@ class _RideShellPageState extends State<RideShellPage>
       // dépendent s'abstiennent au lieu d'attendre pour toujours.
       nav: _preset.hasMap ? _nav : null,
       routeClimbs: _preset.hasMap ? _routeClimbs : null,
+      climbProfile: _preset.hasMap ? _climbProfile : null,
+      routeProfile: _preset.hasMap ? _routeProfile : null,
     );
 
     // Deux déclencheurs pour une seule décision : le pont pour les fronts, le
@@ -362,11 +572,23 @@ class _RideShellPageState extends State<RideShellPage>
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       _decideReturn();
       _updateRadarWake();
+      _updateBatteryWake();
       _checkNativeTurnAlert();
+      _updateConditionalPages();
+      // Boutons distants : voir `_buttonTick`, plus rapide, pour
+      // `Di2ButtonGesturePolicy.resolve`.
       // Même source que le chien de garde (`recorder.lastFix`) et même
       // conséquence assumée : hors enregistrement la boussole n'a aucune course
       // à laquelle se comparer, donc elle ne se validera pas.
       widget.compass?.addFix(widget.recorder.lastFix);
+      final heading = widget.compass?.correctedHeadingDeg;
+      _compassReading.value =
+          heading == null ? null : (heading, widget.compass!.isTrusted);
+      // Le pont ne se marque « sale » tout seul que sur une trame BLE
+      // (`SensorBridge._dirty`) : sans ça, le cap forcé ne partirait qu'une
+      // fois, au tap, et la flèche resterait figée sur cette valeur au lieu
+      // de suivre la boussole qui continue de tourner.
+      if (widget.compass?.forced ?? false) _web?.bridge.pushNow();
     });
   }
 
@@ -413,6 +635,38 @@ class _RideShellPageState extends State<RideShellPage>
     if (!changed) return;
 
     _applyScreen(_screenPolicy.radarAwake(_radarWake.awake));
+  }
+
+  /// Une batterie vient de franchir le seuil du profil à la baisse : y a-t-il
+  /// quelque chose à dire, et quelque chose à montrer ?
+  void _onBatteryStatus() {
+    final lowered = _batteryVoice.read(_battery.value);
+    if (lowered.isEmpty) return;
+
+    // Un seul son même si plusieurs appareils franchissent le seuil au même
+    // tic — pas une cacophonie au démarrage.
+    if (_preset.battery.sounds) _batterySound.play();
+
+    _batteryAlert.value = lowered;
+    // `trigger` rend vrai seulement sur le front veille → réveil : une
+    // deuxième alerte pendant le maintien prolonge le réveil sans le
+    // redemander à `ScreenPolicy`.
+    if (_batteryWake.trigger(DateTime.now())) {
+      _applyScreen(_screenPolicy.batteryAwake(true));
+    }
+  }
+
+  /// Referme le réveil batterie une fois le maintien passé, et vide le
+  /// bandeau avec lui : les deux partagent la même horloge, pas de minuteur
+  /// séparé pour l'un ou l'autre.
+  void _updateBatteryWake() {
+    if (!mounted) return;
+
+    final changed = _batteryWake.update(DateTime.now());
+    if (!changed) return;
+
+    _applyScreen(_screenPolicy.batteryAwake(_batteryWake.awake));
+    _batteryAlert.value = const [];
   }
 
   /// Faut-il ramener le cycliste sur la carte, ou lui rendre sa page ?
@@ -464,6 +718,176 @@ class _RideShellPageState extends State<RideShellPage>
     _userMoved = false;
 
     if (decision.goTo case final page?) _goToPage(page, auto: true);
+  }
+
+  /// Fait rejoindre le défilement aux pages du menu dont la condition vient de
+  /// se vérifier, et en ressort celles dont la condition vient de cesser.
+  ///
+  /// Appelée au même tic que [_decideReturn] : ni [NavState] ni la pente ne
+  /// changent plus vite que la seconde qui les sépare, pas besoin d'un
+  /// écouteur de plus.
+  void _updateConditionalPages() {
+    if (_conditionalPages.isEmpty) return;
+
+    final next = <RidePageSpec>{
+      for (final page in _conditionalPages)
+        if (_conditionMet(page.menuCondition!)) page,
+    };
+    final unchanged = next.length == _activeConditional.length &&
+        next.every(_activeConditional.contains);
+    if (unchanged) return;
+
+    // Une page du menu ouverte referme d'abord : ses indices dans [_menuPages]
+    // ne veulent plus rien dire une fois l'ensemble actif changé.
+    _setMenuPage(null);
+
+    // Capturée **avant** la mutation : c'est l'identité de la page regardée,
+    // pas son index, qui doit survivre à la recomposition.
+    final currentSpec = _pageCount > 0 ? _ridePages[_page] : null;
+    // La première dans l'ordre du profil s'il y en a plusieurs — même
+    // arbitrage que partout ailleurs dans ce contrat (la première règle
+    // cohérente gagne).
+    RidePageSpec? autoOpen;
+    for (final page in _conditionalPages) {
+      if (next.contains(page) && !_activeConditional.contains(page) && page.menuAutoOpen) {
+        autoOpen = page;
+        break;
+      }
+    }
+
+    setState(() => _activeConditional = next);
+
+    // Une alerte en cours possède l'écran (voir [_decideReturn], appelé juste
+    // avant sur ce même tic, qui vient de fixer [_lastAlert]) : forcer
+    // l'ouverture ici la court-circuiterait sans que la politique de retour
+    // le sache. C'est précisément ce qui arrivait au départ d'un col qui
+    // commence sur un virage — les deux mécanismes se disputaient l'écran au
+    // même tic, et la page battait ensuite entre la carte et la page de col à
+    // chaque virage suivant. La page reste dans le défilement ; elle
+    // s'ouvrira d'elle-même au prochain retour sur la carte si sa condition
+    // tient toujours, juste pas poussée d'office pendant l'alerte.
+    if (autoOpen != null && _lastAlert == RideAlert.none) {
+      // Anime, et ferme au passage la page du menu qu'on vient déjà de fermer
+      // — sans effet ici, mais c'est le seul chemin qui sait aussi recalculer
+      // l'index brut le plus proche.
+      _goToPage(_ridePages.indexOf(autoOpen), auto: true);
+      return;
+    }
+
+    _reanchorOn(currentSpec);
+  }
+
+  /// Retrouve [currentSpec] dans le défilement qui vient de changer de forme
+  /// (condition qui bascule, page masquée ou remise à la main) et corrige
+  /// l'index brut en conséquence — sans la moindre animation, puisque rien ne
+  /// doit bouger à l'écran pour une page qui n'a pas bougé. Si la page
+  /// regardée vient au contraire de disparaître du défilement, retour à la
+  /// carte, comme tout autre retour automatique.
+  void _reanchorOn(RidePageSpec? currentSpec) {
+    final keepIndex = currentSpec == null ? -1 : _ridePages.indexOf(currentSpec);
+    if (keepIndex != -1) {
+      final raw = rawPageFor(keepIndex, from: _rawPage, count: _pageCount);
+      if (raw != _rawPage && _pages.hasClients) {
+        // Marquée `auto` comme `_animateTo` : c'est une correction d'index
+        // brut, pas un geste du cycliste — sans ce compteur, `_onPageChanged`
+        // lirait `_userMoved = true` alors que rien n'a bougé à l'écran.
+        _autoMoves++;
+        _pages.jumpToPage(raw);
+        _autoMoves--;
+      }
+      return;
+    }
+
+    _goToPage(_mapPage ?? 0, auto: true);
+  }
+
+  /// « Masquer cette page », depuis le menu ⋮ de [page] elle-même — voir
+  /// `DashboardPage.onHidePage`. Range [page] derrière le menu pour la durée
+  /// de la sortie, exactement comme si le site l'y avait mise, mais sans
+  /// toucher au profil ni à rien qui survive au prochain lancement.
+  ///
+  /// Refusé quand [page] est la dernière page hors carte du défilement — même
+  /// garde que `RidePreset._promotedPage` côté profil : une sortie ne doit
+  /// jamais se retrouver sans aucune page à faire défiler.
+  void _hidePage(RidePageSpec page) {
+    if (!_canHide(page)) return;
+
+    _setMenuPage(null);
+    final currentSpec = _pageCount > 0 ? _ridePages[_page] : null;
+
+    setState(() => _manuallyHidden = {..._manuallyHidden, page});
+    // La carte a pu décaler : voir la note sur [_autoReturn].
+    _autoReturn = AutoReturnPolicy(
+      mapPage: _mapPage,
+      holdAfterClear: _autoReturn.holdAfterClear,
+    );
+
+    _reanchorOn(currentSpec);
+  }
+
+  /// L'inverse de [_hidePage], depuis le menu ⋮ de la page ouverte — voir
+  /// `DashboardPage.onShowPage`. Rejoint aussitôt le défilement sur [page],
+  /// plutôt que de la laisser réapparaître dans un coin qu'on ne regarde pas :
+  /// c'est justement pour la regarder qu'on vient de l'aller chercher.
+  void _showPage(RidePageSpec page) {
+    _setMenuPage(null);
+    setState(() => _manuallyHidden = {..._manuallyHidden}..remove(page));
+    // La carte a pu décaler : voir la note sur [_autoReturn].
+    _autoReturn = AutoReturnPolicy(
+      mapPage: _mapPage,
+      holdAfterClear: _autoReturn.holdAfterClear,
+    );
+
+    _goToPage(_ridePages.indexOf(page), auto: true);
+  }
+
+  /// [page] peut-elle rejoindre le menu sans vider le défilement de toute page
+  /// hors carte ? Recalculée à chaque appel plutôt que mise en cache : c'est
+  /// la seule façon de suivre ce que [_manuallyHidden] contient déjà.
+  bool _canHide(RidePageSpec page) {
+    final remaining = _ridePages.where((p) => !identical(p, page));
+    return remaining.any((p) => p is! MapPageSpec);
+  }
+
+  bool _conditionMet(PageMenuCondition condition) => switch (condition) {
+        PageMenuCondition.routeActive => _nav.value?.onRoute == true,
+        PageMenuCondition.descending => _updateDescending(),
+        PageMenuCondition.nearCol => _nearCol(),
+      };
+
+  /// Entrée sous −3 %, sortie au-dessus de −1 % : la bande morte évite un
+  /// battement de page à chaque tic quand la pente instantanée traîne près
+  /// d'un seuil unique.
+  bool _updateDescending() {
+    final grade = widget.recorder.stats.gradePercent;
+    if (grade == null) return _descending;
+    if (!_descending && grade <= -3) _descending = true;
+    if (_descending && grade > -1) _descending = false;
+    return _descending;
+  }
+
+  /// Sur un col ([NavState.climb]), ou à moins de [_nearColLeadM] du départ du
+  /// prochain — réutilise [traveledDistM]/[climbStatusOf], déjà écrits pour la
+  /// liste des cols du tracé plutôt que de refaire ce calcul ici.
+  static const _nearColLeadM = 500.0;
+
+  bool _nearCol() {
+    final nav = _nav.value;
+    // Hors trace, la position à laquelle la page accroche le tracé (et donc le
+    // col qu'elle désigne) n'a plus rien de fiable — un GPS instable avant de
+    // rejoindre l'itinéraire peut y faire retomber n'importe où, y compris en
+    // plein milieu d'un col qu'on n'aborde pas.
+    if (nav == null || nav.offRoute) return false;
+    if (nav.climb != null) return true;
+
+    final climbs = _routeClimbs.value;
+    final traveled = climbs == null ? null : traveledDistM(climbs, nav);
+    if (climbs == null || traveled == null) return false;
+
+    return climbs.climbs.any((climb) {
+      if (climbStatusOf(climb, traveled) != ClimbStatus.upcoming) return false;
+      return climb.startDistM - traveled <= _nearColLeadM;
+    });
   }
 
   /// Va chercher les virages du tracé auprès du site, pour le filet natif.
@@ -685,9 +1109,19 @@ class _RideShellPageState extends State<RideShellPage>
   /// `viewPadding` et non `padding` : la première garde la hauteur de
   /// l'obstruction physique même quand les barres système sont masquées. Le bas,
   /// lui, est retiré par [webInsetsFor] — le bandeau natif occupe cette zone.
+  ///
+  /// Le haut n'est **pas** le `viewPadding.top` brut : c'est
+  /// [NotchBand.heightFor], qui inclut son plancher pour les écrans sans
+  /// encoche. Pousser le `viewPadding.top` seul ferait croire à la page une
+  /// zone obstruée plus courte que la bande réellement dessinée sur ces
+  /// écrans, et sa bannière de virage se dessinerait sous la bande plutôt que
+  /// juste en dessous.
   Future<void> _publishInsets() async {
     if (!mounted) return;
-    await _web?.pushInsets(webInsetsFor(MediaQuery.viewPaddingOf(context)));
+    await _web?.pushInsets(
+      webInsetsFor(MediaQuery.viewPaddingOf(context))
+          .copyWith(top: NotchBand.heightFor(context)),
+    );
   }
 
   @override
@@ -760,6 +1194,98 @@ class _RideShellPageState extends State<RideShellPage>
     _applyScreen(_screenPolicy.movedTo(onMap: _onMap));
   }
 
+  /// Bouton « Mettre en veille » d'une page de données ([SleepControl]) :
+  /// ramène le cycliste sur la carte — seule à savoir s'endormir — puis le lui
+  /// demande (`requestSleep`, même chemin que l'appui long côté site,
+  /// `toggleScreenOffManual` dans `RouteNavigation.vue`). Sans ce retour, le
+  /// voile se poserait hors champ et `ScreenPolicy` ne dimmerait rien,
+  /// `_asleep` exigeant `_onMap`.
+  void _sleep() {
+    if (_mapPage case final page?) _goToPage(page);
+    unawaited(_web?.requestSleep());
+  }
+
+  /// Répartit un geste résolu ([Di2ButtonGesturePolicy]) vers l'action que le
+  /// profil de sortie assigne à ce canal et à ce geste — rien si le profil
+  /// n'y a rien mis pour ce geste-là.
+  void _dispatchButtonGesture(Di2ButtonChannel channel, Di2ButtonGesture gesture) {
+    debugPrint('[boutons] canal $channel geste $gesture');
+    // Toujours mis à jour, qu'une action soit assignée ou non : c'est un
+    // repère de diagnostic (« quel geste vient d'être vu ? »), pas une
+    // confirmation d'exécution.
+    setState(() {
+      _buttonFlash = ButtonGestureFlash(channel, gesture, _buttonFlashSeq++);
+    });
+    final actions = switch (channel) {
+      Di2ButtonChannel.one => _preset.buttons.channel1,
+      Di2ButtonChannel.two => _preset.buttons.channel2,
+      Di2ButtonChannel.three => _preset.buttons.channel3,
+      Di2ButtonChannel.four => _preset.buttons.channel4,
+    };
+    final action = switch (gesture) {
+      Di2ButtonGesture.click => actions.click,
+      Di2ButtonGesture.doubleClick => actions.doubleClick,
+      Di2ButtonGesture.longPress => actions.longPress,
+    };
+    if (action != null) _performButtonAction(action);
+  }
+
+  void _performButtonAction(ButtonAction action) {
+    switch (action) {
+      case NextPageAction():
+        _stepPage(1);
+      case PreviousPageAction():
+        _stepPage(-1);
+      case RingBellAction(:final sound):
+        unawaited(_buttonBell.toggle(sound));
+      case StartLapAction():
+        // Même garde que `MarkLapControl` (`mark_lap_block.dart`) : un tour
+        // ne veut rien dire hors enregistrement.
+        if (widget.recorder.isActive) widget.recorder.markLap('default');
+      case EnterSleepAction():
+        _sleep();
+      case ExitSleepAction():
+        unawaited(_web?.requestWake());
+      case ToggleSleepAction():
+        // `_screenPolicy.dimmed` et non un état à soi : c'est déjà ce qui
+        // pilote le rétroéclairage (`_applyScreen`), donc ce que le cycliste
+        // voit réellement. Pendant une alerte radar, l'écran est rallumé sans
+        // que la page ait renoncé à sa veille (`dimmed` retombe à faux le
+        // temps de l'alerte) — le bouton rejoue alors une entrée en veille
+        // déjà demandée, sans effet côté site (`enter` s'y sait idempotent).
+        if (_screenPolicy.dimmed) {
+          unawaited(_web?.requestWake());
+        } else {
+          _sleep();
+        }
+      case GoToPageAction(:final pageKey):
+        _goToPageByKey(pageKey);
+    }
+  }
+
+  /// Résout un [GoToPageAction] par la clé stable des pages
+  /// ([RidePageSpec.key]) plutôt que par un index qui se décale au moindre
+  /// réordonnancement du profil. Cherche d'abord dans le défilement, puis
+  /// dans le menu ; sans effet si aucune page ne porte cette clé — profil
+  /// réédité entre-temps, ou site plus ancien que ce réglage — jamais une
+  /// erreur.
+  void _goToPageByKey(String pageKey) {
+    final ridePages = _ridePages;
+    for (var i = 0; i < ridePages.length; i++) {
+      if (ridePages[i].key == pageKey) {
+        _goToPage(i);
+        return;
+      }
+    }
+    final menuPages = _menuPages;
+    for (var i = 0; i < menuPages.length; i++) {
+      if (menuPages[i].key == pageKey) {
+        _setMenuPage(i);
+        return;
+      }
+    }
+  }
+
   /// Messages venus de la page.
   ///
   /// `ready` : la page annonce que son pont est en place.
@@ -772,6 +1298,8 @@ class _RideShellPageState extends State<RideShellPage>
   /// `route_climbs` : la liste ordonnée des cols du tracé entier, poussée une
   /// fois par tracé (voir route_climbs.dart) — pas par col, contrairement à
   /// `climb_profile`.
+  /// `route_profile` : le profil d'altitude du tracé entier, poussé une fois
+  /// par tracé (voir route_profile.dart) — même cadence que `route_climbs`.
   /// `rider_profile` : les seuils du cycliste, relayés depuis le site.
   /// `training_budget` : ce qu'il reste à faire aujourd'hui, et le plafond que la
   /// fatigue autorise — calculés par le site, qui seul a l'historique.
@@ -780,32 +1308,61 @@ class _RideShellPageState extends State<RideShellPage>
   void _onPageMessage(Map<dynamic, dynamic> message) {
     switch (message['type']) {
       case 'ready':
-        _web?.bridge.pushNow();
+        _web?.bridge.notifyPageReloaded();
       case 'nav':
         // Front descendant du col : « il y avait un climb, il n'y en a
         // plus ». Comparé AVANT d'accepter le nouveau message, pas après —
-        // sinon les deux valent toujours la nouvelle. Un profil laissé en
-        // place après la fin du col redessinerait le dernier col fini sur un
-        // col suivant qui n'a pas encore poussé le sien (fenêtre de quelques
-        // centaines de ms entre climb_profile et le premier nav.climb, cf.
-        // climb_profile.dart).
+        // sinon les deux valent toujours la nouvelle.
         final hadClimb = _nav.value?.climb != null;
         _nav.accept(message);
-        final hasClimb = _nav.value?.climb != null;
+        final climb = _nav.value?.climb;
+        final hasClimb = climb != null;
         if (hadClimb != hasClimb) {
           // Isole la montée dans son propre tour de la série `cols` — sans
           // effet si aucune page ou bouton du profil ne la déclare
           // (`RideRecorder.markLap`, no-op sur une série inconnue).
           widget.recorder.markLap(climbLapSeries);
         }
-        if (hadClimb && !hasClimb) {
-          _climbProfile.reset();
-          _climbExpanded.value = false;
+        if (!hasClimb) {
+          if (hadClimb) {
+            _climbProfile.reset();
+            _climbExpanded.value = false;
+          }
+        } else if (_findRouteClimb(climb.id)?.profile case final profile?) {
+          // Le profil de CE col est déjà dans `route_climbs`, reçu une fois
+          // pour tout le tracé au chargement (voir RouteClimb.profile) —
+          // résolu à chaque trame tant que le col dure, pas seulement au
+          // front montant : une liste reçue en retard (démarrage de sortie)
+          // se rattrape ainsi toute seule, sans attendre un nouveau front.
+          // Un site plus ancien que ce champ (ou une liste pas encore reçue)
+          // laisse `_climbProfile` tel quel : c'est alors le message
+          // `climb_profile` classique, ci-dessous, qui le remplira.
+          _climbProfile.value = profile;
+          if (!hadClimb) {
+            // Le tour que le front montant vient d'ouvrir sur la série
+            // `cols` est celui de CE col — voir `RideRecorder.tagClimb`.
+            widget.recorder.tagClimb(climbLapSeries, profile.id);
+          }
         }
       case 'climb_profile':
+        // Repli pour un site plus ancien que `route_climbs.climbs[].points`,
+        // qui ne pousse alors le profil qu'une fois par col, à l'entrée (voir
+        // la doc de ClimbProfile) — la résolution normale, ci-dessus,
+        // l'emporte déjà dans l'immense majorité des cas.
         _climbProfile.accept(message);
+        // Le tour que le front montant vient d'ouvrir sur la série `cols` est
+        // forcément celui de ce col-ci — voir `RideRecorder.tagClimb`. C'est
+        // ce qui permet à la page Tours de nommer le tour comme le composant
+        // Cols du tracé plutôt que « Tour N ». Sans effet si le tour a déjà
+        // été étiqueté ci-dessus (`tagClimb` réécrit le même id sur le même
+        // dernier tour).
+        if (_climbProfile.value case final profile?) {
+          widget.recorder.tagClimb(climbLapSeries, profile.id);
+        }
       case 'route_climbs':
         _routeClimbs.accept(message);
+      case 'route_profile':
+        _routeProfile.accept(message);
       case 'offline':
         _offline.accept(message);
         _maybeAutoDownloadOffline();
@@ -847,6 +1404,9 @@ class _RideShellPageState extends State<RideShellPage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _tick?.cancel();
+    _buttonTick?.cancel();
+    unawaited(_remoteButtonSub?.cancel());
+    _buttonBell.dispose();
     // Le magnétomètre s'éteint avec la sortie : c'est le seul capteur de ce
     // dossier qui coûterait de la batterie une fois l'écran refermé.
     unawaited(widget.compass?.stop());
@@ -855,6 +1415,10 @@ class _RideShellPageState extends State<RideShellPage>
     _radar.dispose();
     _mutedRadar.dispose();
     _radarSound.dispose();
+    _battery.removeListener(_onBatteryStatus);
+    _battery.dispose();
+    _batterySound.dispose();
+    _batteryAlert.dispose();
     unawaited(_nativeTurnSound.dispose());
     // Filet de sécurité : quitter la navigation en veille (bouton retour, page
     // qui plante) ne doit pas laisser l'appareil à 1 % de luminosité.
@@ -869,6 +1433,7 @@ class _RideShellPageState extends State<RideShellPage>
     _nav.dispose();
     _climbProfile.dispose();
     _routeClimbs.dispose();
+    _routeProfile.dispose();
     _climbExpanded.dispose();
     _offline.dispose();
     _pages.dispose();
@@ -879,6 +1444,12 @@ class _RideShellPageState extends State<RideShellPage>
   Widget build(BuildContext context) {
     final bandHeight = RideBottomBand.heightFor(context);
     final webView = _webView;
+    // Calculée ici et pas dans la liste des enfants du `Stack` : `Positioned`
+    // doit rester l'enfant direct du `Stack` pour valoir quelque chose, une
+    // `Builder` intercalée pour ne serait-ce que nommer cette page le
+    // dépositionnerait entièrement.
+    final menuPageIndex = _menuPage;
+    final openedMenuPage = menuPageIndex == null ? null : _menuPages[menuPageIndex];
 
     return PopScope(
       canPop: false,
@@ -958,11 +1529,11 @@ class _RideShellPageState extends State<RideShellPage>
             // carte.
             //
             // Dans la même pile et pas dans une route poussée : le bandeau, les
-            // jauges du radar, le cadre d'alerte et les mètres de l'encoche
+            // jauges du radar, le cadre d'alerte et la bande de l'encoche
             // appartiennent à la coquille, et une route par-dessus les
             // emporterait tous. On consulte un bilan **pendant une sortie** —
             // une voiture qui remonte doit se voir de là comme d'ailleurs.
-            if (_menuPage case final index?)
+            if (openedMenuPage case final openedPage?)
               Positioned(
                 key: const ValueKey('menu'),
                 left: 0,
@@ -970,12 +1541,37 @@ class _RideShellPageState extends State<RideShellPage>
                 top: 0,
                 bottom: bandHeight,
                 child: DashboardPage(
-                  page: _menuPages[index],
+                  page: openedPage,
                   sources: _sources,
                   radar: _preset.sensors.radar ? _radar : null,
-                  // Ni liste de pages ni commandes : on referme pour retrouver
-                  // celles de la page d'où l'on vient. Cf. `DashboardPage.onClose`.
+                  battery: _battery,
+                  // Ni liste de pages ni menu d'actions : on referme pour
+                  // retrouver ceux de la page d'où l'on vient — `onClose`
+                  // l'emporte sur `_actionsMenu()` dans `DashboardPage._header`,
+                  // quels que soient les callbacks ci-dessous.
+                  //
+                  // Ces callbacks-là, en revanche, ne nourrissent pas le menu
+                  // d'actions mais les **blocs posés sur la page**
+                  // (`route`/`change_route`/`clear_route`/`sleep`) : sans eux,
+                  // une page rangée derrière le menu qui en porte un se
+                  // retrouvait avec un bouton grisé, indistinguable d'une case
+                  // vide, une fois rouverte depuis là. Même garde `hasMap` que
+                  // `_pageAt`.
+                  onChooseRoute: _preset.hasMap ? _chooseRoute : null,
+                  onClearRoute: _preset.hasMap ? _clearRoute : null,
+                  onSleep: _preset.hasMap ? _sleep : null,
+                  offlineMap: _preset.hasMap ? _offline : null,
+                  onDownloadOffline: _preset.hasMap ? _downloadOffline : null,
+                  onCalibratePower:
+                      powerCalibrationAvailable(widget.hub) ? _calibratePower : null,
                   onClose: () => _setMenuPage(null),
+                  // Seulement quand la page qu'on a ouverte a été rangée à la
+                  // main (`_hidePage`) : une page rangée par le site n'a pas
+                  // vocation à rejoindre le défilement d'un tap, c'est un
+                  // choix de l'éditeur, pas le nôtre.
+                  onShowPage: _manuallyHidden.contains(openedPage)
+                      ? () => _showPage(openedPage)
+                      : null,
                 ),
               ),
             // La page radar : le seul écran qui s'invite. Elle ne paraît que
@@ -1003,11 +1599,16 @@ class _RideShellPageState extends State<RideShellPage>
               child: RideBottomBand(
                 bands: _preset.bands,
                 sources: _sources,
+                radar: _preset.sensors.radar ? _radar : null,
                 // Toujours branché, sans filtrer sur la découverte GATT : la
                 // coquille ne se redessine pas quand le capteur finit sa
                 // découverte, et un tap qui ne ferait rien serait pris pour un
                 // écran gelé.
                 onCalibratePower: _calibratePower,
+                // Sans carte, il n'y a personne à endormir — même garde que
+                // pour la commande de la grille (`DashboardPage.onSleep`
+                // plus bas).
+                onSleep: _preset.hasMap ? _sleep : null,
               ),
             ),
             // Le numéro de la page, juste au-dessus du bandeau et le temps de le
@@ -1030,10 +1631,39 @@ class _RideShellPageState extends State<RideShellPage>
                 child: RidePageFlash(page: _page, count: _pageCount),
               ),
             ),
-            // La pastille de col : repliée, épinglée en haut à droite, sous la
-            // bande de l'encoche (RadarDistanceBadges) pour ne jamais
-            // s'empiler avec elle. Posée après le bandeau/numéro de page pour
-            // rester visible même par-dessus la veille radar (reveil-radar) —
+            // Au-dessus du numéro de page plutôt qu'au même endroit : un clic
+            // sur un canal assigné à la page suivante/précédente déclenche les
+            // deux repères à la fois, et ils se chevaucheraient sinon.
+            Positioned(
+              key: const ValueKey('geste-bouton'),
+              left: 0,
+              right: 0,
+              bottom: bandHeight + 12 + 46,
+              child: Center(
+                child: RideButtonFlash(event: _buttonFlash),
+              ),
+            ),
+            // La bande de l'encoche : jusqu'à une mesure de chaque côté de la
+            // caméra selfie, sur l'emplacement de l'ancienne
+            // `RadarDistanceBadges`. Avant la pastille de col et le cadre
+            // d'alerte dans la pile, pour que les deux continuent de se
+            // dessiner par-dessus elle — le radar garde la priorité visuelle
+            // sur ce que le profil y a placé.
+            Positioned(
+              key: const ValueKey('encoche'),
+              left: 0,
+              right: 0,
+              top: 0,
+              child: NotchBand(
+                notch: _preset.notch,
+                sources: _sources,
+                radar: _preset.sensors.radar ? _radar : null,
+                onSleep: _preset.hasMap ? _sleep : null,
+              ),
+            ),
+            // La pastille de col : repliée, épinglée en haut à droite. Posée
+            // après le bandeau/numéro de page pour rester visible même
+            // par-dessus la veille radar (reveil-radar) —
             // un col en cours ne doit pas disparaître derrière une alerte
             // voiture, les deux sont des informations indépendantes.
             Positioned(
@@ -1099,6 +1729,32 @@ class _RideShellPageState extends State<RideShellPage>
                 },
               ),
             ),
+            // Pastille de boussole, en haut à gauche (la pastille de col
+            // occupe déjà le coin droit) : cap mesuré, et bouton pour forcer
+            // sa priorité sur la course GPS — utile sous un couvert
+            // forestier (voir `RiderCompass.forced`).
+            if (_onMap)
+              Positioned(
+                key: const ValueKey('boussole'),
+                top: 8,
+                left: 8,
+                child: SafeArea(
+                  bottom: false,
+                  child: ValueListenableBuilder<(double, bool)?>(
+                    valueListenable: _compassReading,
+                    builder: (context, reading, _) {
+                      if (reading == null) return const SizedBox.shrink();
+                      final (heading, trusted) = reading;
+                      return CompassBadge(
+                        headingDeg: heading,
+                        trusted: trusted,
+                        forced: widget.compass?.forced ?? false,
+                        onTap: _toggleCompassForced,
+                      );
+                    },
+                  ),
+                ),
+              ),
             // La veille par appui long n'existe plus que sur la carte, où
             // c'est le site qui la détecte et s'endort lui-même — la coquille
             // n'a donc plus de couche d'appui ni de voile à poser ici.
@@ -1118,20 +1774,23 @@ class _RideShellPageState extends State<RideShellPage>
                       RadarFrame(severity: radar.severity),
                 ),
               ),
-            // Les mètres dans la bande de l'encoche, au-dessus du cadre : c'est
-            // le chiffre qu'on va chercher, il ne doit être recouvert par rien.
-            if (_overlay)
-              Positioned(
-                key: const ValueKey('metres-radar'),
-                left: 0,
-                right: 0,
-                top: 0,
-                child: ValueListenableBuilder<RadarView>(
-                  valueListenable: _radar,
-                  builder: (context, radar, _) =>
-                      RadarDistanceBadges(view: radar),
-                ),
+            // Le bandeau de batterie faible : au sommet de la pile, visible
+            // quelle que soit la page (contrairement au réveil radar, qui n'a
+            // de sens que sous le voile de la carte) et même par-dessus le
+            // cadre d'alerte radar. Pure information, aucun geste à voler —
+            // voir `BatteryAlertBanner`.
+            Positioned(
+              key: const ValueKey('alerte-batterie'),
+              top: 0,
+              left: 0,
+              right: 0,
+              child: ValueListenableBuilder<List<BatteryStatus>>(
+                valueListenable: _batteryAlert,
+                builder: (context, devices, _) => devices.isEmpty
+                    ? const SizedBox.shrink()
+                    : BatteryAlertBanner(devices: devices),
               ),
+            ),
           ],
         ),
       ),
@@ -1150,6 +1809,7 @@ class _RideShellPageState extends State<RideShellPage>
       page: page,
       sources: _sources,
       radar: _preset.sensors.radar ? _radar : null,
+      battery: _battery,
       // Les pages rangées derrière le menu se retrouvent depuis n'importe
       // laquelle : elles n'appartiennent à aucune en particulier.
       menuPages: _menuPages,
@@ -1158,6 +1818,10 @@ class _RideShellPageState extends State<RideShellPage>
       // commandes disparaissent plutôt que de répondre « non ».
       onChooseRoute: _preset.hasMap ? _chooseRoute : null,
       onClearRoute: _preset.hasMap ? _clearRoute : null,
+      // Sans carte, il n'y a personne pour s'endormir : `_sleep` ramènerait le
+      // cycliste vers une page qui n'existe pas et n'appellerait `requestSleep`
+      // sur aucun contrôleur.
+      onSleep: _preset.hasMap ? _sleep : null,
       // Même raison : sans carte, il n'y a rien à archiver. `_offline` dit
       // lui-même si un tracé est effectivement suivi (`supported`).
       offlineMap: _preset.hasMap ? _offline : null,
@@ -1170,6 +1834,10 @@ class _RideShellPageState extends State<RideShellPage>
       onSimulateClimb: _toggleDebugClimb,
       onLeaveRide: _leaveRide,
       onGridMeasured: widget.onGridMeasured,
+      // Absente plutôt que grisée quand la retirer viderait le défilement de
+      // toute page hors carte — même convention que les autres commandes qui
+      // n'auraient que « non » à répondre (`onClearRoute`, `onDownloadOffline`).
+      onHidePage: _canHide(page) ? () => _hidePage(page) : null,
     );
   }
 

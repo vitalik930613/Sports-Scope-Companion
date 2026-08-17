@@ -1,8 +1,10 @@
 import 'package:flutter/foundation.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import '../ble/sensor_profile.dart';
 import '../lighting/auto_lighting.dart';
 import '../navigation/screen_dimmer.dart';
+import 'companion_icons.dart';
 import 'dashboard_block.dart';
 import 'grid_layout.dart';
 import 'metric_id.dart';
@@ -26,10 +28,14 @@ class RidePreset {
     this.description,
     required this.pages,
     required this.bands,
+    this.notch = const [],
     this.sensors = const SensorSettings(),
     this.radar = const RadarSettings(),
+    this.battery = const BatterySettings(),
     this.lighting = const LightingSettings(),
     this.screen = const ScreenSettings(),
+    this.traveledPath = const TraveledPathSettings(),
+    this.buttons = const ButtonSettings(),
   });
 
   /// Le tableau de bord d'aujourd'hui, mot pour mot.
@@ -47,26 +53,26 @@ class RidePreset {
       ListPageSpec(
         title: 'Effort',
         blocks: [
-          RecordingBlock(),
-          ZonesBlock(source: ZonesSource.hr),
-          ZonesBlock(source: ZonesSource.power),
-          AveragesBlock(),
-          NavStateBlock(),
+          ListBlockPlacement(block: RecordingBlock()),
+          ListBlockPlacement(block: ZonesBlock(source: ZonesSource.hr)),
+          ListBlockPlacement(block: ZonesBlock(source: ZonesSource.power)),
+          ListBlockPlacement(block: AveragesBlock()),
+          ListBlockPlacement(block: NavStateBlock()),
         ],
       ),
     ],
     bands: [
       RideBandSpec([
-        MetricId.duration,
-        MetricId.distance,
-        MetricId.speed,
-        MetricId.power,
+        BandMetricSlot(MetricId.duration),
+        BandMetricSlot(MetricId.distance),
+        BandMetricSlot(MetricId.speed),
+        BandMetricSlot(MetricId.power),
       ]),
       RideBandSpec([
-        MetricId.heartRate,
-        MetricId.hrZone,
-        MetricId.power,
-        MetricId.powerZone,
+        BandMetricSlot(MetricId.heartRate),
+        BandMetricSlot(MetricId.hrZone),
+        BandMetricSlot(MetricId.power),
+        BandMetricSlot(MetricId.powerZone),
       ]),
     ],
   );
@@ -87,10 +93,29 @@ class RidePreset {
   /// Les jeux de valeurs du bandeau, dans l'ordre. Au moins un.
   final List<RideBandSpec> bands;
 
+  /// Les jeux de la bande de l'encoche, dans l'ordre — même forme que [bands],
+  /// un glissé horizontal fait défiler l'un vers l'autre. Contrairement à
+  /// [bands], une liste vide est une valeur normale — un profil qui n'a
+  /// jamais touché ce réglage garde un écran identique à celui d'avant qu'il
+  /// existe.
+  final List<NotchSpec> notch;
+
   final SensorSettings sensors;
   final RadarSettings radar;
+  final BatterySettings battery;
   final LightingSettings lighting;
   final ScreenSettings screen;
+
+  /// Style du trajet réellement parcouru, tel que dessiné par la page — voir
+  /// `TraveledPathTracker` (`lib/navigation/traveled_path_tracker.dart`) côté
+  /// appli. L'appli ne dessine rien elle-même, elle ne fait que transmettre
+  /// ces valeurs telles quelles au pont.
+  final TraveledPathSettings traveledPath;
+
+  /// Ce que chaque geste sur chaque canal du D-Fly (Di2) déclenche — voir
+  /// `Di2ButtonGesturePolicy` (`lib/ride/`) pour la classification du geste,
+  /// et `RideShellPage._performButtonAction` pour l'exécution.
+  final ButtonSettings buttons;
 
   /// Les pages qu'on fait défiler, dans l'ordre.
   List<RidePageSpec> get ridePages {
@@ -180,14 +205,18 @@ class RidePreset {
           keys.add(series);
           switch (layout) {
             case LapBlocksLayout(:final blocks):
-              blocks.forEach(collect);
+              for (final placement in blocks) {
+                collect(placement.block);
+              }
             case LapGridLayout(:final cells):
               for (final cell in cells) {
                 collect(cell.block);
               }
           }
         case ListPageSpec(:final blocks):
-          blocks.forEach(collect);
+          for (final placement in blocks) {
+            collect(placement.block);
+          }
         case GridPageSpec(:final cells):
           for (final cell in cells) {
             collect(cell.block);
@@ -223,10 +252,14 @@ class RidePreset {
       // sortie ne se diagnostique pas au guidon.
       pages: pages.isEmpty ? [RidePreset.builtIn.pages.last] : pages,
       bands: bands.isEmpty ? RidePreset.builtIn.bands : bands,
+      notch: _notch(raw['notch']),
       sensors: SensorSettings.parse(raw['sensors']),
       radar: RadarSettings.parse(raw['radar']),
+      battery: BatterySettings.parse(raw['battery']),
       lighting: LightingSettings.parse(raw['lighting']),
       screen: ScreenSettings.parse(raw['screen']),
+      traveledPath: TraveledPathSettings.parse(raw['traveled_path']),
+      buttons: ButtonSettings.parse(raw['buttons']),
     );
   }
 
@@ -262,6 +295,14 @@ class RidePreset {
         if (RideBandSpec.parse(entry) case final band?) band,
     ];
   }
+
+  static List<NotchSpec> _notch(Object? raw) {
+    if (raw is! List) return const [];
+    return [
+      for (final entry in raw)
+        if (NotchSpec.parse(entry) case final set?) set,
+    ];
+  }
 }
 
 /// Une page du tableau de bord.
@@ -272,9 +313,33 @@ class RidePreset {
 /// consulte à l'arrêt et peut être longue.
 @immutable
 sealed class RidePageSpec {
-  const RidePageSpec({required this.title, this.menu = false});
+  const RidePageSpec({
+    required this.title,
+    this.menu = false,
+    this.menuCondition,
+    this.menuAutoOpen = false,
+    this.icon,
+    this.key,
+  });
 
   final String title;
+
+  /// Identifiant stable, choisi sur le site — `null` si le document ne le
+  /// fournit pas (contrat plus ancien, ou page qui n'a jamais eu besoin
+  /// d'être visée). Contrairement à [title], libre et pas garanti unique,
+  /// c'est la seule façon de désigner une page qui survive à une réédition du
+  /// profil : un bouton Di2 configuré en « aller à la page X »
+  /// (`GoToPageAction`) s'y résout, jamais à un index qui se décale dès que
+  /// les pages sont réordonnées.
+  final String? key;
+
+  /// L'icône choisie dans l'éditeur pour repérer cette page dans le menu ⋮
+  /// (`DashboardPage._menuFor`) — `null` quand la clé est absente ou inconnue
+  /// de cette version, et alors le menu retombe sur l'icône déduite du genre
+  /// de page (grille ou liste), comme avant ce réglage. Même registre que les
+  /// icônes de composant ([companionIcons]) : une seule liste blanche des deux
+  /// côtés plutôt qu'un vocabulaire de plus à tenir à jour.
+  final FaIconData? icon;
 
   /// Rangée derrière le menu d'actions plutôt que dans le défilement.
   ///
@@ -285,22 +350,88 @@ sealed class RidePageSpec {
   /// sens acceptable pour une page qu'on aurait composée exprès.
   final bool menu;
 
+  /// Seulement quand [menu] est vrai : fait rejoindre le défilement à cette
+  /// page, le temps que la condition dure — voir
+  /// `RideShellPage._updateConditionalPages`. `null` (absente ou inconnue du
+  /// contrat) laisse la page purement statique, comme avant ce réglage.
+  final PageMenuCondition? menuCondition;
+
+  /// Bascule automatiquement dessus quand [menuCondition] devient vraie,
+  /// plutôt que de seulement la faire rejoindre le défilement. Sans effet si
+  /// [menuCondition] est `null`.
+  final bool menuAutoOpen;
+
   static RidePageSpec? parse(Object? raw) {
     if (raw is! Map) return null;
     final title = raw['title'] is String ? raw['title'] as String : null;
     final menu = raw['menu'] == true;
+    final menuCondition = PageMenuCondition.parse(raw['menu_condition']);
+    final menuAutoOpen = raw['menu_auto_open'] == true;
+    final icon = companionIconFor(raw['icon'] is String ? raw['icon'] as String : null);
+    final key = raw['key'] is String && (raw['key'] as String).isNotEmpty
+        ? raw['key'] as String
+        : null;
 
     return switch (raw['kind']) {
       // Jamais derrière le menu, et pas par oubli : la carte est le WebView
       // peint au fond de la pile pour toute la sortie, pas une page qu'on ouvre
-      // et qu'on referme.
-      'map' => const MapPageSpec(),
-      'grid' => GridPageSpec.parse(raw, title: title, menu: menu),
-      'list' => ListPageSpec.parse(raw, title: title, menu: menu),
-      'laps' => LapListPageSpec.parse(raw, title: title, menu: menu),
+      // et qu'on referme. Elle ne paraît donc jamais dans le menu ⋮ et n'a pas
+      // besoin de son icône.
+      'map' => MapPageSpec(key: key),
+      'grid' => GridPageSpec.parse(
+          raw,
+          title: title,
+          menu: menu,
+          menuCondition: menuCondition,
+          menuAutoOpen: menuAutoOpen,
+          icon: icon,
+          key: key,
+        ),
+      'list' => ListPageSpec.parse(
+          raw,
+          title: title,
+          menu: menu,
+          menuCondition: menuCondition,
+          menuAutoOpen: menuAutoOpen,
+          icon: icon,
+          key: key,
+        ),
+      'laps' => LapListPageSpec.parse(
+          raw,
+          title: title,
+          menu: menu,
+          menuCondition: menuCondition,
+          menuAutoOpen: menuAutoOpen,
+          icon: icon,
+          key: key,
+        ),
       _ => null,
     };
   }
+}
+
+/// Les conditions de sortie qu'une page rangée derrière le menu peut porter
+/// pour rejoindre le défilement toute seule — même contrat que
+/// `CompanionSettings::MENU_CONDITIONS` côté site.
+enum PageMenuCondition {
+  /// Un itinéraire est suivi (`NavState.onRoute`).
+  routeActive,
+
+  /// La pente sous les roues est négative au-delà d'un seuil
+  /// (`RideStats.gradePercent`).
+  descending,
+
+  /// Sur un col, ou à son approche (`NavState.climb`, `RouteClimbs`).
+  nearCol;
+
+  /// `null` pour une valeur absente ou inconnue de cette version de l'appli —
+  /// la page reste alors purement statique, jamais perdue.
+  static PageMenuCondition? parse(Object? raw) => switch (raw) {
+        'route_active' => routeActive,
+        'descending' => descending,
+        'near_col' => nearCol,
+        _ => null,
+      };
 }
 
 /// La carte du site.
@@ -311,7 +442,7 @@ sealed class RidePageSpec {
 /// plateforme démontée cesse de suivre le cycliste), et sa position dans le
 /// catalogue n'y change rien.
 class MapPageSpec extends RidePageSpec {
-  const MapPageSpec() : super(title: 'Carte');
+  const MapPageSpec({super.key}) : super(title: 'Carte');
 }
 
 /// Une grille de `rows` × `cols`, avec fusions.
@@ -324,7 +455,12 @@ class GridPageSpec extends RidePageSpec {
     required this.rows,
     required this.cols,
     required this.cells,
+    this.dividers = const [],
     super.menu,
+    super.menuCondition,
+    super.menuAutoOpen,
+    super.icon,
+    super.key,
   });
 
   final int rows;
@@ -334,6 +470,10 @@ class GridPageSpec extends RidePageSpec {
   /// recouvrement. La première posée gagne (cf. [placedCells]).
   final List<GridCell> cells;
 
+  /// Les séparateurs posés entre les cases — décoratifs, sans effet sur la
+  /// géométrie des cellules (cf. [placedDividers]).
+  final List<GridDivider> dividers;
+
   /// Au-delà, les cases deviennent trop petites pour porter un chiffre lisible
   /// en roulant — c'est la même raison qui borne le bandeau à quatre cases.
   static const maxSide = 12;
@@ -342,6 +482,10 @@ class GridPageSpec extends RidePageSpec {
     Map<dynamic, dynamic> raw, {
     String? title,
     bool menu = false,
+    PageMenuCondition? menuCondition,
+    bool menuAutoOpen = false,
+    FaIconData? icon,
+    String? key,
   }) {
     final rows = _gridSide(raw['rows']);
     final cols = _gridSide(raw['cols']);
@@ -357,7 +501,12 @@ class GridPageSpec extends RidePageSpec {
       rows: rows,
       cols: cols,
       cells: cells,
+      dividers: _gridDividers(raw['dividers'], rows: rows, cols: cols),
       menu: menu,
+      menuCondition: menuCondition,
+      menuAutoOpen: menuAutoOpen,
+      icon: icon,
+      key: key,
     );
   }
 }
@@ -387,6 +536,23 @@ List<GridCell> _gridCells(
   );
 }
 
+/// Place les séparateurs d'une entrée `dividers`, partagé entre [GridPageSpec]
+/// et [LapGridLayout] — même géométrie, décorative, que [_gridCells].
+List<GridDivider> _gridDividers(
+  Object? raw, {
+  required int rows,
+  required int cols,
+}) {
+  return placedDividers(
+    [
+      for (final entry in (raw is List ? raw : []))
+        if (GridDivider.parse(entry) case final divider?) divider,
+    ],
+    rows: rows,
+    cols: cols,
+  );
+}
+
 /// Une cellule posée : où, et quoi.
 @immutable
 class GridCell {
@@ -405,26 +571,91 @@ class GridCell {
 
 /// La page qui défile, celle d'aujourd'hui : une pile de blocs qu'on consulte à
 /// l'arrêt d'un col ou au feu rouge.
+///
+/// Une seule colonne par défaut — la disposition d'avant ce réglage. Le site
+/// peut en demander plusieurs ([cols]) et viser la sienne pour chaque bloc
+/// ([ListBlockPlacement.col]) : jamais de ligne ni d'étendue comme [GridCell],
+/// parce qu'une liste n'a pas de hauteur à tenir — chaque colonne empile ses
+/// blocs dans l'ordre du document et peut déborder, c'est justement ce qui la
+/// distingue d'une grille.
 class ListPageSpec extends RidePageSpec {
   const ListPageSpec({
     required super.title,
     required this.blocks,
+    this.cols = 1,
     super.menu,
+    super.menuCondition,
+    super.menuAutoOpen,
+    super.icon,
+    super.key,
   });
 
-  final List<DashboardBlock> blocks;
+  final List<ListBlockPlacement> blocks;
+
+  /// 1 par défaut, y compris quand la clé est absente (contrat plus ancien) :
+  /// la disposition ne change alors en rien. Borné à [maxCols] : au-delà,
+  /// une colonne devient trop étroite pour un composant lisible sur un
+  /// téléphone en portrait — même borne que le bandeau (`RideBottomBand`,
+  /// 1 à 4 mesures).
+  final int cols;
+
+  static const maxCols = 4;
 
   static ListPageSpec? parse(
     Map<dynamic, dynamic> raw, {
     String? title,
     bool menu = false,
+    PageMenuCondition? menuCondition,
+    bool menuAutoOpen = false,
+    FaIconData? icon,
+    String? key,
   }) {
+    final cols = raw['cols'] is num
+        ? (raw['cols'] as num).toInt().clamp(1, maxCols)
+        : 1;
     final blocks = [
       for (final entry in (raw['blocks'] is List ? raw['blocks'] as List : []))
-        if (DashboardBlock.parse(entry) case final block?) block,
+        if (ListBlockPlacement.parse(entry, cols: cols) case final placement?)
+          placement,
     ];
     if (blocks.isEmpty) return null;
-    return ListPageSpec(title: title ?? 'Sortie', blocks: blocks, menu: menu);
+    return ListPageSpec(
+      title: title ?? 'Sortie',
+      blocks: blocks,
+      cols: cols,
+      menu: menu,
+      menuCondition: menuCondition,
+      menuAutoOpen: menuAutoOpen,
+      icon: icon,
+      key: key,
+    );
+  }
+}
+
+/// Un bloc de [ListPageSpec], et la colonne qui l'affiche.
+@immutable
+class ListBlockPlacement {
+  const ListBlockPlacement({this.col = 0, required this.block});
+
+  final int col;
+  final DashboardBlock block;
+
+  /// `col` est **fusionné dans le bloc lui-même**, jamais une enveloppe à
+  /// part comme [GridCell] : une entrée reste le bloc, avec une clé de plus,
+  /// donc un document d'avant ce réglage (aucune entrée n'a `col`) se lit
+  /// sans distinguer un ancien format d'un nouveau — l'absence vaut `0` des
+  /// deux côtés. Même contrat que `CompanionSettings.place_list_blocks`
+  /// (Rails).
+  ///
+  /// `col` est ramené dans `0..cols-1` plutôt que rejeté : contrairement à
+  /// l'origine d'une cellule de grille, il y a toujours une colonne la plus
+  /// proche, et perdre un composant entier pour une colonne hors service
+  /// serait pire qu'un mauvais rangement.
+  static ListBlockPlacement? parse(Object? raw, {required int cols}) {
+    final block = DashboardBlock.parse(raw);
+    if (block == null) return null;
+    final col = raw is Map && raw['col'] is num ? (raw['col'] as num).toInt() : 0;
+    return ListBlockPlacement(col: col.clamp(0, cols - 1), block: block);
   }
 }
 
@@ -443,6 +674,10 @@ class LapListPageSpec extends RidePageSpec {
     required this.series,
     required this.layout,
     super.menu,
+    super.menuCondition,
+    super.menuAutoOpen,
+    super.icon,
+    super.key,
   });
 
   final String series;
@@ -456,6 +691,10 @@ class LapListPageSpec extends RidePageSpec {
     Map<dynamic, dynamic> raw, {
     String? title,
     bool menu = false,
+    PageMenuCondition? menuCondition,
+    bool menuAutoOpen = false,
+    FaIconData? icon,
+    String? key,
   }) {
     final layout = LapPageLayout.parse(raw);
     // Une page de tours sans le moindre composant n'a rien à montrer une fois
@@ -466,6 +705,10 @@ class LapListPageSpec extends RidePageSpec {
       series: raw['series'] is String ? raw['series'] as String : 'default',
       layout: layout,
       menu: menu,
+      menuCondition: menuCondition,
+      menuAutoOpen: menuAutoOpen,
+      icon: icon,
+      key: key,
     );
   }
 }
@@ -488,17 +731,26 @@ sealed class LapPageLayout {
 }
 
 /// La liste défilante, telle qu'elle existait avant que le choix se pose.
+///
+/// Mêmes colonnes qu'une [ListPageSpec] ordinaire ([cols],
+/// [ListBlockPlacement.col]) : rien ne distingue les deux dispositions une
+/// fois le tour choisi, c'est la même page qui défile.
 class LapBlocksLayout extends LapPageLayout {
-  const LapBlocksLayout(this.blocks);
+  const LapBlocksLayout(this.blocks, {this.cols = 1});
 
-  final List<DashboardBlock> blocks;
+  final List<ListBlockPlacement> blocks;
+  final int cols;
 
   static LapBlocksLayout? parse(Map<dynamic, dynamic> raw) {
+    final cols = raw['cols'] is num
+        ? (raw['cols'] as num).toInt().clamp(1, ListPageSpec.maxCols)
+        : 1;
     final blocks = [
       for (final entry in (raw['blocks'] is List ? raw['blocks'] as List : []))
-        if (DashboardBlock.parse(entry) case final block?) block,
+        if (ListBlockPlacement.parse(entry, cols: cols) case final placement?)
+          placement,
     ];
-    return blocks.isEmpty ? null : LapBlocksLayout(blocks);
+    return blocks.isEmpty ? null : LapBlocksLayout(blocks, cols: cols);
   }
 }
 
@@ -510,11 +762,13 @@ class LapGridLayout extends LapPageLayout {
     required this.rows,
     required this.cols,
     required this.cells,
+    this.dividers = const [],
   });
 
   final int rows;
   final int cols;
   final List<GridCell> cells;
+  final List<GridDivider> dividers;
 
   static LapGridLayout? parse(Map<dynamic, dynamic> raw) {
     final rows = _gridSide(raw['rows']);
@@ -522,8 +776,105 @@ class LapGridLayout extends LapPageLayout {
     final cells = _gridCells(raw['cells'], rows: rows, cols: cols);
     return cells.isEmpty
         ? null
-        : LapGridLayout(rows: rows, cols: cols, cells: cells);
+        : LapGridLayout(
+            rows: rows,
+            cols: cols,
+            cells: cells,
+            dividers: _gridDividers(raw['dividers'], rows: rows, cols: cols),
+          );
   }
+}
+
+/// Ce qu'une case du bandeau ou de la bande de l'encoche peut porter : une
+/// mesure comme avant, une commande sans réglage (« mettre en veille »), la
+/// sonnette avec son son, ou le radar. Une clé de site unique
+/// (`MetricId.fromKey` + `'sleep'`) resterait ambiguë le jour où les
+/// catalogues se recouperaient ; `BandSlot` tranche une fois à l'analyse
+/// plutôt qu'à chaque lecture par les deux bandes.
+@immutable
+sealed class BandSlot {
+  const BandSlot();
+
+  /// `null` pour une case vide, ou une clé inconnue de cette version de
+  /// l'appli — même repli que [MetricId.fromKey], pour la même raison : un
+  /// document plus récent que l'appli ne doit rien faire échouer.
+  static BandSlot? parse(Object? raw) {
+    if (raw == 'sleep') return const BandActionSlot(BandAction.sleep);
+    if (raw is String && raw.startsWith('bell_')) {
+      return BandBellSlot(_bellSoundOf(raw.substring('bell_'.length)));
+    }
+    if (raw is String && raw.startsWith('radar_')) {
+      return BandRadarSlot(_radarModeOf(raw.substring('radar_'.length)));
+    }
+    final metric = MetricId.fromKey(raw);
+    return metric == null ? null : BandMetricSlot(metric);
+  }
+}
+
+/// Le son nommé, ou [BellSound.bell] — le son par défaut, pour un son de
+/// bande que cette version de l'appli ne connaît pas encore. Même repli
+/// qu'un mode de radar de bande ([_radarModeOf]).
+BellSound _bellSoundOf(String key) {
+  for (final sound in BellSound.values) {
+    if (sound.key == key) return sound;
+  }
+  return BellSound.bell;
+}
+
+/// Le mode nommé, ou [RadarMode.distance] — le mode par défaut, pour un mode
+/// de bande que cette version de l'appli ne connaît pas encore. Même repli
+/// qu'un genre de composant de grille (`DashboardBlock._modeOf`) : une case
+/// déjà posée par le site ne doit pas disparaître pour un mode trop récent.
+RadarMode _radarModeOf(String key) {
+  for (final mode in RadarMode.values) {
+    if (mode.key == key) return mode;
+  }
+  return RadarMode.distance;
+}
+
+/// Une mesure, comme toutes les cases du bandeau et de l'encoche avant que
+/// `BandSlot` existe.
+@immutable
+class BandMetricSlot extends BandSlot {
+  const BandMetricSlot(this.metric);
+  final MetricId metric;
+}
+
+/// Les commandes qu'une case peut porter, sans réglage propre. Un `enum` et
+/// non un simple bool sur [BandActionSlot], pour qu'une deuxième commande
+/// n'ait un jour rien à changer à [BandSlot.parse] ni aux `switch` qui la
+/// dessinent.
+///
+/// `bell` n'y est plus : il a un réglage (le son), donc sa propre classe
+/// ([BandBellSlot]) — même raison que [BandRadarSlot] plutôt qu'un radar
+/// fondu ici, pour la même faute qu'aurait porté un `"bell"` sans dire lequel
+/// des deux sons il joue.
+enum BandAction { sleep }
+
+@immutable
+class BandActionSlot extends BandSlot {
+  const BandActionSlot(this.action);
+  final BandAction action;
+}
+
+/// Le radar arrière, en case de bandeau ou d'encoche — voir [RadarBlockView]
+/// pour le rendu réel des modes. Seul un sous-ensemble de [RadarMode] a un
+/// sens dans une case aussi petite : `distance`, `count` et `gauge` — voir
+/// `BAND_RADAR_MODES` côté site.
+@immutable
+class BandRadarSlot extends BandSlot {
+  const BandRadarSlot(this.mode);
+  final RadarMode mode;
+}
+
+/// La sonnette, en case de bandeau ou d'encoche — voir [BellControl] pour le
+/// rendu réel. Une classe à part de [BandActionSlot] plutôt qu'un `BandAction`
+/// de plus : elle porte [sound], comme [BandRadarSlot] porte son mode — voir
+/// `BAND_BELL` côté site.
+@immutable
+class BandBellSlot extends BandSlot {
+  const BandBellSlot(this.sound);
+  final BellSound sound;
 }
 
 /// Un jeu de valeurs du bandeau.
@@ -533,25 +884,49 @@ class LapGridLayout extends LapPageLayout {
 /// bandeau. Ce qui ne tient pas passe dans le jeu suivant, à un glissé de là.
 @immutable
 class RideBandSpec {
-  const RideBandSpec(this.metrics);
+  const RideBandSpec(this.slots);
 
   static const maxMetrics = 4;
 
   // Une case peut être vide (`null`) : c'est le site qui décide où, une case
   // du milieu laissée vide ne doit pas recoller celles qui suivent.
-  final List<MetricId?> metrics;
+  final List<BandSlot?> slots;
 
   static RideBandSpec? parse(Object? raw) {
     final list = raw is Map ? raw['metrics'] : raw;
     if (list is! List) return null;
 
-    final metrics = <MetricId?>[];
+    final slots = <BandSlot?>[];
     for (final entry in list) {
-      if (metrics.length == maxMetrics) break;
-      metrics.add(MetricId.fromKey(entry));
+      if (slots.length == maxMetrics) break;
+      slots.add(BandSlot.parse(entry));
     }
 
-    return metrics.every((metric) => metric == null) ? null : RideBandSpec(metrics);
+    return slots.every((slot) => slot == null) ? null : RideBandSpec(slots);
+  }
+}
+
+/// Ce qu'un jeu de la bande de l'encoche affiche, de chaque côté de la caméra
+/// selfie.
+///
+/// [RidePreset.notch] est une liste de jeux, entre lesquels un glissé
+/// horizontal fait défiler — même principe que [RideBandSpec] pour le
+/// bandeau du bas. Contrairement à lui, une liste vide (ou absente) est un
+/// état normal et non un repli : un profil qui n'a jamais touché ce réglage
+/// doit laisser la bande invisible, exactement comme avant que ce réglage
+/// existe.
+@immutable
+class NotchSpec {
+  const NotchSpec({this.left, this.right});
+
+  final BandSlot? left;
+  final BandSlot? right;
+
+  static NotchSpec? parse(Object? raw) {
+    if (raw is! Map) return null;
+    final left = BandSlot.parse(raw['left']);
+    final right = BandSlot.parse(raw['right']);
+    return left == null && right == null ? null : NotchSpec(left: left, right: right);
   }
 }
 
@@ -600,6 +975,13 @@ class SensorSettings {
         SensorKind.speedCadence => cadence,
         SensorKind.gears => gears,
         SensorKind.radar => radar,
+        // Jamais réglable, jamais un motif de rattachement ou d'écart à elle
+        // seule : une ceinture cardiaque qui publie aussi sa batterie porte
+        // `kinds = {heartRate, battery}`, et couper `heart_rate` doit suffire
+        // à l'écarter — si `battery` restait « permise » par défaut, l'appareil
+        // serait quand même rattrapé au vol (`devicesToReattach` rattache dès
+        // qu'*une* capacité détectée est permise).
+        SensorKind.battery => true,
       };
 
   static SensorSettings parse(Object? raw) {
@@ -639,9 +1021,10 @@ class RadarSettings {
   final double closeM;
   final double rangeM;
 
-  /// L'habillage plein écran : les jauges des gouttières, le cadre qui s'embrase
-  /// et les mètres dans la bande de l'encoche — le radar par-dessus toutes les
-  /// pages, qu'on les ait demandées ou non.
+  /// L'habillage plein écran : les jauges des gouttières et le cadre qui
+  /// s'embrase — le radar par-dessus toutes les pages, qu'on les ait demandées
+  /// ou non. Ne gouverne pas la bande de l'encoche, dont le contenu vient du
+  /// profil et pas du radar.
   ///
   /// Coupé, **le capteur continue de tourner** : les tonalités restent, le
   /// réveil d'écran aussi, et le radar ne se voit plus que là où le profil a
@@ -681,6 +1064,33 @@ class RadarSettings {
       wakeHold: raw['wake_hold_s'] is num
           ? Duration(seconds: (raw['wake_hold_s'] as num).round())
           : fallback.wakeHold,
+    );
+  }
+}
+
+/// Le seuil d'alerte batterie des capteurs BLE, et son son.
+///
+/// « Absent vaut activé », même logique que [RadarSettings.sounds] : un
+/// document plus ancien que ce réglage ne doit pas faire perdre l'alerte en
+/// silence.
+@immutable
+class BatterySettings {
+  const BatterySettings({this.thresholdPercent = 20, this.sounds = true});
+
+  /// En dessous, un appareil est « faible » — voir `BatteryStatus.low`.
+  final int thresholdPercent;
+
+  final bool sounds;
+
+  static BatterySettings parse(Object? raw) {
+    if (raw is! Map) return const BatterySettings();
+    const fallback = BatterySettings();
+
+    return BatterySettings(
+      thresholdPercent: raw['threshold_percent'] is num
+          ? (raw['threshold_percent'] as num).round().clamp(1, 100)
+          : fallback.thresholdPercent,
+      sounds: raw['sounds'] is bool ? raw['sounds'] as bool : fallback.sounds,
     );
   }
 }
@@ -742,5 +1152,180 @@ class ScreenSettings {
   }
 }
 
+/// Couleur, largeur et opacité de la ligne du trajet parcouru, dessinée par
+/// la page — l'appli ne fait que transmettre ces trois valeurs telles
+/// quelles au pont, elle n'en a jamais besoin sous forme de `Color` Dart.
+@immutable
+class TraveledPathSettings {
+  const TraveledPathSettings({
+    this.color = '#2196F3',
+    this.width = 4.0,
+    this.opacity = 0.85,
+  });
+
+  /// Hexadécimal `#rrggbb`, jamais transformé en `Color` : seule la page le
+  /// consomme.
+  final String color;
+  final double width;
+
+  /// Borné à `[0, 1]` : une valeur hors bornes casserait le rendu MapLibre.
+  final double opacity;
+
+  static final _hexColor = RegExp(r'^#[0-9a-fA-F]{6}$');
+
+  static TraveledPathSettings parse(Object? raw) {
+    if (raw is! Map) return const TraveledPathSettings();
+    const fallback = TraveledPathSettings();
+
+    final rawColor = raw['color'];
+    final color = rawColor is String && _hexColor.hasMatch(rawColor)
+        ? rawColor
+        : fallback.color;
+
+    return TraveledPathSettings(
+      color: color,
+      width: _double(raw['width'], fallback.width),
+      opacity: _double(raw['opacity'], fallback.opacity).clamp(0.0, 1.0),
+    );
+  }
+}
+
 double _double(Object? raw, double fallback) =>
     raw is num ? raw.toDouble() : fallback;
+
+/// Ce qu'un geste sur un bouton distant (D-Fly du Di2) déclenche.
+///
+/// Un jeton de chaîne par action plutôt qu'un `enum` : certaines portent un
+/// réglage (`RingBellAction.sound`, `GoToPageAction.pageKey`), même choix que
+/// [BandSlot] pour la même raison — un `enum` à plat ne peut rien porter.
+/// `parse` ne lève jamais et rend `null` sur un jeton absent ou inconnu de
+/// cette version : un geste sans action assignée ne fait simplement rien.
+@immutable
+sealed class ButtonAction {
+  const ButtonAction();
+
+  static ButtonAction? parse(Object? raw) {
+    if (raw is! String) return null;
+    if (raw.startsWith('go_to_page:')) {
+      final pageKey = raw.substring('go_to_page:'.length);
+      return pageKey.isEmpty ? null : GoToPageAction(pageKey);
+    }
+    return switch (raw) {
+      'next_page' => const NextPageAction(),
+      'previous_page' => const PreviousPageAction(),
+      'bell' => const RingBellAction(BellSound.bell),
+      'horn' => const RingBellAction(BellSound.horn),
+      'booster' => const RingBellAction(BellSound.booster),
+      'start_lap' => const StartLapAction(),
+      'sleep' => const EnterSleepAction(),
+      'wake' => const ExitSleepAction(),
+      'toggle_sleep' => const ToggleSleepAction(),
+      _ => null,
+    };
+  }
+}
+
+class NextPageAction extends ButtonAction {
+  const NextPageAction();
+}
+
+class PreviousPageAction extends ButtonAction {
+  const PreviousPageAction();
+}
+
+class RingBellAction extends ButtonAction {
+  const RingBellAction(this.sound);
+  final BellSound sound;
+}
+
+class StartLapAction extends ButtonAction {
+  const StartLapAction();
+}
+
+class EnterSleepAction extends ButtonAction {
+  const EnterSleepAction();
+}
+
+/// Voir `NavigationWebController.requestWake`, qui appelle `sleepExit` côté
+/// pont (`companionBridge.ts`, dépôt Rails) — sans effet contre un site plus
+/// ancien que ce point d'entrée.
+class ExitSleepAction extends ButtonAction {
+  const ExitSleepAction();
+}
+
+/// Un seul bouton pour les deux sens plutôt que deux réglages à poser sur
+/// deux gestes — le cas d'usage courant (« un bouton pour la veille ») n'a
+/// pas besoin de deux canaux ou de deux gestes distincts pour entrer et
+/// sortir. Résolu dans `RideShellPage._performButtonAction`, seul endroit qui
+/// connaît l'état courant (`ScreenPolicy.dimmed`) : cette classe ne porte
+/// aucune donnée, juste l'intention.
+class ToggleSleepAction extends ButtonAction {
+  const ToggleSleepAction();
+}
+
+/// Anticipation : ne se résout que si une page du profil porte ce
+/// [RidePageSpec.key] au moment du geste — sinon sans effet, jamais une
+/// erreur, un profil réédité entre-temps ne doit rien casser.
+class GoToPageAction extends ButtonAction {
+  const GoToPageAction(this.pageKey);
+  final String pageKey;
+}
+
+/// Les trois gestes qu'un canal du D-Fly peut produire — voir
+/// `Di2ButtonGesturePolicy` (`lib/ride/`) pour comment on les distingue.
+@immutable
+class ButtonGestureActions {
+  const ButtonGestureActions({this.click, this.doubleClick, this.longPress});
+
+  final ButtonAction? click;
+  final ButtonAction? doubleClick;
+  final ButtonAction? longPress;
+
+  static ButtonGestureActions parse(Object? raw) {
+    if (raw is! Map) return const ButtonGestureActions();
+    return ButtonGestureActions(
+      click: ButtonAction.parse(raw['click']),
+      doubleClick: ButtonAction.parse(raw['double_click']),
+      longPress: ButtonAction.parse(raw['long_press']),
+    );
+  }
+}
+
+/// Ce que les quatre canaux du D-Fly déclenchent, par profil de sortie —
+/// seuls 1 et 2 sont câblés sur le matériel testé jusqu'ici, 3 et 4 suivent
+/// le même format (voir `ble/decoders/di2_buttons.dart`) et n'ont donc pas de
+/// raison d'attendre un futur remaniement pour être configurables.
+///
+/// Par défaut, exactement le comportement d'avant ce réglage — canal 1 =
+/// page précédente, canal 2 = page suivante, sur le clic simple seulement,
+/// rien sur 3 et 4 — pour qu'un document sans section `buttons` (site plus
+/// ancien, ou [RidePreset.builtIn]) ne change rien à l'existant.
+@immutable
+class ButtonSettings {
+  const ButtonSettings({
+    this.channel1 = const ButtonGestureActions(click: PreviousPageAction()),
+    this.channel2 = const ButtonGestureActions(click: NextPageAction()),
+    this.channel3 = const ButtonGestureActions(),
+    this.channel4 = const ButtonGestureActions(),
+  });
+
+  final ButtonGestureActions channel1;
+  final ButtonGestureActions channel2;
+  final ButtonGestureActions channel3;
+  final ButtonGestureActions channel4;
+
+  static ButtonSettings parse(Object? raw) {
+    if (raw is! Map) return const ButtonSettings();
+    const fallback = ButtonSettings();
+
+    ButtonGestureActions channel(String key, ButtonGestureActions fallback) =>
+        raw.containsKey(key) ? ButtonGestureActions.parse(raw[key]) : fallback;
+
+    return ButtonSettings(
+      channel1: channel('channel1', fallback.channel1),
+      channel2: channel('channel2', fallback.channel2),
+      channel3: channel('channel3', fallback.channel3),
+      channel4: channel('channel4', fallback.channel4),
+    );
+  }
+}
