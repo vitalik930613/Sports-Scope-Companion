@@ -27,6 +27,7 @@ class SensorHub {
   // Dernières valeurs connues, pour l'affichage.
   final latestHeartRate = ValueNotifier<int?>(null);
   final latestPower = ValueNotifier<int?>(null);
+  final latestPowerBalance = ValueNotifier<double?>(null);
   final latestCadence = ValueNotifier<double?>(null);
   final latestGears = ValueNotifier<Di2Gears?>(null);
 
@@ -84,8 +85,9 @@ class SensorHub {
     switch (sample) {
       case HeartRateSample(:final bpm):
         latestHeartRate.value = bpm;
-      case PowerSample(:final watts):
+      case PowerSample(:final watts, :final balanceLeftPercent):
         latestPower.value = watts;
+        latestPowerBalance.value = balanceLeftPercent;
       case CadenceSample(:final rpm):
         latestCadence.value = rpm;
       case GearSample(:final gears):

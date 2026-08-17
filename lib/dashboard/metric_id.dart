@@ -47,6 +47,7 @@ enum MetricId {
   powerAvg('power_avg', 'Puissance moyenne', 'W', Icons.bolt),
   powerNormalized('power_np', 'Puissance normalisée', 'W', Icons.bolt),
   powerMax('power_max', 'Puissance max', 'W', Icons.bolt),
+  powerBalance('power_balance', 'Équilibre G/D', '%', Icons.balance),
   cadence('cadence', 'Cadence', 'tr/min', Icons.autorenew),
   cadenceAvg('cadence_avg', 'Cadence moyenne', 'tr/min', Icons.autorenew),
   cadenceMax('cadence_max', 'Cadence max', 'tr/min', Icons.autorenew),
@@ -209,6 +210,7 @@ enum MetricId {
       // il lui faut donc les seuils en plus de l'agrégat de l'enregistreur.
       MetricId.tss => [sources.recorder, sources.riderProfile],
       MetricId.cadence => [sources.hub.latestCadence],
+      MetricId.powerBalance => [sources.hub.latestPowerBalance],
       MetricId.gears ||
       MetricId.chainringPosition ||
       MetricId.sprocketPosition ||
@@ -350,6 +352,8 @@ enum MetricId {
           numericValue: stats.maxPower?.toDouble(),
           zoneKey: stats.maxPower == null ? null : profile.powerZoneFor(stats.maxPower!)?.key,
         ),
+      MetricId.powerBalance =>
+        _balanceReading(sources.hub.latestPowerBalance.value),
       MetricId.cadence => MetricReading(
           sources.hub.latestCadence.value?.round().toString(),
           numericValue: sources.hub.latestCadence.value,
@@ -562,6 +566,15 @@ enum MetricId {
     if (gears == null) return const MetricReading(null);
     final ratio = sources.drivetrain.ratio(gears);
     return MetricReading(ratio == null ? null : _decimal(ratio), numericValue: ratio);
+  }
+
+  /// L'équilibre gauche/droite sous la forme lue sur un compteur — les deux
+  /// pourcentages côte à côte, pas un seul chiffre qu'il faudrait soustraire
+  /// de 100 pour connaître l'autre jambe.
+  static MetricReading _balanceReading(double? leftPercent) {
+    if (leftPercent == null) return const MetricReading(null);
+    final left = leftPercent.round();
+    return MetricReading('$left / ${100 - left}', numericValue: leftPercent);
   }
 
   static MetricReading _zoned(

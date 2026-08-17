@@ -89,6 +89,13 @@ class LiveValuesCard extends StatelessWidget {
                   icon: iconFor(SensorKind.speedCadence),
                   format: (v) => (v as double).round().toString(),
                 ),
+                MetricTile(
+                  listenable: hub.latestPowerBalance,
+                  unit: '% G/D',
+                  icon: Icons.balance,
+                  format: (v) =>
+                      '${(v as double).round()} / ${(100 - v).round()}',
+                ),
               ],
             ),
             const Divider(height: 32),
