@@ -718,6 +718,45 @@ trames pour vérifier que la perte du capteur ne s'annonce pas comme une voie
 libre, et « Simuler la veille » pose le voile noir pour juger le réveil radar de
 bout en bout (le rétroéclairage, lui, ne bouge pas sur le banc).
 
+### Les rappels périodiques
+
+`RidePreset.reminders` (`dashboard/ride_preset.dart`) porte ce qu'aucun capteur
+ne peut rappeler tout seul — boire, manger, entamer une intervalle. Chaque
+rappel (`ReminderSpec`) est composé sur le site : un intervalle en minutes, un
+message libre, un son choisi dans la même liste qu'une sonnette (`BellSound`,
+voir « Les boutons du D-Fly »). Une liste vide, comme `notch`, est une valeur
+normale : un profil qui n'a jamais touché ce réglage n'en affiche aucun.
+
+- **Compté sur le temps effectivement roulé** (`RideRecorder.recorded`), pas sur
+  l'horloge murale : un enregistrement en pause ne doit ni sonner pendant
+  l'arrêt (un café est déjà la pause qu'un rappel « bois de l'eau » aurait
+  demandée), ni rattraper d'un coup à la reprise ce que l'arrêt a fait manquer.
+  `RideReminderPolicy` (`ride/reminder_policy.dart`), pure et testée, ne garde
+  que le multiple de l'intervalle déjà atteint pour chaque rappel.
+- **Semée sur le temps déjà roulé, pas sur zéro.** La coquille se démonte et se
+  remonte à chaque aller-retour à l'accueil (voir « Rentrer, et repartir ») ;
+  reconstruire la politique à zéro y rejouerait aussitôt le dernier rappel déjà
+  sonné avant la pause. Le constructeur sème donc chaque compteur sur le temps
+  roulé au montage.
+- **Même son qu'une sonnette, pas un catalogue à part** : `ReminderSpec.sound`
+  est un `BellSound`, joué par une instance de `BellPlayer` propre à la
+  coquille (`_reminderBell`, comme `_buttonBell` pour les boutons Di2) — même
+  flux d'alarme, donc le même passage en force du mode silencieux, qu'il faut à
+  une alerte qu'on ne doit pas manquer en roulant.
+- **Réveille l'écran comme le radar et la batterie**, canal séparé de plus dans
+  `ScreenPolicy` (`reminderAwake`) : `ReminderWakePolicy` tient l'écran allumé
+  le temps de lire le message (10 s, plus long que la batterie, un chiffre se
+  lisant plus vite qu'une phrase), et le toast (`ReminderBanner`) se pose au
+  sommet de toute la pile, batterie comprise — c'est la « grosse alerte »
+  demandée, pas une pastille de plus. Deux rappels qui coïncident (15 min et 30
+  min tombant ensemble à la demi-heure) se rejoignent dans le même bandeau et
+  ne sonnent qu'une fois, même principe que `BatteryAlertBanner` pour deux
+  appareils.
+- **Ne dépend d'aucune carte ni d'aucun pont** : contrairement au radar et au
+  retour automatique, un rappel ne lit que le tic de la coquille et
+  `RideRecorder.recorded`. Il fonctionne donc aussi bien sur un profil
+  home-trainer sans carte que sur une sortie route.
+
 ## La veille par appui long, sur la carte seulement
 
 **Seule la carte connaît la veille par appui long.** L'appli avait longtemps

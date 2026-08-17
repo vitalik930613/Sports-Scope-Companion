@@ -36,6 +36,7 @@ class RidePreset {
     this.screen = const ScreenSettings(),
     this.traveledPath = const TraveledPathSettings(),
     this.buttons = const ButtonSettings(),
+    this.reminders = const [],
   });
 
   /// Le tableau de bord d'aujourd'hui, mot pour mot.
@@ -116,6 +117,13 @@ class RidePreset {
   /// `Di2ButtonGesturePolicy` (`lib/ride/`) pour la classification du geste,
   /// et `RideShellPage._performButtonAction` pour l'exécution.
   final ButtonSettings buttons;
+
+  /// Les rappels périodiques — boire, manger, entamer une intervalle — voir
+  /// `RideReminderPolicy` (`lib/ride/reminder_policy.dart`) pour le
+  /// déclenchement. Une liste vide est une valeur normale, même raison que
+  /// [notch] : un profil qui n'a jamais touché ce réglage garde un écran
+  /// identique à celui d'avant qu'il existe.
+  final List<ReminderSpec> reminders;
 
   /// Les pages qu'on fait défiler, dans l'ordre.
   List<RidePageSpec> get ridePages {
@@ -260,6 +268,7 @@ class RidePreset {
       screen: ScreenSettings.parse(raw['screen']),
       traveledPath: TraveledPathSettings.parse(raw['traveled_path']),
       buttons: ButtonSettings.parse(raw['buttons']),
+      reminders: _reminders(raw['reminders']),
     );
   }
 
@@ -302,6 +311,19 @@ class RidePreset {
       for (final entry in raw)
         if (NotchSpec.parse(entry) case final set?) set,
     ];
+  }
+
+  /// Au plus [ReminderSpec.maxCount] : le site borne déjà, mais l'appli
+  /// applique ses propres garanties en silence, sur la route, comme partout
+  /// ailleurs dans ce document — voir l'entête de [parse].
+  static List<ReminderSpec> _reminders(Object? raw) {
+    if (raw is! List) return const [];
+    final reminders = <ReminderSpec>[];
+    for (final entry in raw) {
+      if (reminders.length == ReminderSpec.maxCount) break;
+      if (ReminderSpec.parse(entry) case final reminder?) reminders.add(reminder);
+    }
+    return reminders;
   }
 }
 
@@ -830,6 +852,56 @@ RadarMode _radarModeOf(String key) {
     if (mode.key == key) return mode;
   }
   return RadarMode.distance;
+}
+
+/// Un rappel périodique : boire, manger, entamer une intervalle — tout ce
+/// qu'aucun capteur ne peut rappeler tout seul. Voir `RideReminderPolicy`
+/// (`lib/ride/reminder_policy.dart`) pour le déclenchement, et
+/// `ReminderBanner` pour l'affichage.
+@immutable
+class ReminderSpec {
+  const ReminderSpec({
+    required this.intervalMinutes,
+    required this.message,
+    this.sound = BellSound.bell,
+  });
+
+  /// Au plus douze par profil : au-delà, l'appli défendrait sa propre borne
+  /// en silence sur la route plutôt que de composer un tableau de bord
+  /// prévisible — même raison que [RideBandSpec.maxMetrics].
+  static const maxCount = 12;
+
+  /// Se répète tous les [intervalMinutes] de temps **effectivement roulé**
+  /// (`RideRecorder.recorded`), pas d'horloge murale : une pause enregistrée
+  /// ne doit ni faire sonner un rappel pendant l'arrêt, ni rattraper d'un
+  /// coup à la reprise ce qu'elle a fait manquer.
+  final int intervalMinutes;
+
+  /// Le texte du toast, tel qu'écrit sur le site — libre, pas de catalogue.
+  final String message;
+
+  /// Même son qu'une sonnette ([BellSound]) et non un catalogue à part :
+  /// même liste des deux côtés, et surtout le même flux d'alarme
+  /// (`BellPlayer`), qui perce le mode silencieux — exactement ce qu'il faut
+  /// à un rappel qu'on ne doit pas rater en roulant.
+  final BellSound sound;
+
+  /// Décode un rappel du document, ou `null` s'il n'en reste rien
+  /// d'exploitable — un intervalle absent ou nul, ou un message vide, ne
+  /// composerait qu'un toast muet ou qui ne sonne jamais.
+  static ReminderSpec? parse(Object? raw) {
+    if (raw is! Map) return null;
+    final interval = raw['interval_minutes'];
+    final message = raw['message'];
+    if (interval is! num || interval <= 0) return null;
+    if (message is! String || message.trim().isEmpty) return null;
+
+    return ReminderSpec(
+      intervalMinutes: interval.round(),
+      message: message.trim(),
+      sound: _bellSoundOf(raw['sound'] is String ? raw['sound'] as String : ''),
+    );
+  }
 }
 
 /// Une mesure, comme toutes les cases du bandeau et de l'encoche avant que

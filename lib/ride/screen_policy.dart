@@ -30,6 +30,12 @@ class ScreenPolicy {
   /// `RadarWakePage`, qui n'a rien à voir avec la batterie).
   bool _batteryAwake = false;
 
+  /// Même mécanique que [_batteryAwake], canal encore séparé : un rappel
+  /// (boire, manger, entamer une intervalle) réveille l'écran sans piloter
+  /// [radarWake] non plus — il a son propre toast (`ReminderBanner`), pas de
+  /// page dédiée.
+  bool _reminderAwake = false;
+
   bool _dimmed = false;
 
   /// L'écran doit-il être assombri, tout compte fait ?
@@ -66,6 +72,14 @@ class ScreenPolicy {
     return _settle();
   }
 
+  /// Un rappel réveille l'écran, ou rend la veille (voir
+  /// `ReminderWakePolicy`, qui tient le délai) — même mécanique que
+  /// [radarAwake]/[batteryAwake], canal séparé.
+  bool reminderAwake(bool awake) {
+    _reminderAwake = awake;
+    return _settle();
+  }
+
   /// Le cycliste a changé de page.
   bool movedTo({required bool onMap}) {
     _onMap = onMap;
@@ -83,7 +97,7 @@ class ScreenPolicy {
   /// Rend vrai quand l'état effectif vient de changer — la coquille n'appelle le
   /// réglage de luminosité que sur les transitions, pas à chaque message.
   bool _settle() {
-    final next = _asleep && !_radarAwake && !_batteryAwake;
+    final next = _asleep && !_radarAwake && !_batteryAwake && !_reminderAwake;
     if (next == _dimmed) return false;
     _dimmed = next;
     return true;

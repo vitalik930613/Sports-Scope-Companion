@@ -38,6 +38,8 @@ import 'pages/dashboard_page.dart';
 import 'radar_alert_sound.dart';
 import 'radar_severity.dart';
 import 'radar_wake_policy.dart';
+import 'reminder_policy.dart';
+import 'reminder_wake_policy.dart';
 import 'ride_pages.dart';
 import 'route_climbs.dart';
 import 'route_profile.dart';
@@ -53,6 +55,7 @@ import 'widgets/notch_band.dart';
 import 'widgets/radar_frame.dart';
 import 'widgets/radar_side_gauge.dart';
 import 'widgets/radar_wake_page.dart';
+import 'widgets/reminder_banner.dart';
 import 'widgets/ride_bottom_band.dart';
 import 'widgets/ride_button_flash.dart';
 import 'widgets/ride_page_flash.dart';
@@ -460,6 +463,28 @@ class _RideShellPageState extends State<RideShellPage>
   /// bandeau, voir `_updateBatteryWake`.
   final _batteryAlert = ValueNotifier<List<BatteryStatus>>(const []);
 
+  /// Les rappels périodiques du profil (boire, manger, entamer une
+  /// intervalle), et ce qui décide quand ils tombent — voir
+  /// `RideReminderPolicy`. Construite dans `initState` : elle a besoin du
+  /// temps déjà roulé pour ne pas rejouer le dernier rappel sonné avant un
+  /// aller-retour à l'accueil, la coquille se démontant et se remontant à
+  /// chaque fois.
+  late final RideReminderPolicy _reminderPolicy;
+
+  /// Ce qui décide de rallumer l'écran pour un rappel, et de le rendre à la
+  /// veille ensuite — impulsion plutôt qu'état continu, même famille que
+  /// [_batteryWake].
+  final _reminderWake = ReminderWakePolicy();
+
+  /// Instance à part de [_buttonBell] et de tout `BellControl` posé sur le
+  /// tableau de bord : un rappel n'a pas de widget à lui, même raison que
+  /// `RingBellAction` garde la sienne.
+  final _reminderBell = BellPlayer();
+
+  /// Les rappels tombés au tic courant, vide = rien à montrer — même patron
+  /// que [_batteryAlert].
+  final _reminderAlert = ValueNotifier<List<ReminderSpec>>(const []);
+
   late final MetricSources _sources;
 
   /// Construit une fois : un changement de page ne doit pas reconstruire l'arbre
@@ -489,6 +514,10 @@ class _RideShellPageState extends State<RideShellPage>
     _autoReturn = AutoReturnPolicy(mapPage: _mapPage);
     _radarWake = RadarWakePolicy(hold: _preset.radar.wakeHold);
     _batteryWake = BatteryWakePolicy();
+    _reminderPolicy = RideReminderPolicy(
+      reminders: _preset.reminders,
+      recorded: widget.recorder.recorded,
+    );
 
     _mutedRadar = ValueNotifier<RadarSample?>(null);
     _radar = RadarViewNotifier(
@@ -573,6 +602,7 @@ class _RideShellPageState extends State<RideShellPage>
       _decideReturn();
       _updateRadarWake();
       _updateBatteryWake();
+      _updateReminders();
       _checkNativeTurnAlert();
       _updateConditionalPages();
       // Boutons distants : voir `_buttonTick`, plus rapide, pour
@@ -667,6 +697,32 @@ class _RideShellPageState extends State<RideShellPage>
 
     _applyScreen(_screenPolicy.batteryAwake(_batteryWake.awake));
     _batteryAlert.value = const [];
+  }
+
+  /// À chaque tic : un intervalle du profil vient-il de s'écouler, et faut-il
+  /// refermer le réveil d'écran du dernier rappel tombé ?
+  void _updateReminders() {
+    if (!mounted) return;
+
+    final due = _reminderPolicy.read(widget.recorder.recorded);
+    if (due.isNotEmpty) {
+      // Un seul son même si deux intervalles tombent au même tic — celui du
+      // premier rappel du profil, pas une cacophonie au démarrage.
+      unawaited(_reminderBell.start(due.first.sound));
+      _reminderAlert.value = due;
+      // `trigger` rend vrai seulement sur le front veille → réveil : un
+      // second rappel pendant le maintien le prolonge sans le redemander à
+      // `ScreenPolicy`.
+      if (_reminderWake.trigger(DateTime.now())) {
+        _applyScreen(_screenPolicy.reminderAwake(true));
+      }
+    }
+
+    final changed = _reminderWake.update(DateTime.now());
+    if (!changed) return;
+
+    _applyScreen(_screenPolicy.reminderAwake(_reminderWake.awake));
+    _reminderAlert.value = const [];
   }
 
   /// Faut-il ramener le cycliste sur la carte, ou lui rendre sa page ?
@@ -1419,6 +1475,8 @@ class _RideShellPageState extends State<RideShellPage>
     _battery.dispose();
     _batterySound.dispose();
     _batteryAlert.dispose();
+    _reminderBell.dispose();
+    _reminderAlert.dispose();
     unawaited(_nativeTurnSound.dispose());
     // Filet de sécurité : quitter la navigation en veille (bouton retour, page
     // qui plante) ne doit pas laisser l'appareil à 1 % de luminosité.
@@ -1789,6 +1847,21 @@ class _RideShellPageState extends State<RideShellPage>
                 builder: (context, devices, _) => devices.isEmpty
                     ? const SizedBox.shrink()
                     : BatteryAlertBanner(devices: devices),
+              ),
+            ),
+            // Le rappel périodique : au sommet de tout, batterie comprise —
+            // c'est la « grosse alerte » qu'on ne doit pas manquer, et elle
+            // n'a rien d'urgent à céder à une batterie faible.
+            Positioned(
+              key: const ValueKey('alerte-rappel'),
+              top: 0,
+              left: 0,
+              right: 0,
+              child: ValueListenableBuilder<List<ReminderSpec>>(
+                valueListenable: _reminderAlert,
+                builder: (context, reminders, _) => reminders.isEmpty
+                    ? const SizedBox.shrink()
+                    : ReminderBanner(reminders: reminders),
               ),
             ),
           ],
