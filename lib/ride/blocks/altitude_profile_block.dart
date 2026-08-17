@@ -207,7 +207,7 @@ class AltitudeProfileCard extends StatelessWidget {
       aside: formatDistance(stats.distanceM),
       grade: stats.gradePercent ?? 0,
       points: trackPoints,
-      segmentGrades: _localGrades(trackPoints),
+      segmentGrades: localGradesOf(trackPoints),
       ratio: null,
       color: color,
       textColor: textColor,
@@ -248,17 +248,5 @@ class AltitudeProfileCard extends StatelessWidget {
   static double _gradeNear(List<double> segmentGrades, int cursorIdx) {
     if (segmentGrades.isEmpty) return 0;
     return segmentGrades[cursorIdx.clamp(0, segmentGrades.length - 1)];
-  }
-
-  /// Pente de chaque segment consécutif de la trace accumulée — personne ne
-  /// la transmet ici (contrairement au tracé, où le site l'a déjà lissée) :
-  /// c'est le calcul local validé pour ce mode.
-  static List<double> _localGrades(List<ElevationProfilePoint> points) {
-    final grades = <double>[];
-    for (var i = 0; i < points.length - 1; i++) {
-      final dd = points[i + 1].distM - points[i].distM;
-      grades.add(dd > 0 ? (points[i + 1].altM - points[i].altM) / dd * 100 : 0);
-    }
-    return grades;
   }
 }

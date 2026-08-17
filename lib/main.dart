@@ -566,7 +566,11 @@ class _HomePageState extends State<HomePage> {
 
   void _openRides() {
     Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => RidesPage(store: widget.rides, recorder: _recorder),
+      builder: (_) => RidesPage(
+        store: widget.rides,
+        recorder: _recorder,
+        riderProfile: widget.riderProfile,
+      ),
     ));
   }
 
@@ -929,6 +933,7 @@ class _HomePageState extends State<HomePage> {
           RecordingCard(
             recorder: _recorder,
             store: widget.rides,
+            riderProfile: widget.riderProfile,
             sensors: widget.settings.preset.sensors,
             lapSeries: widget.settings.preset.lapSeries,
           ),

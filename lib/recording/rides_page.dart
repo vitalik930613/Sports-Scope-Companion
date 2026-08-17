@@ -5,8 +5,10 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../account/rider_profile_store.dart';
 import '../ui/formats.dart';
 import 'fit_writer.dart';
+import 'ride_detail_page.dart';
 import 'ride_recorder.dart';
 import 'ride_session.dart';
 import 'ride_store.dart';
@@ -19,13 +21,21 @@ import 'ride_store.dart';
 /// sports-scope. Un téléversement direct supposerait de tenir une session
 /// authentifiée hors du WebView, pour un gain nul sur la route.
 class RidesPage extends StatefulWidget {
-  const RidesPage({super.key, required this.store, required this.recorder});
+  const RidesPage({
+    super.key,
+    required this.store,
+    required this.recorder,
+    required this.riderProfile,
+  });
 
   final RideStore store;
 
   /// L'enregistreur, seulement pour reconnaître la sortie en cours : elle
   /// s'affiche, mais ne s'exporte ni ne se supprime tant qu'elle écrit.
   final RideRecorder recorder;
+
+  /// Transmis tel quel à l'écran de détail, pour ses zones et son TSS.
+  final RiderProfileStore riderProfile;
 
   @override
   State<RidesPage> createState() => _RidesPageState();
@@ -185,6 +195,19 @@ class _RidesPageState extends State<RidesPage> {
     await _reload();
   }
 
+  /// Ouvre le détail d'une sortie — bilan, profil d'altitude, zones, tours.
+  /// Sans garde particulière au-delà de ça : c'est une lecture seule, sans
+  /// le risque qui justifie `enabled: !active` sur le menu export/suppression.
+  void _openDetail(RideSession session) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => RideDetailPage(
+        session: session,
+        store: widget.store,
+        riderProfile: widget.riderProfile,
+      ),
+    ));
+  }
+
   void _toast(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -243,6 +266,7 @@ class _RidesPageState extends State<RidesPage> {
     final busy = _busyId == session.id;
 
     return ListTile(
+      onTap: () => _openDetail(session),
       leading: Icon(
         active ? Icons.fiber_manual_record : Icons.route,
         color: active ? Colors.red : null,

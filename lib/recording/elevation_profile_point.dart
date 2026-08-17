@@ -22,3 +22,16 @@ class ElevationProfilePoint {
   @override
   int get hashCode => Object.hash(distM, altM);
 }
+
+/// Pente de chaque segment consécutif d'un profil (distance, altitude) —
+/// personne ne la transmet ici (contrairement à un tracé du site, où elle est
+/// déjà lissée) : c'est le calcul local, partagé par `AltitudeProfileCard`
+/// (sortie en cours) et l'écran de détail d'une sortie passée.
+List<double> localGradesOf(List<ElevationProfilePoint> points) {
+  final grades = <double>[];
+  for (var i = 0; i < points.length - 1; i++) {
+    final dd = points[i + 1].distM - points[i].distM;
+    grades.add(dd > 0 ? (points[i + 1].altM - points[i].altM) / dd * 100 : 0);
+  }
+  return grades;
+}

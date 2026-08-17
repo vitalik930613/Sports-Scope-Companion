@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../account/rider_profile_store.dart';
 import '../dashboard/ride_preset.dart';
 import '../ui/formats.dart';
 import 'gps_source.dart';
@@ -18,12 +19,17 @@ class RecordingCard extends StatelessWidget {
     super.key,
     required this.recorder,
     required this.store,
+    required this.riderProfile,
     this.sensors = const SensorSettings(),
     this.lapSeries = const {},
   });
 
   final RideRecorder recorder;
   final RideStore store;
+
+  /// Transmis tel quel à `RidesPage` (bouton « Exporter » du toast de fin de
+  /// sortie), pour son propre écran de détail.
+  final RiderProfileStore riderProfile;
 
   /// Les capteurs du profil de sortie courant. Une sortie lancée d'ici doit
   /// partir avec exactement les mêmes que si elle avait été lancée depuis la
@@ -171,7 +177,11 @@ class RecordingCard extends StatelessWidget {
       action: SnackBarAction(
         label: 'Exporter',
         onPressed: () => navigator.push(MaterialPageRoute(
-          builder: (_) => RidesPage(store: store, recorder: recorder),
+          builder: (_) => RidesPage(
+            store: store,
+            recorder: recorder,
+            riderProfile: riderProfile,
+          ),
         )),
       ),
     ));
