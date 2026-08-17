@@ -110,6 +110,30 @@ class LoggingLightController
 ///    la lampe peut exiger une poignée de main avant d'accepter des commandes.
 ///
 /// Reporte ensuite les octets dans [_commandFor] et retire le garde-fou.
+///
+/// ### Ce qui a déjà été cherché (rien à relire avant de recommencer)
+///
+/// Recherche faite en 2026-08 sur GitHub, le forum développeur Garmin et la
+/// presse spécialisée : **aucun encodage publié**, nulle part.
+///
+/// - `developer.garmin.com/radar-data-ble` (programme officiel) et toutes les
+///   intégrations tierces publiques trouvées (Ride with GPS,
+///   `Wunderfitz/harbour-tacho`, `gwerneckp/garmin-ble`, `mjsir911/GarminBLE`)
+///   ne font que **lire** `6A4E3203` — aucune n'écrit sur `6A4E3201`.
+/// - Le fil forum sur le profil BLE du RTL515 ne discute que du décodage des
+///   cibles, jamais de commande.
+/// - Le contrôle tiers du mode qui existe réellement (`maca88/SmartBikeLights`,
+///   `BikeLightsControl`) passe par **ANT+ depuis un Edge/une montre**
+///   (Connect IQ), pas par BLE depuis un téléphone — sans rapport avec ce
+///   qu'on fait ici.
+/// - Indice que le protocole existe côté appli officielle : la review
+///   DCRainmaker du Varia RearVue 820 (2026) montre des modes de clignotement
+///   personnalisables depuis l'appli Varia smartphone. Mais rien ne dit que ça
+///   documente l'encodage, ni qu'il est identique sur RTL515/RCT715.
+///
+/// `mjsir911/GarminBLE` inclut un dissecteur Wireshark pour du BLE Garmin —
+/// utile pour lire le `btsnoop_hci.log` une fois capturé, mais ne dispense pas
+/// de la capture ci-dessus.
 class VariaRearLightController implements RearLightController {
   VariaRearLightController(this.device);
 
