@@ -66,6 +66,10 @@ class BatteryBlockView extends StatelessWidget {
             device.percent == null ? '—' : '${device.percent} %',
             icon: device.icon,
             background: device.low ? _low : null,
+            // Grisée plutôt qu'effacée : la dernière lecture reste affichée
+            // (un capteur débranché n'efface pas ce qu'il a mesuré, même
+            // règle que `SensorHub.latest*`), mais ce n'est plus du direct.
+            dimmed: !device.connected,
           ),
       ],
     );

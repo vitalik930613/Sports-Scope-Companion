@@ -91,7 +91,13 @@ class BlockCard extends StatelessWidget {
 /// Une ligne de [StatCard] : ce qu'on mesure à gauche, ce que ça vaut à droite.
 @immutable
 class StatRow {
-  const StatRow(this.label, this.value, {this.background, this.icon});
+  const StatRow(
+    this.label,
+    this.value, {
+    this.background,
+    this.icon,
+    this.dimmed = false,
+  });
 
   final String label;
   final String value;
@@ -100,6 +106,13 @@ class StatRow {
   /// `null` sans seuil connu ou pour une mesure qui n'a pas de zone (cadence,
   /// vitesse) — la ligne garde alors le texte blanc uni.
   final Color? background;
+
+  /// La valeur vient d'un appareil qui n'est plus connecté : elle reste
+  /// affichée (une batterie ne se remet pas à zéro toute seule en se
+  /// débranchant, contrairement à un capteur en direct — même règle que
+  /// `SensorHub.latest*`), mais grisée pour dire *ce n'est plus mesuré en
+  /// direct*, plutôt qu'un chiffre à jour qu'on croirait actuel.
+  final bool dimmed;
 
   /// Devant le libellé, `null` la plupart du temps : la mesure d'une carte
   /// (moyennes, bilan de tour) est déjà dite par l'icône du titre, une par
@@ -207,26 +220,29 @@ class StatCard extends StatelessWidget {
               // n'a pas de ligne de base à offrir — un Row en `baseline` la
               // recalerait sur son bord haut plutôt que sur le texte du
               // libellé.
-              child: Row(
-                children: [
-                  if (row.icon != null) ...[
-                    Icon(row.icon, size: metrics.lineSize, color: dimInk),
-                    SizedBox(width: metrics.gap / 2),
-                  ],
-                  Expanded(
-                    child: Text(
-                      row.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: dimInk,
-                        fontSize: metrics.lineSize,
+              child: Opacity(
+                opacity: row.dimmed ? 0.45 : 1,
+                child: Row(
+                  children: [
+                    if (row.icon != null) ...[
+                      Icon(row.icon, size: metrics.lineSize, color: dimInk),
+                      SizedBox(width: metrics.gap / 2),
+                    ],
+                    Expanded(
+                      child: Text(
+                        row.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: dimInk,
+                          fontSize: metrics.lineSize,
+                        ),
                       ),
                     ),
-                  ),
-                  SizedBox(width: metrics.gap),
-                  _value(row, metrics, ink),
-                ],
+                    SizedBox(width: metrics.gap),
+                    _value(row, metrics, ink),
+                  ],
+                ),
               ),
             ),
         ],

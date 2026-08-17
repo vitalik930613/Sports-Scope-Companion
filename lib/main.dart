@@ -15,6 +15,7 @@ import 'dashboard/companion_settings_fetch.dart';
 import 'dashboard/companion_settings_store.dart';
 import 'dashboard/preset_picker.dart';
 import 'dashboard/ride_preset.dart';
+import 'devices/battery_status_card.dart';
 import 'devices/device_linker.dart';
 import 'devices/gatt_sniff_page.dart';
 import 'devices/known_devices_store.dart';
@@ -28,6 +29,7 @@ import 'navigation/route_catalog_store.dart';
 import 'phone/debug_log_page.dart';
 import 'phone/phone_sensors.dart';
 import 'phone/rider_compass.dart';
+import 'ride/battery_status.dart';
 import 'ride/climb_debug_page.dart';
 import 'ride/radar_debug_page.dart';
 import 'ride/ride_shell_page.dart';
@@ -530,6 +532,16 @@ class _HomePageState extends State<HomePage> {
   var _adapterState = BluetoothAdapterState.unknown;
   StreamSubscription<BluetoothAdapterState>? _adapterSub;
 
+  /// Le seuil vient du profil actif au moment où l'accueil se construit —
+  /// pas recalculé si on change de profil sans relancer l'appli, même
+  /// simplification que le reste de cet écran (la liste de capteurs qu'un
+  /// profil garde, par exemple, ne se relit pas non plus en direct ici).
+  late final _battery = BatteryStatusNotifier(
+    widget.devices,
+    widget.hub,
+    thresholdPercent: widget.settings.preset.battery.thresholdPercent,
+  );
+
   KnownDevicesStore get _devices => widget.devices;
   SensorHub get _hub => widget.hub;
   RideRecorder get _recorder => widget.recorder;
@@ -666,6 +678,7 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     widget.session.removeListener(_onSessionChanged);
     _adapterSub?.cancel();
+    _battery.dispose();
     // Le hub n'est pas fermé ici : il survit à cet écran.
     super.dispose();
   }
@@ -896,6 +909,13 @@ class _HomePageState extends State<HomePage> {
             onTap: _openSensors,
           ),
           const SizedBox(height: 12),
+          // Juste après : la rangée dit qui répond, cette carte dit combien
+          // il leur reste. Invisible tant qu'aucun capteur n'est connu — même
+          // geste (ouvrir la page Capteurs) que la rangée au-dessus, et pas de
+          // gap manuel autour d'elle pour la même raison que `UpdateCard` /
+          // `_thresholdsCard()` n'en ont pas : une carte parfois absente ne
+          // doit pas laisser un blanc à sa place.
+          BatteryStatusCard(battery: _battery, onTap: _openSensors),
           // L'enregistrement passe avant les valeurs en direct : c'est le geste
           // qu'on cherche avant de partir, les mesures ne sont qu'un contrôle.
           RecordingCard(

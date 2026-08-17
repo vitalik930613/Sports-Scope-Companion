@@ -150,30 +150,13 @@ class _SensorsPageState extends State<SensorsPage> {
   /// libellé qu'on choisit une fois pour toutes, pas un réglage de la
   /// connexion en cours.
   Future<void> _rename(KnownDevice known) async {
-    final controller = TextEditingController(text: known.name);
     final name = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Renommer'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Nom du capteur'),
-          onSubmitted: (value) => Navigator.pop(context, value),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Annuler'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Enregistrer'),
-          ),
-        ],
+      builder: (context) => _RenameDialog(
+        initialName: known.name,
+        originalName: known.originalName,
       ),
     );
-    controller.dispose();
     if (name == null) return; // annulé
     await _devices.rename(known.remoteId, name);
   }
@@ -436,4 +419,72 @@ class _SensorsPageState extends State<SensorsPage> {
       '${at.minute.toString().padLeft(2, '0')}:'
       '${at.second.toString().padLeft(2, '0')}.'
       '${at.millisecond.toString().padLeft(3, '0')}';
+}
+
+/// La boîte de dialogue « Renommer », à part pour une seule raison : le
+/// `TextEditingController` doit se fermer sur le cycle de vie **du widget qui
+/// l'utilise**, pas sur celui de l'appelant. `await showDialog(...)` rend la
+/// main dès que la boîte se referme (`Navigator.pop`), mais elle reste montée
+/// et visible pendant son animation de sortie — un `dispose()` appelé juste
+/// après cet `await` désarme donc le contrôleur pendant que le `TextField`
+/// s'en sert encore le temps de l'animation (« A TextEditingController was
+/// used after being disposed »). Un `State.dispose()` propre, lui, n'arrive
+/// que lorsque le widget est réellement retiré de l'arbre.
+class _RenameDialog extends StatefulWidget {
+  const _RenameDialog({required this.initialName, required this.originalName});
+
+  final String initialName;
+
+  /// Ce que le capteur annonçait à sa toute première connexion — voir
+  /// `KnownDevice.originalName`. Sert seulement à l'indication sous le champ ;
+  /// c'est `KnownDevicesStore.rename` qui restaure réellement ce nom-là si le
+  /// champ est vidé.
+  final String originalName;
+
+  @override
+  State<_RenameDialog> createState() => _RenameDialogState();
+}
+
+class _RenameDialogState extends State<_RenameDialog> {
+  late final _controller = TextEditingController(text: widget.initialName);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Rien à dire si le nom courant est déjà l'original : vider le champ ne
+    // « restaurerait » alors rien de différent.
+    final helperText = widget.originalName.isNotEmpty &&
+            widget.originalName != widget.initialName
+        ? 'Laisser vide pour revenir à « ${widget.originalName} »'
+        : null;
+
+    return AlertDialog(
+      title: const Text('Renommer'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        decoration: InputDecoration(
+          hintText: 'Nom du capteur',
+          helperText: helperText,
+          helperMaxLines: 2,
+        ),
+        onSubmitted: (value) => Navigator.pop(context, value),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Annuler'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, _controller.text),
+          child: const Text('Enregistrer'),
+        ),
+      ],
+    );
+  }
 }

@@ -120,12 +120,22 @@ class KnownDevicesStore extends ChangeNotifier {
   /// jamais que celui déjà retenu ici (voir `_reconnect`/`attachNow`), donc
   /// [remember] ne reçoit ce nom-là en retour, jamais un nom annoncé par le
   /// capteur — un renommage ne peut pas être écrasé au prochain rattachement.
+  ///
+  /// Un champ vidé **restaure le nom d'origine** ([KnownDevice.originalName])
+  /// plutôt que de ne rien faire : c'est le geste naturel pour revenir en
+  /// arrière, plus direct que de retaper le nom annoncé par le capteur de
+  /// mémoire.
   Future<void> rename(String remoteId, String name) async {
-    final trimmed = name.trim();
-    if (trimmed.isEmpty) return;
     final index = _devices.indexWhere((d) => d.remoteId == remoteId);
     if (index < 0) return;
-    _devices[index] = _devices[index].copyWith(name: trimmed);
+
+    final trimmed = name.trim();
+    final restored = trimmed.isEmpty
+        ? _devices[index].originalName
+        : trimmed;
+    if (restored.isEmpty) return; // jamais annoncé de nom, rien à restaurer
+
+    _devices[index] = _devices[index].copyWith(name: restored);
     await _flush();
   }
 
