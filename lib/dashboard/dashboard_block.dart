@@ -209,6 +209,10 @@ class MetricBlock extends DashboardBlock {
     this.label,
     this.min,
     this.max,
+    this.gaugeFill,
+    this.gaugeSegments,
+    this.gaugeColorMode,
+    this.gaugeColor,
     super.color,
     super.textColor,
   });
@@ -247,6 +251,30 @@ class MetricBlock extends DashboardBlock {
   final double? min;
   final double? max;
 
+  /// Forme du remplissage de la jauge — tronçons ou barre continue. `null` :
+  /// [MetricView] retombe sur la forme d'avant ce réglage, qui dépend de la
+  /// nature de la jauge (tronçons pour une jauge de zones/plage libre, barre
+  /// continue pour une jauge dynamique) — voir [GaugeFill].
+  final GaugeFill? gaugeFill;
+
+  /// Nombre de tronçons, sans effet si [gaugeFill] n'est pas
+  /// [GaugeFill.segments] (ou son repli). `null` : le nombre d'avant ce
+  /// réglage (le nombre de zones du cycliste pour une jauge de zones, 5
+  /// pour une plage libre/dynamique). Bornée en amont côté site comme côté
+  /// appli à 2–10 : en dessous, un tronçon unique n'a pas de sens (c'est
+  /// [GaugeFill.full] qu'il faut poser) ; au-delà, sur une carte d'environ
+  /// 220 px, un tronçon devient un pixel illisible en roulant.
+  final int? gaugeSegments;
+
+  /// Couleur fixe ou couleur de la zone du moment. `null` : le repli d'avant
+  /// ce réglage (automatique pour une jauge de zones, fixe sinon) — voir
+  /// [GaugeColorMode].
+  final GaugeColorMode? gaugeColorMode;
+
+  /// Couleur utilisée quand [gaugeColorMode] vaut [GaugeColorMode.fixed].
+  /// `null` : la couleur d'avant ce réglage (`#26A69A`).
+  final Color? gaugeColor;
+
   /// `null` si la mesure nommée n'existe pas dans cette version : mieux vaut
   /// une cellule vide qu'une case qui affiche un tiret pour toujours.
   static MetricBlock? parse(Map<dynamic, dynamic> raw) {
@@ -268,6 +296,9 @@ class MetricBlock extends DashboardBlock {
         ? MetricLayout.forLegacyMode(DashboardBlock._modeOf(raw['mode'], MetricMode.values))
         : MetricLayout.parse(raw['layout']);
 
+    final gaugeSegmentsRaw = _toDouble(raw['gauge_segments']);
+    final gaugeSegments = gaugeSegmentsRaw?.round().clamp(2, 10).toInt();
+
     return MetricBlock(
       metric: metric,
       layout: layout,
@@ -278,6 +309,18 @@ class MetricBlock extends DashboardBlock {
           : null,
       min: hasRange ? rawMin : null,
       max: hasRange ? rawMax : null,
+      gaugeFill: switch (raw['gauge_fill']) {
+        'segments' => GaugeFill.segments,
+        'full' => GaugeFill.full,
+        _ => null,
+      },
+      gaugeSegments: gaugeSegments,
+      gaugeColorMode: switch (raw['gauge_color_mode']) {
+        'fixed' => GaugeColorMode.fixed,
+        'auto' => GaugeColorMode.auto,
+        _ => null,
+      },
+      gaugeColor: DashboardBlock._colorOf(raw, 'gauge_color'),
       color: DashboardBlock._colorOf(raw, 'color'),
       textColor: DashboardBlock._colorOf(raw, 'text_color'),
     );
@@ -293,12 +336,58 @@ class MetricBlock extends DashboardBlock {
       other.label == label &&
       other.min == min &&
       other.max == max &&
+      other.gaugeFill == gaugeFill &&
+      other.gaugeSegments == gaugeSegments &&
+      other.gaugeColorMode == gaugeColorMode &&
+      other.gaugeColor == gaugeColor &&
       other.color == color &&
       other.textColor == textColor;
 
   @override
   int get hashCode => Object.hash(
-      metric, layout, format, icon, label, min, max, color, textColor);
+      metric,
+      layout,
+      format,
+      icon,
+      label,
+      min,
+      max,
+      gaugeFill,
+      gaugeSegments,
+      gaugeColorMode,
+      gaugeColor,
+      color,
+      textColor);
+}
+
+/// Forme du remplissage d'une jauge — voir [MetricBlock.gaugeFill].
+enum GaugeFill with BlockMode {
+  /// Des paliers, comme la jauge d'avant ce réglage.
+  segments('segments'),
+
+  /// Une barre continue jusqu'à la position réelle, comme la jauge
+  /// dynamique d'avant ce réglage.
+  full('full');
+
+  const GaugeFill(this.key);
+
+  @override
+  final String key;
+}
+
+/// Couleur du remplissage d'une jauge — voir [MetricBlock.gaugeColorMode].
+enum GaugeColorMode with BlockMode {
+  /// Une seule couleur réglée dans l'éditeur ([MetricBlock.gaugeColor]).
+  fixed('fixed'),
+
+  /// La couleur de la zone du moment (`zoneColorOf`), comme la jauge de
+  /// zones d'avant ce réglage.
+  auto('auto');
+
+  const GaugeColorMode(this.key);
+
+  @override
+  final String key;
 }
 
 double? _toDouble(Object? raw) => raw is num ? raw.toDouble() : null;

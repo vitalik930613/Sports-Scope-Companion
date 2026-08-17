@@ -35,6 +35,10 @@ class MetricView extends StatelessWidget {
     this.label,
     this.min,
     this.max,
+    this.gaugeFill,
+    this.gaugeSegments,
+    this.gaugeColorMode,
+    this.gaugeColor,
     this.color,
     this.textColor,
     this.onTap,
@@ -62,6 +66,16 @@ class MetricView extends StatelessWidget {
   /// d'entraînement, sur la rangée de [layout] réglée en jauge.
   final double? min;
   final double? max;
+
+  /// Forme, nombre de tronçons et couleur du remplissage de la jauge — voir
+  /// [MetricBlock.gaugeFill]/[MetricBlock.gaugeSegments]/
+  /// [MetricBlock.gaugeColorMode]/[MetricBlock.gaugeColor]. `null` partout :
+  /// la jauge garde le rendu d'avant ce réglage, propre à sa nature (zones,
+  /// plage libre, plage dynamique).
+  final GaugeFill? gaugeFill;
+  final int? gaugeSegments;
+  final GaugeColorMode? gaugeColorMode;
+  final Color? gaugeColor;
 
   /// Fond réglé dans l'éditeur — voir [DashboardBlock.color]. Prioritaire sur
   /// [MetricReading.background]/la couleur de zone : c'est le seul moyen de
@@ -471,10 +485,22 @@ class MetricView extends StatelessWidget {
   // où une jauge non éligible faisait retomber toute la carte sur le chiffre
   // plein cadre : ici seule la barre disparaît, le reste de la disposition
   // composée reste tel quel.
+  //
+  // La nature choisie, [gaugeFill]/[gaugeSegments]/[gaugeColorMode]/
+  // [gaugeColor] (réglés dans l'éditeur, voir [MetricBlock]) décident
+  // ensuite seulement de LA FORME de la barre obtenue, jamais de sa nature.
+  // `null` partout retombe exactement sur le rendu d'avant ce réglage : des
+  // tronçons dont chacun porte la couleur de sa propre zone pour la jauge de
+  // zones, 5 tronçons d'une seule couleur fixe pour la plage libre, une
+  // barre continue de cette même couleur fixe pour la dynamique. Poser l'une
+  // de ces clés explicitement sur une jauge de zones — un nombre de tronçons qui ne
+  // correspond plus au nombre de zones, une barre pleine, ou une couleur
+  // fixe — casse la correspondance tronçon↔zone réelle : la barre retombe
+  // alors sur une seule couleur (fixe, ou celle de la zone du moment), un
+  // dégradé par tronçon n'ayant plus de seuils réels à représenter.
 
-  static const _rangeGaugeSegments = 5;
-  static const _rangeGaugeColor = Color(0xFF26A69A);
-  static const _dynamicGaugeColor = Color(0xFF26A69A);
+  static const _defaultSegments = 5;
+  static const _defaultColor = Color(0xFF26A69A);
 
   Widget _gaugeRow(MetricReading reading) {
     final zones = metric.zonesOf(sources.riderProfile.profile);
@@ -486,48 +512,95 @@ class MetricView extends StatelessWidget {
     if (range != null && value != null) {
       final (rangeMin, rangeMax) = range;
       final fraction = ((value - rangeMin) / (rangeMax - rangeMin)).clamp(0.0, 1.0);
-      return _dynamicGaugeBar(fraction);
+      return _dynamicGaugeBar(reading, fraction);
     }
 
     return const SizedBox.shrink();
   }
 
   /// La jauge de zones : un palier par zone du cycliste, chacun de la couleur
-  /// de sa zone, allumés jusqu'à celle du moment.
+  /// de sa zone, allumés jusqu'à celle du moment — le rendu d'avant ce
+  /// chantier, gardé tel quel tant que rien ne casse la correspondance
+  /// tronçon↔zone ([gaugeFill]/[gaugeSegments] absents, [gaugeColorMode] pas
+  /// [GaugeColorMode.fixed]).
   Widget _zoneGaugeBar(MetricReading reading, List<TrainingZone> zones) {
     final index = zones.indexWhere((zone) => zone.key == reading.zoneKey);
-    final fallback = zoneColorOf(reading.zoneKey) ?? Colors.white24;
+    final fill = gaugeFill ?? GaugeFill.segments;
+    final colorMode = gaugeColorMode ?? GaugeColorMode.auto;
 
-    return _segments(
-      count: zones.length,
-      isLit: (i) => i <= index && index >= 0,
-      litColorAt: (i) => zoneColorOf(zones[i].key) ?? fallback,
-    );
+    if (fill == GaugeFill.segments && gaugeSegments == null && colorMode == GaugeColorMode.auto) {
+      final fallback = zoneColorOf(reading.zoneKey) ?? Colors.white24;
+      return _segments(
+        count: zones.length,
+        isLit: (i) => i <= index && index >= 0,
+        litColorAt: (i) => zoneColorOf(zones[i].key) ?? fallback,
+      );
+    }
+
+    final fraction = index < 0 ? null : (index + 1) / zones.length;
+    return _resolvedFillBar(reading, fraction, fill: fill, colorMode: colorMode, naturalSegments: zones.length);
   }
 
   /// La jauge à plage libre : le pendant de [_zoneGaugeBar] pour une mesure
   /// sans zones d'entraînement, sur les bornes [min]/[max] réglées dans
-  /// l'éditeur. Mêmes paliers, également répartis entre les deux bornes
-  /// plutôt que sur des seuils réels — d'où une seule couleur au lieu d'une
-  /// par palier.
-  ///
-  /// Un chiffre absent ([MetricReading.numericValue] `null`) éteint tous les
-  /// paliers plutôt que d'en deviner un : la mesure garde son tiret, la
-  /// jauge doit dire la même chose que lui.
+  /// l'éditeur. Un chiffre absent ([MetricReading.numericValue] `null`)
+  /// éteint tous les paliers (ou vide la barre continue) plutôt que d'en
+  /// deviner un : la mesure garde son tiret, la jauge doit dire la même
+  /// chose que lui. Tronçons d'une seule couleur fixe par défaut, comme
+  /// avant ce chantier.
   Widget _rangeGaugeBar(MetricReading reading) {
     final value = reading.numericValue;
     final fraction = value == null ? null : ((value - min!) / (max! - min!)).clamp(0.0, 1.0);
-    final lit = fraction == null ? -1 : (fraction * _rangeGaugeSegments).round();
-
-    return _segments(
-      count: _rangeGaugeSegments,
-      isLit: (i) => i < lit,
-      litColorAt: (_) => _rangeGaugeColor,
+    return _resolvedFillBar(
+      reading,
+      fraction,
+      fill: gaugeFill ?? GaugeFill.segments,
+      colorMode: gaugeColorMode ?? GaugeColorMode.fixed,
+      naturalSegments: _defaultSegments,
     );
   }
 
-  /// Les paliers communs aux deux jauges à zones/plage libre — seuls leur
-  /// nombre et leur couleur changent entre les deux.
+  /// Le remplissage d'une jauge dynamique — barre continue d'une seule
+  /// couleur fixe par défaut, comme avant ce chantier ; [gaugeFill] peut la
+  /// repasser en tronçons.
+  Widget _dynamicGaugeBar(MetricReading reading, double fraction) => _resolvedFillBar(
+        reading,
+        fraction,
+        fill: gaugeFill ?? GaugeFill.full,
+        colorMode: gaugeColorMode ?? GaugeColorMode.fixed,
+        naturalSegments: _defaultSegments,
+      );
+
+  /// Le point commun aux trois natures de jauge une fois qu'elles ne
+  /// dessinent plus leur rendu spécifique (le ladder de zones de
+  /// [_zoneGaugeBar]) : des tronçons ([_segments]) ou une barre continue
+  /// ([_fullBar]), d'une seule couleur — fixe ([gaugeColor], repli
+  /// [_defaultColor]) ou celle de la zone du moment
+  /// (`zoneColorOf(reading.zoneKey)`, même repli si la mesure n'a pas de
+  /// zone, cardio/puissance sans seuil réglé côté site compris).
+  Widget _resolvedFillBar(
+    MetricReading reading,
+    double? fraction, {
+    required GaugeFill fill,
+    required GaugeColorMode colorMode,
+    required int naturalSegments,
+  }) {
+    final fallback = gaugeColor ?? _defaultColor;
+    final color = colorMode == GaugeColorMode.fixed ? fallback : zoneColorOf(reading.zoneKey) ?? fallback;
+
+    if (fill == GaugeFill.full) return _fullBar(fraction ?? 0, color);
+
+    final count = gaugeSegments ?? naturalSegments;
+    final lit = fraction == null ? -1 : (fraction * count).round();
+    return _segments(
+      count: count,
+      isLit: (i) => i < lit,
+      litColorAt: (_) => color,
+    );
+  }
+
+  /// Les paliers communs aux trois natures de jauge — seuls leur nombre, leur
+  /// éclairage et leur couleur changent d'un appelant à l'autre.
   Widget _segments({
     required int count,
     required bool Function(int i) isLit,
@@ -550,14 +623,15 @@ class MetricView extends StatelessWidget {
         ],
       );
 
-  /// Le remplissage d'une jauge dynamique : une piste continue jusqu'à la
-  /// position réelle, pas des paliers — la plage (min/max de la sortie, ou
-  /// progression vers l'itinéraire) est une vraie progression, pas des
-  /// seuils entre lesquels un dégradé mentirait comme pour les zones. Plus
-  /// épaisse que [_segments] aussi ([BlockMetrics.natural.barHeight], la
-  /// même que la barre de zones) — c'est elle qui porte l'information ici,
-  /// pas des paliers à côté d'un chiffre déjà lisible seul.
-  Widget _dynamicGaugeBar(double fraction) {
+  /// Le remplissage continu d'une jauge en mode [GaugeFill.full] : une piste
+  /// jusqu'à la position réelle, pas des paliers — la plage (échelle de
+  /// zones, min/max de la sortie, ou progression vers l'itinéraire) est une
+  /// vraie progression, pas des seuils entre lesquels un dégradé mentirait
+  /// comme pour les zones, d'où une seule couleur ([color]). Plus épaisse
+  /// que [_segments] aussi ([BlockMetrics.natural.barHeight], la même que la
+  /// barre de zones) — c'est elle qui porte l'information ici, pas des
+  /// paliers à côté d'un chiffre déjà lisible seul.
+  Widget _fullBar(double fraction, Color color) {
     final barHeight = BlockMetrics.natural.barHeight;
 
     return SizedBox(
@@ -576,7 +650,7 @@ class MetricView extends StatelessWidget {
                     children: [
                       SizedBox(
                         width: trackWidth * fraction,
-                        child: const ColoredBox(color: _dynamicGaugeColor),
+                        child: ColoredBox(color: color),
                       ),
                     ],
                   ),
