@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import '../drivetrain.dart';
 import 'ride_session.dart';
 import 'ride_stats.dart';
 import 'track_point.dart';
@@ -44,6 +45,7 @@ class FitWriter {
     required RideSession session,
     required List<TrackPoint> points,
     FitSport sport = FitSport.cycling,
+    Drivetrain drivetrain = Drivetrain.road,
   }) {
     if (points.isEmpty) throw const EmptyRide();
 
@@ -70,21 +72,49 @@ class FitWriter {
       4: _timestamp(session.startedAt),
     });
 
-    // — event : début et fin de chronomètre. Facultatif au sens du format, mais
-    // c'est lui qui distingue une pause d'un trou de données pour les lecteurs
-    // qui recalculent le temps en mouvement.
+    // — event : début et fin de chronomètre, et changements de braquet. Une
+    // seule définition pour les trois : un timer n'a rien à dire des champs de
+    // braquet (9-12), qui restent alors à leur valeur invalide — exactement ce
+    // qu'un lecteur doit voir pour « pas de donnée ici ».
+    //
+    // Les numéros de champs 9-12 (front_gear_num/front_gear/rear_gear_num/
+    // rear_gear) sont ceux du profil FIT officiel — vérifiés contre le
+    // `fit-file-parser` du dépôt Rails, qui les lit tels quels et non via le
+    // champ 3 (`data`) bit-empaqueté que documentent certains guides tiers.
     file.define(_Local.event, _Mesg.event, const [
       _FieldDef(253, _BaseType.uint32), // timestamp
-      _FieldDef(0, _BaseType.fitEnum), // event : 0 = timer
-      _FieldDef(1, _BaseType.fitEnum), // event_type : 0 = start, 4 = stop_all
+      _FieldDef(0, _BaseType.fitEnum), // event : 0 = timer, 42/43 = braquet
+      _FieldDef(1, _BaseType.fitEnum), // event_type : 0/4 = timer, 3 = marker
       _FieldDef(4, _BaseType.uint8), // event_group
+      _FieldDef(9, _BaseType.uint8z), // front_gear_num (position Di2)
+      _FieldDef(10, _BaseType.uint8z), // front_gear (dents)
+      _FieldDef(11, _BaseType.uint8z), // rear_gear_num (position Di2)
+      _FieldDef(12, _BaseType.uint8z), // rear_gear (dents)
     ]);
     file.data(_Local.event, {253: _timestamp(start), 0: 0, 1: 0, 4: 0});
 
-    // — record : la trace elle-même.
+    // — record : la trace elle-même, et au passage les événements de braquet.
     file.define(_Local.record, _Mesg.record, _recordFields(summary));
+    // Une notification Di2 dit l'état complet des deux dérailleurs, jamais un
+    // delta (cf. Di2ButtonChannels) : `gearFront`/`gearRear` valent donc la
+    // dernière position connue sur chaque point, y compris ceux où rien n'a
+    // changé. On ne réécrit un événement qu'au changement, sinon une sortie de
+    // deux heures en petit plateau produirait sept mille messages identiques.
+    int? lastGearFront;
+    int? lastGearRear;
     for (final point in points) {
       file.data(_Local.record, _recordValues(point, summary));
+
+      final gearFront = point.gearFront;
+      if (gearFront != null && gearFront != lastGearFront) {
+        file.data(_Local.event, _gearEventValues(point, drivetrain, front: true));
+        lastGearFront = gearFront;
+      }
+      final gearRear = point.gearRear;
+      if (gearRear != null && gearRear != lastGearRear) {
+        file.data(_Local.event, _gearEventValues(point, drivetrain, front: false));
+        lastGearRear = gearRear;
+      }
     }
 
     file.data(_Local.event, {253: _timestamp(end), 0: 0, 1: 4, 4: 0});
@@ -309,6 +339,35 @@ class FitWriter {
         if (summary.hasPower) 7: point.power,
       };
 
+  /// Un événement `front_gear_change`/`rear_gear_change` (event 42/43,
+  /// event_type `marker` = 3) : position **et** dents des deux dérailleurs,
+  /// jamais un seul — une notification Di2 dit l'état complet, et un lecteur
+  /// qui n'a vu que la moitié d'un changement simultané afficherait un
+  /// braquet qui n'a jamais existé.
+  static Map<int, int?> _gearEventValues(
+    TrackPoint point,
+    Drivetrain drivetrain, {
+    required bool front,
+  }) =>
+      {
+        253: _timestamp(point.at),
+        0: front ? 42 : 43,
+        1: 3,
+        4: 0,
+        9: point.gearFront,
+        10: _teeth(drivetrain.chainrings, point.gearFront),
+        11: point.gearRear,
+        12: _teeth(drivetrain.sprockets, point.gearRear),
+      };
+
+  /// Dents à une position Di2 donnée (1-based, cf. [Drivetrain]) — `null` hors
+  /// du tableau plutôt qu'une erreur : une transmission mal configurée ne doit
+  /// pas faire échouer l'export.
+  static int? _teeth(List<int> table, int? position) =>
+      position != null && position >= 1 && position <= table.length
+          ? table[position - 1]
+          : null;
+
   static int _timestamp(DateTime at) =>
       at.toUtc().difference(_fitEpoch).inSeconds;
 
@@ -397,6 +456,7 @@ enum FitSport {
 enum _BaseType {
   fitEnum(0x00, 1, 0xFF, signed: false),
   uint8(0x02, 1, 0xFF, signed: false),
+  uint8z(0x0A, 1, 0, signed: false),
   uint16(0x84, 2, 0xFFFF, signed: false),
   sint32(0x85, 4, 0x7FFFFFFF, signed: true),
   uint32(0x86, 4, 0xFFFFFFFF, signed: false),

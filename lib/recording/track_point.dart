@@ -64,9 +64,8 @@ class TrackPoint {
   final double? wheelSpeedMps;
 
   /// Positions Di2 au moment du point. Le format `.fit` n'a pas de champ de
-  /// braquet dans ses `record` — on les conserve donc dans le JSONL, où ils
-  /// restent exploitables (et ré-exportables le jour où on écrira les
-  /// événements `gear_change`).
+  /// braquet dans ses `record` — on les conserve donc dans le JSONL, et
+  /// `FitWriter` les réexporte à part, en événements `gear_change`.
   final int? gearFront;
   final int? gearRear;
 
