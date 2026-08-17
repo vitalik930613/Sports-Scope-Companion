@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../ride/battery_status.dart';
+import '../ui/zone_colors.dart';
 
 /// L'état des batteries des capteurs connus, en une carte sur l'accueil.
 ///
@@ -27,8 +28,6 @@ class BatteryStatusCard extends StatelessWidget {
   /// Ouvre la page des capteurs — même geste que [SensorStatusStrip] : c'est
   /// là qu'on renomme, recharge ou oublie un appareil.
   final VoidCallback onTap;
-
-  static const _low = Color(0xFFD32F2F);
 
   @override
   Widget build(BuildContext context) {
@@ -59,7 +58,8 @@ class BatteryStatusCard extends StatelessWidget {
   }
 
   Widget _row(BuildContext context, BatteryStatus device) {
-    final color = device.low ? _low : null;
+    final percent = device.percent;
+    final levelColor = percent == null ? null : batteryLevelColor(percent);
     // Grisée plutôt qu'effacée : la dernière lecture reste affichée (un
     // capteur débranché n'efface pas ce qu'il a mesuré), mais ce n'est plus
     // du direct — sans ce grisé, un capteur éteint depuis hier se lirait
@@ -70,15 +70,28 @@ class BatteryStatusCard extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Row(
           children: [
-            Icon(device.icon, size: 20, color: color),
+            Icon(device.icon, size: 20, color: levelColor),
             const SizedBox(width: 10),
             Expanded(
               child: Text(device.label, overflow: TextOverflow.ellipsis),
             ),
-            Text(
-              device.percent == null ? '—' : '${device.percent} %',
-              style: TextStyle(fontWeight: FontWeight.w600, color: color),
-            ),
+            if (levelColor == null)
+              const Text('—', style: TextStyle(fontWeight: FontWeight.w600))
+            else
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: levelColor,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  '$percent %',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: foregroundOf(levelColor),
+                  ),
+                ),
+              ),
           ],
         ),
       ),

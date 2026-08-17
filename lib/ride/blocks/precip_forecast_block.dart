@@ -51,6 +51,12 @@ class _PrecipForecastBlockViewState extends State<PrecipForecastBlockView> {
   PrecipitationForecast? _forecast;
   bool _fetching = false;
 
+  /// 6h à 15 min le pas, l'horizon documenté du bloc (voir `PrecipForecastBlock`,
+  /// `dashboard_block.dart`) — l'API peut renvoyer plus de pas que ça, tronqué
+  /// ici plutôt que de laisser la frise s'étirer sur un horizon plus long que
+  /// celui annoncé.
+  static const _maxSteps = 24;
+
   @override
   void initState() {
     super.initState();
@@ -102,8 +108,10 @@ class _PrecipForecastBlockViewState extends State<PrecipForecastBlockView> {
           );
         }
 
+        final steps = forecast.steps.length > _maxSteps ? forecast.steps.sublist(0, _maxSteps) : forecast.steps;
+
         return _PrecipForecastCard(
-          forecast: forecast,
+          forecast: PrecipitationForecast(steps: steps),
           color: widget.color,
           textColor: widget.textColor,
         );
@@ -189,25 +197,42 @@ class _PrecipForecastCard extends StatelessWidget {
     );
   }
 
-  Widget _barsRow() => Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+  Widget _barsRow() => Stack(
+        // `expand` : sans lui, un `Stack` fait tenir le `Row` non positionné
+        // à sa taille intrinsèque (la plus haute barre) puis le colle en
+        // haut de la case — les petites barres semblaient alors toutes
+        // partir du haut au lieu de monter depuis le bas. `expand` force le
+        // `Row` à occuper toute la case, comme quand il n'y avait pas
+        // encore ce `Stack` autour de lui.
+        fit: StackFit.expand,
         children: [
-          for (final step in forecast.steps)
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 1),
-                child: FractionallySizedBox(
-                  alignment: Alignment.bottomCenter,
-                  heightFactor: _heightFractionOf(step.precipitation),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: _colorFor(step.precipitation),
-                      borderRadius: BorderRadius.circular(2),
+          // Un repère par heure sous les barres — même idée que le
+          // cadrillage vertical de `_WeatherChartPainter`, mais toutes les
+          // heures et pas toutes les 6h : l'horizon d'ici tient déjà en 6h.
+          Positioned.fill(
+            child: CustomPaint(painter: _HourGridPainter(stepCount: forecast.steps.length)),
+          ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              for (final step in forecast.steps)
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 1),
+                    child: FractionallySizedBox(
+                      alignment: Alignment.bottomCenter,
+                      heightFactor: _heightFractionOf(step.precipitation),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: _colorFor(step.precipitation),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
+            ],
+          ),
         ],
       );
 
@@ -224,7 +249,7 @@ class _PrecipForecastCard extends StatelessWidget {
   }
 
   /// Le premier pas qui dépasse le seuil de pluie légère dit tout : rien
-  /// trouvé, c'est sec pour les trois heures qui viennent ; au premier pas,
+  /// trouvé, c'est sec pour les six heures qui viennent ; au premier pas,
   /// c'est déjà en train de tomber ; sinon, le délai avant que ça commence.
   String _headline() {
     final idx = forecast.steps.indexWhere((s) => s.precipitation >= _lightThreshold);
@@ -241,4 +266,31 @@ class _PrecipForecastCard extends StatelessWidget {
     if (minutes == 0) return '+${hours}h';
     return '+${hours}h${minutes.toString().padLeft(2, '0')}';
   }
+}
+
+/// Trait vertical à chaque heure pleine (4 pas de 15 min), pour situer les
+/// barres dans le temps d'un coup d'œil sans devoir les compter une à une.
+class _HourGridPainter extends CustomPainter {
+  _HourGridPainter({required this.stepCount});
+
+  final int stepCount;
+
+  static const _stepsPerHour = 4; // 60 min / 15 min
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (stepCount < _stepsPerHour) return;
+
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.15)
+      ..strokeWidth = 1;
+    final stepX = size.width / stepCount;
+    for (var i = _stepsPerHour; i < stepCount; i += _stepsPerHour) {
+      final x = i * stepX;
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _HourGridPainter oldDelegate) => oldDelegate.stepCount != stepCount;
 }

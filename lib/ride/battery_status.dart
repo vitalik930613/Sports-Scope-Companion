@@ -210,3 +210,19 @@ class BatteryStatusNotifier extends ValueNotifier<List<BatteryStatus>> {
     super.dispose();
   }
 }
+
+/// Le fond d'une pastille de batterie : rouge à 30 % et en dessous, vert à
+/// 100 %, orange à mi-chemin — un dégradé continu plutôt qu'un simple seuil
+/// bas/haut, pour voir une batterie décliner avant qu'elle ne passe sous
+/// l'alerte ([BatteryStatus.low]). Mêmes teintes que les zones d'entraînement
+/// (`ui/zone_colors.dart`, `z5`/`z4`/`z2`) : une seule palette « rouge = ça ne
+/// va pas » dans toute l'appli plutôt que d'en inventer une seconde.
+Color batteryLevelColor(int percent) {
+  const red = Color(0xFFD32F2F);
+  const orange = Color(0xFFE8760C);
+  const green = Color(0xFF2E9E4F);
+  final clamped = percent.clamp(30, 100);
+  return clamped <= 65
+      ? Color.lerp(red, orange, (clamped - 30) / 35)!
+      : Color.lerp(orange, green, (clamped - 65) / 35)!;
+}

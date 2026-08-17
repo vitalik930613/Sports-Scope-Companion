@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../dashboard/dashboard_block.dart';
+import '../../ui/zone_colors.dart';
 import '../battery_status.dart';
 import 'block_card.dart';
 
@@ -39,8 +40,6 @@ class BatteryBlockView extends StatelessWidget {
   /// non la surface du texte (même règle que [StatRow.background]).
   final Color? textColor;
 
-  static const _low = Color(0xFFEF5350); // même rouge que RadarBlockView._close
-
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<List<BatteryStatus>>(
@@ -72,7 +71,8 @@ class BatteryBlockView extends StatelessWidget {
             device.label,
             device.percent == null ? '—' : '${device.percent} %',
             icon: device.icon,
-            background: device.low ? _low : null,
+            background:
+                device.percent == null ? null : batteryLevelColor(device.percent!),
             // Grisée plutôt qu'effacée : la dernière lecture reste affichée
             // (un capteur débranché n'efface pas ce qu'il a mesuré, même
             // règle que `SensorHub.latest*`), mais ce n'est plus du direct.
@@ -103,19 +103,42 @@ class BatteryBlockView extends StatelessWidget {
     };
 
     if (pool.isEmpty) {
-      return _emptyText('Aucun capteur appairé.', Colors.white38);
+      return _emptyText('Aucun capteur appairé.');
     }
 
     final known = [for (final d in pool) if (d.percent != null) d];
     if (known.isEmpty) {
-      return _emptyText('—', Colors.white38, icon: _sharedIcon(pool));
+      return _emptyText('—', icon: _sharedIcon(pool));
     }
 
     final worst = known.reduce((a, b) => a.percent! < b.percent! ? a : b);
-    return _emptyText(
-      '${worst.percent} %',
-      worst.low ? _low : Colors.white,
-      icon: worst.icon,
+    final levelColor = batteryLevelColor(worst.percent!);
+    return BlockSurface(
+      background: color,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(worst.icon, size: 28, color: Colors.white70),
+          const SizedBox(height: 4),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+            decoration: BoxDecoration(
+              color: levelColor,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              '${worst.percent} %',
+              maxLines: 1,
+              style: TextStyle(
+                color: foregroundOf(levelColor),
+                fontSize: 44,
+                fontWeight: FontWeight.w700,
+                height: 1.1,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -125,11 +148,14 @@ class BatteryBlockView extends StatelessWidget {
     return icons.length == 1 ? icons.first : null;
   }
 
-  Widget _emptyText(String label, Color ink, {IconData? icon}) {
+  /// Pas de pourcentage à montrer — ni fond de zone ni icône colorée,
+  /// seulement le gris discret des mesures absentes.
+  Widget _emptyText(String label, {IconData? icon}) {
+    const ink = Colors.white38;
     final text = Text(
       label,
       maxLines: 1,
-      style: TextStyle(
+      style: const TextStyle(
         color: ink,
         fontSize: 44,
         fontWeight: FontWeight.w700,

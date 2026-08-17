@@ -1289,13 +1289,13 @@ class PrecipForecastBlock extends DashboardBlock {
 
 /// Les prévisions météo horaires (Open-Meteo), pour la position GPS
 /// courante : température et vent en courbes, précipitations en barres, sur
-/// les douze prochaines heures.
+/// les six prochaines heures.
 ///
 /// Un seul mode, même raison que [PrecipRadarBlock]/[PrecipForecastBlock] :
 /// rien à faire varier selon la case. Distinct de [PrecipForecastBlock], qui
-/// ne regarde que les précipitations sur 3h à 15 min de pas pour répondre à
-/// « une averse arrive-t-elle bientôt ? » — celui-ci donne la tendance de
-/// toute la sortie. La donnée vient du GPS et non de la page de navigation,
+/// ne regarde que les précipitations sur 6h à 15 min de pas pour répondre à
+/// « une averse arrive-t-elle bientôt ? » — celui-ci donne la tendance des
+/// heures qui viennent. La donnée vient du GPS et non de la page de navigation,
 /// donc un profil de home-trainer sans WebView peut quand même le poser (il
 /// affichera l'état "pas de GPS", comme les deux autres).
 class WeatherForecastBlock extends DashboardBlock {

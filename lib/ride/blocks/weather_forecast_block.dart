@@ -11,14 +11,17 @@ import 'block_card.dart';
 /// Les prévisions météo horaires (Open-Meteo), pour la position GPS
 /// courante — voir `WeatherForecastBlock` (`dashboard_block.dart`).
 ///
-/// Distinct de [PrecipForecastBlockView] (une phrase et une frise sur 3h, qui
+/// Distinct de [PrecipForecastBlockView] (une phrase et une frise sur 6h, qui
 /// répond à « une averse arrive-t-elle bientôt ? ») : ce bloc dessine un
 /// graphique — température et vent en courbes, précipitations en barres —
-/// pour lire la tendance de toute la sortie qui vient (12h).
+/// pour lire la tendance des heures qui viennent (6h).
 ///
 /// Même convention de mise en page que [PrecipForecastBlockView] : le
 /// graphique remplit toute la case ([Expanded]/[LayoutBuilder]), seul le
-/// texte (titre, phrase de tête, légende) garde une taille fixe.
+/// texte (titre, légende) garde une taille fixe. La valeur actuelle de
+/// chaque série vit dans le nom de la légende plutôt que dans une phrase à
+/// part — moins de lignes à budgéter dans une case étroite, et la valeur
+/// reste collée à la couleur qui la trace.
 ///
 /// Relève une nouvelle prévision à chaque changement de position GPS
 /// significatif — [WeatherForecastClient] throttle lui-même l'appel réseau.
@@ -46,6 +49,11 @@ class WeatherForecastBlockView extends StatefulWidget {
 class _WeatherForecastBlockViewState extends State<WeatherForecastBlockView> {
   WeatherForecast? _forecast;
   bool _fetching = false;
+
+  /// 6h à l'heure le pas : la tendance qui intéresse pendant la sortie, pas
+  /// la journée entière que l'API peut renvoyer — au-delà, le graphique
+  /// s'écraserait pour un horizon qu'on ne lit plus en roulant.
+  static const _maxSteps = 6;
 
   @override
   void initState() {
@@ -98,8 +106,10 @@ class _WeatherForecastBlockViewState extends State<WeatherForecastBlockView> {
           );
         }
 
+        final steps = forecast.steps.length > _maxSteps ? forecast.steps.sublist(0, _maxSteps) : forecast.steps;
+
         return _WeatherForecastCard(
-          forecast: forecast,
+          forecast: WeatherForecast(steps: steps),
           color: widget.color,
           textColor: widget.textColor,
         );
@@ -108,7 +118,8 @@ class _WeatherForecastBlockViewState extends State<WeatherForecastBlockView> {
   }
 }
 
-/// La carte composée : un titre, la phrase de tête, le graphique, sa légende.
+/// La carte composée : un titre, le graphique, sa légende (valeurs actuelles
+/// dans les noms des séries).
 class _WeatherForecastCard extends StatelessWidget {
   const _WeatherForecastCard({required this.forecast, this.color, this.textColor});
 
@@ -147,18 +158,12 @@ class _WeatherForecastCard extends StatelessWidget {
           );
 
           // Le budget vertical du contenu fixe hors légende : rembourrage,
-          // titre, phrase de tête, labels « Maintenant »/« +Nh ». Le
-          // graphique n'y entre pas, il absorbe le reste via `Expanded` et
-          // peut se réduire jusqu'à zéro sans déborder. `titleHeight`/
-          // `lineHeight` incluent déjà leur propre interligne
-          // (`BlockMetrics`, même valeurs recopiées côté éditeur).
-          final chromeHeight = metrics.padding * 2 +
-              metrics.titleHeight +
-              metrics.gap +
-              metrics.lineHeight +
-              metrics.gap +
-              2 +
-              metrics.lineHeight;
+          // titre, labels « Maintenant »/« +Nh ». Le graphique n'y entre
+          // pas, il absorbe le reste via `Expanded` et peut se réduire
+          // jusqu'à zéro sans déborder. `titleHeight`/`lineHeight`
+          // incluent déjà leur propre interligne (`BlockMetrics`, même
+          // valeurs recopiées côté éditeur).
+          final chromeHeight = metrics.padding * 2 + metrics.titleHeight + metrics.gap + 2 + metrics.lineHeight;
           // La légende ajoute une ligne de plus : sous ce budget, une case
           // aussi basse qu'une seule ligne de grille n'a plus la place de
           // l'afficher en plus du graphique sans déborder de la carte
@@ -177,11 +182,6 @@ class _WeatherForecastCard extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(color: ink.withValues(alpha: 0.7), fontSize: metrics.titleSize),
-              ),
-              SizedBox(height: metrics.gap),
-              Text(
-                _headline(),
-                style: TextStyle(color: ink, fontSize: metrics.lineSize, fontWeight: FontWeight.w600),
               ),
               SizedBox(height: metrics.gap),
               constraints.hasBoundedHeight
@@ -206,11 +206,16 @@ class _WeatherForecastCard extends StatelessWidget {
                 // `showLegend`, et donc un débordement. Chaque libellé se
                 // tronque plutôt (`_legendChip`), la légende reste toujours
                 // exactement une ligne.
+                //
+                // La valeur actuelle est dans le nom de la série plutôt que
+                // dans une phrase à part au-dessus du graphique : elle reste
+                // à côté de la couleur qui la dessine, sans ligne dédiée à
+                // budgéter dans `chromeHeight`.
                 Row(
                   children: [
-                    Expanded(child: _legendChip('Température', _tempColor, ink, metrics)),
-                    Expanded(child: _legendChip('Vent', _windColor, ink, metrics)),
-                    Expanded(child: _legendChip('Précipitations', _precipColor, ink, metrics)),
+                    Expanded(child: _legendChip('Température $_tempLabel', _tempColor, ink, metrics)),
+                    Expanded(child: _legendChip('Vent $_windLabel', _windColor, ink, metrics)),
+                    Expanded(child: _legendChip('Pluie $_precipLabel', _precipColor, ink, metrics)),
                   ],
                 ),
               ],
@@ -236,10 +241,9 @@ class _WeatherForecastCard extends StatelessWidget {
         ],
       );
 
-  String _headline() {
-    final first = forecast.steps.first;
-    return '${first.temperature.round()}°C · vent ${first.windSpeed.round()} km/h';
-  }
+  String get _tempLabel => '${forecast.steps.first.temperature.round()}°C';
+  String get _windLabel => '${forecast.steps.first.windSpeed.round()} km/h';
+  String get _precipLabel => '${forecast.steps.first.precipitation.toStringAsFixed(1)} mm/h';
 
   String _lastLabel() => '+${forecast.steps.length}h';
 }
@@ -292,11 +296,12 @@ class _WeatherChartPainter extends CustomPainter {
     );
   }
 
-  /// Cadrillage de fond : horizontal fixe (haut/milieu/bas), vertical calé
-  /// sur l'intervalle réel entre deux pas plutôt que sur un index — l'API
-  /// n'est pas garantie strictement horaire. Purement un repère visuel, pas
-  /// lié à l'échelle d'une courbe en particulier (température et vent ont
-  /// chacune la sienne, voir `_paintLine`).
+  /// Cadrillage de fond : horizontal fixe (haut/milieu/bas), vertical à
+  /// chaque heure pleine — calé sur l'intervalle réel entre deux pas plutôt
+  /// que sur un index, l'API n'étant pas garantie strictement horaire.
+  /// Purement un repère visuel, pas lié à l'échelle d'une courbe en
+  /// particulier (température et vent ont chacune la sienne, voir
+  /// `_paintLine`).
   void _paintGrid(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = Colors.white.withValues(alpha: 0.12)
@@ -311,7 +316,7 @@ class _WeatherChartPainter extends CustomPainter {
     final stepMinutes = steps[1].time.difference(steps[0].time).inMinutes;
     if (stepMinutes <= 0) return;
 
-    final stepsPerLine = math.max(1, (180 / stepMinutes).round());
+    final stepsPerLine = math.max(1, (60 / stepMinutes).round());
     final stepX = size.width / (steps.length - 1);
     for (var i = stepsPerLine; i < steps.length - 1; i += stepsPerLine) {
       final x = i * stepX;
