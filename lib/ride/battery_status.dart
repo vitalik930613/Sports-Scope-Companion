@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../ble/sensor_connection.dart';
 import '../ble/sensor_hub.dart';
+import '../ble/sensor_profile.dart';
 import '../devices/known_devices_store.dart';
 import '../ui/sensor_icons.dart';
 
@@ -14,6 +16,7 @@ class BatteryStatus {
     required this.label,
     required this.icon,
     required this.connected,
+    this.kinds = const {},
     this.percent,
     this.low = false,
   });
@@ -24,6 +27,11 @@ class BatteryStatus {
   final String label;
   final IconData icon;
   final bool connected;
+
+  /// Capacités constatées de l'appareil (`KnownDevice.kinds`) — sert à
+  /// [BatteryBlockView] à restreindre le mode compact à un capteur précis
+  /// (`BatteryBlock.sensorKind`).
+  final Set<SensorKind> kinds;
 
   /// `null` : pas connecté, ou connecté sans le service batterie standard.
   final int? percent;
@@ -38,11 +46,20 @@ class BatteryStatus {
       other.label == label &&
       other.icon == icon &&
       other.connected == connected &&
+      setEquals(other.kinds, kinds) &&
       other.percent == percent &&
       other.low == low;
 
   @override
-  int get hashCode => Object.hash(id, label, icon, connected, percent, low);
+  int get hashCode => Object.hash(
+        id,
+        label,
+        icon,
+        connected,
+        Object.hashAllUnordered(kinds),
+        percent,
+        low,
+      );
 }
 
 /// Le pourcentage de batterie de chaque appareil connu, tenu à jour en
@@ -124,6 +141,7 @@ class BatteryStatusNotifier extends ValueNotifier<List<BatteryStatus>> {
           id: device.remoteId,
           label: device.name.isEmpty ? '(sans nom)' : device.name,
           icon: iconForDevice(device.kinds),
+          kinds: device.kinds,
           connected:
               _subscribed[device.remoteId]?.status.value ==
               SensorStatus.connected,

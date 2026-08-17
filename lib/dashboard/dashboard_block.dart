@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart' show Color;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
+import '../ble/sensor_profile.dart';
 import 'companion_icons.dart';
 import 'metric_id.dart';
 
@@ -107,6 +108,7 @@ sealed class DashboardBlock {
         ),
       'battery' => BatteryBlock(
           mode: _modeOf(raw['mode'], BatteryMode.values),
+          sensorKind: _sensorKindOf(raw['sensor']),
           color: color,
           textColor: textColor,
         ),
@@ -152,6 +154,21 @@ sealed class DashboardBlock {
     }
     return modes.first;
   }
+
+  /// Le capteur visé par `battery.sensor` — mêmes clés que
+  /// `SensorSettings.parse` (`heart_rate`, `power`, `cadence`, `gears`,
+  /// `radar`) pour que le site n'ait qu'un seul vocabulaire à connaître.
+  /// `null` sur tout le reste, y compris une clé absente : c'est ce qui garde
+  /// le comportement d'avant ce réglage (le pire pourcentage, tous appareils
+  /// confondus).
+  static SensorKind? _sensorKindOf(Object? raw) => switch (raw) {
+        'heart_rate' => SensorKind.heartRate,
+        'power' => SensorKind.power,
+        'cadence' => SensorKind.speedCadence,
+        'gears' => SensorKind.gears,
+        'radar' => SensorKind.radar,
+        _ => null,
+      };
 
   /// La couleur écrite par le site sous [key] (`"color"`/`"text_color"`),
   /// `#rrggbb` uniquement — même format que `sanitize_hex_color` côté site
@@ -1160,21 +1177,32 @@ enum RadarMode with BlockMode {
 class BatteryBlock extends DashboardBlock {
   const BatteryBlock({
     this.mode = BatteryMode.list,
+    this.sensorKind,
     super.color,
     super.textColor,
   });
 
   final BatteryMode mode;
 
+  /// En mode [BatteryMode.compact], restreint le pire pourcentage à ce
+  /// capteur-là plutôt qu'à tous les appareils connus — la case n'a la place
+  /// que pour un chiffre, et « le pire de tous » n'est pas toujours celui
+  /// qu'on veut y surveiller (le capteur de puissance, par exemple, plutôt
+  /// que la ceinture cardio posée sur la table depuis la dernière sortie).
+  /// `null` : comportement d'avant ce réglage, tous appareils confondus.
+  /// Sans effet en mode [BatteryMode.list], qui les liste déjà tous.
+  final SensorKind? sensorKind;
+
   @override
   bool operator ==(Object other) =>
       other is BatteryBlock &&
       other.mode == mode &&
+      other.sensorKind == sensorKind &&
       other.color == color &&
       other.textColor == textColor;
 
   @override
-  int get hashCode => Object.hash(mode, color, textColor);
+  int get hashCode => Object.hash(mode, sensorKind, color, textColor);
 }
 
 enum BatteryMode with BlockMode {
