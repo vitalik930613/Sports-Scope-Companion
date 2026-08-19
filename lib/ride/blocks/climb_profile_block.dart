@@ -138,22 +138,27 @@ class _Card extends StatelessWidget {
   String _title() => profile.category == null ? 'Profil du col' : 'Profil du col · cat. ${profile.category}';
 }
 
-/// Le même graphique, mais pour un col déjà grimpé — posé sur la page Tours
-/// (voir `LapListBody._block`, cas `ClimbProfileBlock`). [ClimbProfileCard]
-/// se pilote par [NavClimb] : sur un tour qui n'est plus le tour courant, la
-/// page web n'en parle plus (`nav.value?.climb == null`), donc son graphique
-/// disparaîtrait alors que le tracé, lui, se souvient très bien de ce col.
+/// Le même graphique, mais posé sur la page Tours (voir `LapListBody._block`,
+/// cas `ClimbProfileBlock`) — pour un col **déjà grimpé** aussi bien que pour
+/// le col **en cours**, contrairement à [ClimbProfileCard] qui se pilote par
+/// [NavClimb] et perd donc son graphique dès qu'on n'est plus sur le tour
+/// courant (`nav.value?.climb == null`).
 ///
-/// La source est donc [RouteClimb] et son [RouteClimb.profile] — reçus une
-/// fois pour tout le tracé au chargement (voir la doc de [ClimbProfile]),
-/// donc toujours là après le sommet. `ratio: null` : rien à distinguer entre
-/// « déjà grimpé » et « restant », c'est tout le col qu'on regarde ici, pas
-/// la progression du moment (voir la doc de [ElevationProfileSurface.ratio]).
+/// La source de fond est donc [RouteClimb] et son [RouteClimb.profile] —
+/// reçus une fois pour tout le tracé au chargement (voir la doc de
+/// [ClimbProfile]), donc toujours là après le sommet. `ratio: null` sur un
+/// col terminé : rien à distinguer entre « déjà grimpé » et « restant »,
+/// c'est tout le col qu'on regarde. **Sauf** si [climbId] est justement celui
+/// du col en cours ([liveClimb]) : le tour affiché est alors le tour ouvert
+/// sur ce col-là, pas encore clos, et le curseur « où on en est » a un sens —
+/// même repère que la pastille et la carte dépliée sur la carte, pour ne pas
+/// dire deux choses différentes du même col selon l'écran qui le montre.
 class LapClimbProfileCard extends StatelessWidget {
   const LapClimbProfileCard({
     super.key,
     required this.routeClimbs,
     required this.climbId,
+    this.liveClimb,
     this.color,
     this.textColor,
   });
@@ -163,6 +168,10 @@ class LapClimbProfileCard extends StatelessWidget {
   /// = `RideLap.climbId` du tour affiché. `null` sur un tour qui ne couvre
   /// aucun col (tracé entre deux cols, ou série autre que `climbLapSeries`).
   final int? climbId;
+
+  /// Le col en cours, stabilisé — voir `MetricSources.climb`. `null` dans un
+  /// profil sans carte, même sort que [routeClimbs].
+  final ValueListenable<NavClimb?>? liveClimb;
 
   final Color? color;
   final Color? textColor;
@@ -191,8 +200,11 @@ class LapClimbProfileCard extends StatelessWidget {
       );
     }
 
+    final liveClimb = this.liveClimb;
     return ListenableBuilder(
-      listenable: routeClimbs,
+      listenable: liveClimb == null
+          ? routeClimbs
+          : Listenable.merge([routeClimbs, liveClimb]),
       builder: (context, _) {
         final climb = _findClimb(routeClimbs.value, climbId);
         if (climb == null) {
@@ -214,14 +226,22 @@ class LapClimbProfileCard extends StatelessWidget {
           );
         }
 
+        // Même col que celui qu'on grimpe en ce moment : le tour affiché est
+        // celui, encore ouvert, que le front montant vient de créer — même
+        // chiffres (D+ restant, pente du moment, curseur) que sur la carte.
+        final live = liveClimb?.value;
+        final onLiveClimb = live != null && live.id == climbId;
+
         return ElevationProfileSurface(
           title: profile.category == null ? _title : '$_title · cat. ${profile.category}',
-          headline: '+${climb.gainM.round()} m',
-          aside: formatDistance(climb.lengthM),
-          grade: climb.avgGrade,
+          headline: onLiveClimb ? '+${live.remainingGainM.round()} m' : '+${climb.gainM.round()} m',
+          aside: onLiveClimb
+              ? formatDistance(climb.lengthM * (1 - live.ratio))
+              : formatDistance(climb.lengthM),
+          grade: onLiveClimb ? live.grade : climb.avgGrade,
           points: profile.points,
           segmentGrades: profile.segmentGrades,
-          ratio: null,
+          ratio: onLiveClimb ? live.ratio : null,
           color: color,
           textColor: textColor,
         );

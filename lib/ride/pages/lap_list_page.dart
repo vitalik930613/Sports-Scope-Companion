@@ -377,6 +377,7 @@ class _LapListBodyState extends State<LapListBody> {
       final ClimbProfileBlock climbProfile => LapClimbProfileCard(
           routeClimbs: widget.sources.routeClimbs,
           climbId: lap.climbId,
+          liveClimb: widget.sources.climb,
           color: climbProfile.color,
           textColor: climbProfile.textColor,
         ),
