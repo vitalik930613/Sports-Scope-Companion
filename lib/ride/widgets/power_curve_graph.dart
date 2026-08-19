@@ -88,10 +88,16 @@ class _PowerCurvePainter extends CustomPainter {
         text: TextSpan(text: _durationLabel(point.durationS), style: labelStyle),
         textDirection: TextDirection.ltr,
       )..layout();
+      // `size.width - painter.width` peut être négatif — une case étroite
+      // (colonne d'une page Tours à plusieurs colonnes) où le libellé
+      // dépasse la largeur du graphique — et `clamp` exige `lowerLimit <=
+      // upperLimit`, sous peine de lever. `math.max(0, …)` absorbe ce cas :
+      // le libellé part alors du bord gauche, tronqué par le clip du
+      // graphique plutôt que de faire planter tout le tracé.
+      final maxX = math.max(0.0, size.width - painter.width);
       painter.paint(
         canvas,
-        Offset((x - painter.width / 2).clamp(0, size.width - painter.width),
-            size.height - painter.height),
+        Offset((x - painter.width / 2).clamp(0, maxX), size.height - painter.height),
       );
     }
 

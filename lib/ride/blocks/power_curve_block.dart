@@ -165,7 +165,10 @@ class _PowerCurveChartCard extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      height: double.infinity,
+      // Jamais `height: double.infinity` — voir la même note dans
+      // `elevation_profile_surface.dart` : posée dans une page qui défile,
+      // cette case ne borne pas la hauteur, et un `Container` qui la force
+      // quand même reçoit une contrainte tendue à l'infini, invalide.
       padding: EdgeInsets.all(metrics.padding),
       decoration: BoxDecoration(
         color: color ?? BlockCard.background,

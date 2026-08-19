@@ -143,7 +143,10 @@ class _WeatherForecastCard extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      height: double.infinity,
+      // Jamais `height: double.infinity` — voir la note dans
+      // `elevation_profile_surface.dart` : posé sur une page qui défile, ce
+      // bloc reçoit une hauteur non bornée, et forcer `double.infinity`
+      // dessus produit une contrainte tendue à l'infini, invalide.
       padding: EdgeInsets.all(BlockMetrics.natural.padding),
       decoration: BoxDecoration(
         color: color ?? BlockCard.background,

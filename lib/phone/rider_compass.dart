@@ -73,12 +73,6 @@ class RiderCompass {
     final speed = fix.speedMps;
     if (course == null || speed == null) return;
     _heading.addCourse(courseDeg: course, speedMps: speed);
-    // TEMPORAIRE — à retirer après l'essai sur route de la détection de dérive.
-    DebugLog.instance.add(
-        '[boussole] offset=${_heading.offsetDeg?.toStringAsFixed(0)}° '
-        'confiance=${_heading.agreement.toStringAsFixed(2)} '
-        'trusted=${_heading.isTrusted} '
-        'échantillons=${_heading.sampleCount}');
     // La déclinaison magnétique dépend de l'endroit : on la redonne au natif
     // quand on a bougé assez pour qu'elle ait changé de façon mesurable.
     _refreshDeclination(fix);

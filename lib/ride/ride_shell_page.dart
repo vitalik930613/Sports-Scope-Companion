@@ -27,6 +27,7 @@ import 'battery_alert_sound.dart';
 import 'battery_status.dart';
 import 'battery_wake_policy.dart';
 import 'blocks/bell_player.dart';
+import 'climb_edge_policy.dart';
 import 'climb_debug_data.dart';
 import 'climb_profile.dart';
 import 'di2_button_gesture_policy.dart';
@@ -186,6 +187,21 @@ class _RideShellPageState extends State<RideShellPage>
   /// même sort que [_nav].
   final _climbProfile = ClimbProfileNotifier();
 
+  /// Stabilise `nav.climb`, qui peut flickerer d'une trame à l'autre près de
+  /// la frontière d'un col (position simulée ou GPS bruité) — voir
+  /// [ClimbEdgePolicy]. C'est cet état-là, jamais `_nav.value?.climb` en
+  /// direct, qui doit piloter la page col, le tour automatique et le reset du
+  /// profil affiché.
+  final _climbEdge = ClimbEdgePolicy();
+
+  /// Le col affiché, stabilisé par [_climbEdge] — mis à jour dans
+  /// `_onPageMessage` (cas `'nav'`), jamais ailleurs. Pendant le maintien qui
+  /// absorbe un flicker de bordure, il garde la dernière valeur non nulle
+  /// plutôt que de la perdre : sans ça, la pastille (lue en direct sur `_nav`)
+  /// et la page col (lue ici) désynchronisaient — la pastille clignotait avec
+  /// le brut pendant que la page retombait sur « Aucun col en cours ».
+  final _stableClimb = ValueNotifier<NavClimb?>(null);
+
   /// La liste des cols du tracé en cours, poussée une fois par tracé (voir
   /// route_climbs.dart). Sans carte, personne ne l'alimente ni ne l'écoute —
   /// même sort que [_nav] et [_climbProfile].
@@ -238,23 +254,72 @@ class _RideShellPageState extends State<RideShellPage>
     return null;
   }
 
-  /// Un col de démonstration, affiché par-dessus la sortie réelle (carte,
-  /// bandeau, radar) — voir le bouton « Simuler un col » du menu d'actions.
-  /// Juger la pastille et le graphique dans une vraie sortie, sans attendre
-  /// de grimper un col, est ce que la page isolée `ClimbDebugPage` ne permet
-  /// pas : elle n'a ni carte ni radar à côté.
+  /// Un col de démonstration, affiché par-dessus la sortie réelle — carte,
+  /// bandeau, radar, et les pages de données (voir [_debugClimb]) — depuis le
+  /// bouton « Simuler un col » du menu d'actions. Juger la pastille et le
+  /// graphique dans une vraie sortie, sans attendre de grimper un col, est ce
+  /// que la page isolée `ClimbDebugPage` ne permet pas : elle n'a ni carte ni
+  /// radar à côté, et surtout aucun enregistrement à qui fermer un tour.
   bool _debugClimbActive = false;
 
-  /// Fixe et pas animé : contrairement à `ClimbDebugPage` (qui a son propre
-  /// curseur), ce bouton sert à juger la *composition* avec le reste de la
-  /// sortie, pas le mouvement du profil.
-  static const _debugClimbRatio = 0.42;
+  /// Progresse tout seul une fois activé (voir [_updateDebugClimb]) : de 0 à
+  /// 1 en une minute et demie environ. Contrairement à `ClimbDebugPage` (qui
+  /// a son propre curseur, pour juger la *composition* à un point fixe), ce
+  /// bouton doit aussi pouvoir montrer la **fin** du col — pastille qui
+  /// s'éteint, tour fermé tout seul — sans grimper un vrai col ni tripoter un
+  /// curseur pendant la sortie.
+  double _debugClimbRatio = 0;
+  static const _debugClimbStepPerSecond = 1 / 90;
 
   late final _debugClimbProfile = debugClimbProfile();
 
+  /// Le col de démonstration, sous la forme qu'attendent [ClimbBadge],
+  /// [ClimbProfileOverlay] et `ClimbProfileCard` — calculé une fois ici
+  /// plutôt qu'à l'identique à chaque endroit qui le consomme.
+  NavClimb? get _debugClimb =>
+      _debugClimbActive ? debugClimbFor(_debugClimbProfile, _debugClimbRatio) : null;
+
   void _toggleDebugClimb() {
-    setState(() => _debugClimbActive = !_debugClimbActive);
-    if (!_debugClimbActive) _climbExpanded.value = false;
+    if (_debugClimbActive) {
+      _endDebugClimb();
+      return;
+    }
+    setState(() {
+      _debugClimbActive = true;
+      _debugClimbRatio = 0;
+    });
+    // Même geste qu'un vrai front montant de col (voir ClimbEdgePolicy) :
+    // isole la montée dans son propre tour de la série `cols`.
+    widget.recorder.markLap(climbLapSeries);
+    widget.recorder.tagClimb(climbLapSeries, _debugClimbProfile.id);
+  }
+
+  /// Front descendant du col de démonstration, atteint tout seul au sommet
+  /// ([_updateDebugClimb]) ou coupé à la main depuis le menu — les deux
+  /// doivent fermer le tour, donc partagent ce chemin plutôt que de le
+  /// dupliquer.
+  void _endDebugClimb() {
+    setState(() {
+      _debugClimbActive = false;
+      _debugClimbRatio = 0;
+    });
+    _climbExpanded.value = false;
+    // Même geste qu'un vrai front descendant : clôt le tour de la montée et
+    // en ouvre un nouveau pour la suite.
+    widget.recorder.markLap(climbLapSeries);
+  }
+
+  /// Appelé par [_tick] : fait grimper le col de démonstration comme s'il
+  /// roulait, jusqu'au sommet où il se termine tout seul — voir
+  /// [_endDebugClimb].
+  void _updateDebugClimb() {
+    if (!_debugClimbActive) return;
+    final next = _debugClimbRatio + _debugClimbStepPerSecond;
+    if (next >= 1) {
+      _endDebugClimb();
+      return;
+    }
+    setState(() => _debugClimbRatio = next);
   }
 
   /// Où en est la carte hors-ligne du tracé affiché. Même sort que [_nav] :
@@ -591,6 +656,7 @@ class _RideShellPageState extends State<RideShellPage>
       // dépendent s'abstiennent au lieu d'attendre pour toujours.
       nav: _preset.hasMap ? _nav : null,
       routeClimbs: _preset.hasMap ? _routeClimbs : null,
+      climb: _preset.hasMap ? _stableClimb : null,
       climbProfile: _preset.hasMap ? _climbProfile : null,
       routeProfile: _preset.hasMap ? _routeProfile : null,
     );
@@ -603,6 +669,7 @@ class _RideShellPageState extends State<RideShellPage>
       _updateRadarWake();
       _updateBatteryWake();
       _updateReminders();
+      _updateDebugClimb();
       _checkNativeTurnAlert();
       _updateConditionalPages();
       // Boutons distants : voir `_buttonTick`, plus rapide, pour
@@ -934,7 +1001,7 @@ class _RideShellPageState extends State<RideShellPage>
     // rejoindre l'itinéraire peut y faire retomber n'importe où, y compris en
     // plein milieu d'un col qu'on n'aborde pas.
     if (nav == null || nav.offRoute) return false;
-    if (nav.climb != null) return true;
+    if (_climbEdge.climbing) return true;
 
     final climbs = _routeClimbs.value;
     final traveled = climbs == null ? null : traveledDistM(climbs, nav);
@@ -1151,6 +1218,11 @@ class _RideShellPageState extends State<RideShellPage>
     if (web == null) return;
 
     _nav.reset();
+    // Le col qu'on gravissait, s'il y en avait un, appartient au tracé qu'on
+    // quitte — sans ce reset, le maintien de ClimbEdgePolicy garderait la
+    // page col ouverte jusqu'à 5 s sur le tracé qui vient de charger.
+    _climbEdge.reset();
+    _stableClimb.value = null;
     _offline.reset();
     _nativeTurns = null;
     unawaited(_loadNativeTurnAlerts(target));
@@ -1366,24 +1438,37 @@ class _RideShellPageState extends State<RideShellPage>
       case 'ready':
         _web?.bridge.notifyPageReloaded();
       case 'nav':
-        // Front descendant du col : « il y avait un climb, il n'y en a
-        // plus ». Comparé AVANT d'accepter le nouveau message, pas après —
-        // sinon les deux valent toujours la nouvelle.
-        final hadClimb = _nav.value?.climb != null;
         _nav.accept(message);
         final climb = _nav.value?.climb;
-        final hasClimb = climb != null;
-        if (hadClimb != hasClimb) {
+        // Front stabilisé (voir ClimbEdgePolicy) : `climb` brut peut
+        // flickerer `null`/non-`null` d'une trame à l'autre près de la
+        // frontière du col, en simulation surtout. `edge` ne vaut vrai qu'à
+        // l'entrée et à la sortie *confirmées* — jamais à un flicker.
+        final edge = _climbEdge.update(now: DateTime.now(), climbing: climb != null);
+        final hasClimb = _climbEdge.climbing;
+        // Même maintien que _climbProfile, pour la même raison : pendant un
+        // flicker vers `null`, la pastille et la page col doivent continuer à
+        // montrer le dernier col connu plutôt que de clignoter avec le brut.
+        if (climb != null) {
+          _stableClimb.value = climb;
+        } else if (!hasClimb) {
+          _stableClimb.value = null;
+        }
+        if (edge) {
           // Isole la montée dans son propre tour de la série `cols` — sans
           // effet si aucune page ou bouton du profil ne la déclare
           // (`RideRecorder.markLap`, no-op sur une série inconnue).
           widget.recorder.markLap(climbLapSeries);
         }
         if (!hasClimb) {
-          if (hadClimb) {
+          if (edge) {
             _climbProfile.reset();
             _climbExpanded.value = false;
           }
+        } else if (climb == null) {
+          // Flicker vers `null` (raw) pendant le maintien de
+          // [ClimbEdgePolicy] : rien à refaire, le profil déjà affiché reste
+          // tel quel — c'est précisément ce qui évite la page vide.
         } else if (_findRouteClimb(climb.id)?.profile case final profile?) {
           // Le profil de CE col est déjà dans `route_climbs`, reçu une fois
           // pour tout le tracé au chargement (voir RouteClimb.profile) —
@@ -1394,11 +1479,13 @@ class _RideShellPageState extends State<RideShellPage>
           // laisse `_climbProfile` tel quel : c'est alors le message
           // `climb_profile` classique, ci-dessous, qui le remplira.
           _climbProfile.value = profile;
-          if (!hadClimb) {
-            // Le tour que le front montant vient d'ouvrir sur la série
-            // `cols` est celui de CE col — voir `RideRecorder.tagClimb`.
-            widget.recorder.tagClimb(climbLapSeries, profile.id);
-          }
+          // Pas de garde sur `edge` : au front montant, `route_climbs` n'est
+          // presque jamais encore là (message séparé, pas forcément reçu la
+          // même trame) — le tour resterait étiqueté `null` pour toujours.
+          // `tagClimb` vise toujours le dernier tour ouvert, donc l'appeler
+          // une trame plus tard, une fois le profil connu, tague encore le
+          // bon tour ; rien à défaire si c'est déjà fait (même id réécrit).
+          widget.recorder.tagClimb(climbLapSeries, profile.id);
         }
       case 'climb_profile':
         // Repli pour un site plus ancien que `route_climbs.climbs[].points`,
@@ -1406,13 +1493,21 @@ class _RideShellPageState extends State<RideShellPage>
         // la doc de ClimbProfile) — la résolution normale, ci-dessus,
         // l'emporte déjà dans l'immense majorité des cas.
         _climbProfile.accept(message);
-        // Le tour que le front montant vient d'ouvrir sur la série `cols` est
+        // Le tour que le front montant a ouvert sur la série `cols` est
         // forcément celui de ce col-ci — voir `RideRecorder.tagClimb`. C'est
         // ce qui permet à la page Tours de nommer le tour comme le composant
         // Cols du tracé plutôt que « Tour N ». Sans effet si le tour a déjà
         // été étiqueté ci-dessus (`tagClimb` réécrit le même id sur le même
         // dernier tour).
-        if (_climbProfile.value case final profile?) {
+        //
+        // **Gardé par `_climbEdge.climbing`** : ce message et la trame `nav`
+        // qui ouvre le tour (front montant, ci-dessus) sont deux canaux
+        // séparés, et rien ne garantit que celui-ci arrive après. Reçu avant
+        // — observé en pratique, `climb_profile` grillant la trame `nav`
+        // suivante —, `tagClimb` retomberait sur le tour *encore ouvert
+        // avant le col* (le plat qui précède) et l'étiquetterait à tort :
+        // ce tour-là afficherait alors le profil du col qu'il ne couvre pas.
+        if (_climbProfile.value case final profile? when _climbEdge.climbing) {
           widget.recorder.tagClimb(climbLapSeries, profile.id);
         }
       case 'route_climbs':
@@ -1490,6 +1585,7 @@ class _RideShellPageState extends State<RideShellPage>
     _web?.dispose();
     _nav.dispose();
     _climbProfile.dispose();
+    _stableClimb.dispose();
     _routeClimbs.dispose();
     _routeProfile.dispose();
     _climbExpanded.dispose();
@@ -1728,14 +1824,12 @@ class _RideShellPageState extends State<RideShellPage>
               key: const ValueKey('col-pastille'),
               top: 8,
               right: RadarSideGauge.width + 8,
-              child: ValueListenableBuilder<NavState?>(
-                valueListenable: _nav,
-                builder: (context, nav, _) {
+              child: ValueListenableBuilder<NavClimb?>(
+                valueListenable: _stableClimb,
+                builder: (context, stableClimb, _) {
                   // Le col simulé prime sur le vrai : c'est un banc d'essai,
                   // pas un second col qui s'ajouterait au premier.
-                  final climb = _debugClimbActive
-                      ? debugClimbFor(_debugClimbProfile, _debugClimbRatio)
-                      : nav?.climb;
+                  final climb = _debugClimb ?? stableClimb;
                   if (climb == null) return const SizedBox.shrink();
                   return ValueListenableBuilder<bool>(
                     valueListenable: _climbExpanded,
@@ -1765,20 +1859,17 @@ class _RideShellPageState extends State<RideShellPage>
                 valueListenable: _climbExpanded,
                 builder: (context, expanded, _) {
                   if (!expanded) return const SizedBox.shrink();
-                  return ValueListenableBuilder<NavState?>(
-                    valueListenable: _nav,
-                    builder: (context, nav, _) {
-                      final climb = _debugClimbActive
-                          ? debugClimbFor(_debugClimbProfile, _debugClimbRatio)
-                          : nav?.climb;
+                  return ValueListenableBuilder<NavClimb?>(
+                    valueListenable: _stableClimb,
+                    builder: (context, stableClimb, _) {
+                      final debugClimb = _debugClimb;
+                      final climb = debugClimb ?? stableClimb;
                       if (climb == null) return const SizedBox.shrink();
                       return ValueListenableBuilder<ClimbProfile?>(
                         valueListenable: _climbProfile,
                         builder: (context, profile, _) => ClimbProfileOverlay(
                           climb: climb,
-                          profile: _debugClimbActive
-                              ? _debugClimbProfile
-                              : profile,
+                          profile: debugClimb != null ? _debugClimbProfile : profile,
                           onTap: () => _climbExpanded.value = false,
                         ),
                       );
@@ -1905,6 +1996,11 @@ class _RideShellPageState extends State<RideShellPage>
           powerCalibrationAvailable(widget.hub) ? _calibratePower : null,
       debugClimbActive: _debugClimbActive,
       onSimulateClimb: _toggleDebugClimb,
+      // Même col que la pastille et la carte dépliée (voir [_debugClimb]) :
+      // sans lui, `ClimbProfileCard` restait aveugle au col de démonstration
+      // et affichait « Aucun col en cours » pendant qu'il tournait au-dessus.
+      debugClimb: _debugClimb,
+      debugClimbProfile: _debugClimbActive ? _debugClimbProfile : null,
       onLeaveRide: _leaveRide,
       onGridMeasured: widget.onGridMeasured,
       // Absente plutôt que grisée quand la retirer viderait le défilement de

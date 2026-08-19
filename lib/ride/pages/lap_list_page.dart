@@ -4,6 +4,7 @@ import '../../dashboard/dashboard_block.dart';
 import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
 import '../../recording/ride_lap.dart';
+import '../blocks/altitude_profile_block.dart';
 import '../blocks/averages_block.dart';
 import '../blocks/climb_profile_block.dart';
 import '../blocks/lap_summary_block.dart';
@@ -59,28 +60,89 @@ class _LapListBodyState extends State<LapListBody> {
   /// dernier mot, même principe que le retour automatique sur la carte.
   int? _selectedIndex;
 
+  /// La liste des tours, recopiée ici plutôt que relue à chaque notification
+  /// de [RideRecorder] — voir [_onRecorderChanged].
+  late List<RideLap> _laps;
+
+  /// Explicite plutôt que laissé à Flutter : ce défilement vit **dans** le
+  /// `PageView` des pages de données (`RideShellPage`), et un `Scrollable`
+  /// sans contrôleur propre à cet endroit se fait parfois attribuer une
+  /// position ambiguë avec celui du `PageView` englobant — c'est un défaut
+  /// documenté du framework sur exactement ce patron (imbriquer un
+  /// `Scrollable` dans un `PageView`), qui se manifeste par des exceptions
+  /// asynchrones (« Cannot get renderObject of inactive element ») pendant un
+  /// scroll. Voir flutter/flutter#89864.
+  final _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _laps = widget.sources.recorder.lapsOf(widget.spec.series);
+    widget.sources.recorder.addListener(_onRecorderChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant LapListBody oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Le recorder est le même objet pour toute la sortie — ce garde-fou n'a
+    // jamais lieu de jouer en pratique, mais un widget qui change d'écouteur
+    // sans jamais réévaluer cette condition serait un bug plus difficile à
+    // trouver que ces quelques lignes.
+    if (oldWidget.sources.recorder != widget.sources.recorder) {
+      oldWidget.sources.recorder.removeListener(_onRecorderChanged);
+      widget.sources.recorder.addListener(_onRecorderChanged);
+      _laps = widget.sources.recorder.lapsOf(widget.spec.series);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.sources.recorder.removeListener(_onRecorderChanged);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  /// [RideRecorder] notifie à chaque seconde de sortie (cardio, vitesse,
+  /// distance…), bien plus souvent que les tours n'en ont besoin — chaque
+  /// composant de la page (`MetricView`, `AveragesCard`, `ZonesCard`…) a déjà
+  /// son propre écouteur pour ses propres mesures. Ne reconstruire **cette**
+  /// liste que lorsque les tours eux-mêmes changent (un nouveau tour, un
+  /// `climbId` posé) évite de redémonter tout le défilement plusieurs fois
+  /// par seconde : le refaire pendant qu'on scrolle la page à la main est ce
+  /// qui faisait planter le `Scrollable` (« Cannot get renderObject of
+  /// inactive element », `ScrollableState._handleScrollMetricsNotification`)
+  /// — Flutter n'aime pas qu'on lui substitue le widget qu'un geste est en
+  /// train de manipuler.
+  void _onRecorderChanged() {
+    final next = widget.sources.recorder.lapsOf(widget.spec.series);
+    if (_sameLaps(_laps, next)) return;
+    setState(() => _laps = next);
+  }
+
+  static bool _sameLaps(List<RideLap> a, List<RideLap> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].climbId != b[i].climbId) return false;
+    }
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: widget.sources.recorder,
-      builder: (context, _) {
-        final laps = widget.sources.recorder.lapsOf(widget.spec.series);
+    final laps = _laps;
 
-        if (laps.isEmpty) {
-          return const Center(
-            child: Text(
-              'Pas encore de tour.',
-              style: TextStyle(color: Colors.white70),
-            ),
-          );
-        }
+    if (laps.isEmpty) {
+      return const Center(
+        child: Text(
+          'Pas encore de tour.',
+          style: TextStyle(color: Colors.white70),
+        ),
+      );
+    }
 
-        final selected =
-            (_selectedIndex ?? laps.length - 1).clamp(0, laps.length - 1);
+    final selected = (_selectedIndex ?? laps.length - 1).clamp(0, laps.length - 1);
 
-        return _body(laps, selected);
-      },
-    );
+    return _body(laps, selected);
   }
 
   /// Une liste défilante ([LapBlocksLayout], le cas d'avant ce chantier) ou
@@ -110,41 +172,57 @@ class _LapListBodyState extends State<LapListBody> {
     required List<RideLap> laps,
     required int selected,
   }) {
+    // Sans la barre de défilement Material (interactive depuis les versions
+    // récentes de Flutter, y compris tactile) : taper sur son rail déclenche
+    // un défilement *animé* (`.animateTo()`, une `DrivenScrollActivity`) —
+    // exactement le genre d'activité qui plante si la liste change de forme
+    // (le graphique du col qui apparaît) pendant qu'elle est encore en vol.
+    // Une piste, pas une certitude : ni les glissés au doigt ni le
+    // défilement lui-même n'en ont besoin ici, page rangée derrière un menu
+    // dédié plutôt qu'à faire défiler d'un geste précis.
     if (list.cols <= 1) {
-      return ListView(
-        padding: const EdgeInsets.only(bottom: 24),
-        children: [
-          for (final placement in list.blocks)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _block(placement.block, laps: laps, selected: selected),
-            ),
-        ],
+      return ScrollConfiguration(
+        behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+        child: ListView(
+          controller: _scrollController,
+          padding: const EdgeInsets.only(bottom: 24),
+          children: [
+            for (final placement in list.blocks)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _block(placement.block, laps: laps, selected: selected),
+              ),
+          ],
+        ),
       );
     }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.only(bottom: 24),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (var col = 0; col < list.cols; col++) ...[
-            if (col > 0) const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                children: [
-                  for (final placement in list.blocks)
-                    if (placement.col == col)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _block(placement.block,
-                            laps: laps, selected: selected),
-                      ),
-                ],
+    return ScrollConfiguration(
+      behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+      child: SingleChildScrollView(
+        controller: _scrollController,
+        padding: const EdgeInsets.only(bottom: 24),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (var col = 0; col < list.cols; col++) ...[
+              if (col > 0) const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  children: [
+                    for (final placement in list.blocks)
+                      if (placement.col == col)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _block(placement.block,
+                              laps: laps, selected: selected),
+                        ),
+                  ],
+                ),
               ),
-            ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -301,6 +379,19 @@ class _LapListBodyState extends State<LapListBody> {
           climbId: lap.climbId,
           color: climbProfile.color,
           textColor: climbProfile.textColor,
+        ),
+      // Le profil de toute la sortie, pas celui du tour affiché — comme sur
+      // une page de mesures ordinaire (`DashboardPage._block`) : rien ne le
+      // recadre sur `lap`, `AltitudeProfileCard` n'a pas de variante « Lap »
+      // (contrairement à `ClimbProfileBlock`, qui en a une parce qu'un col
+      // grimpé garde un sens propre une fois le tour clos).
+      final AltitudeProfileBlock altitudeProfile => AltitudeProfileCard(
+          routeProfile: widget.sources.routeProfile,
+          nav: widget.sources.nav,
+          recorder: widget.sources.recorder,
+          windowKm: altitudeProfile.windowKm,
+          color: altitudeProfile.color,
+          textColor: altitudeProfile.textColor,
         ),
       final MarkLapBlock markLap => MarkLapControl(
           recorder: widget.sources.recorder,

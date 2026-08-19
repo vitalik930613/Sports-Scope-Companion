@@ -28,6 +28,7 @@ import '../blocks/bell_block.dart';
 import '../blocks/sleep_block.dart';
 import '../blocks/training_budget_block.dart';
 import '../blocks/zones_block.dart';
+import '../climb_profile.dart';
 import '../nav_state.dart';
 import '../offline_map_state.dart';
 import '../radar_severity.dart';
@@ -63,6 +64,8 @@ class DashboardPage extends StatelessWidget {
     this.onCalibratePower,
     this.debugClimbActive = false,
     this.onSimulateClimb,
+    this.debugClimb,
+    this.debugClimbProfile,
     this.onLeaveRide,
     this.onGridMeasured,
     this.onHidePage,
@@ -152,6 +155,19 @@ class DashboardPage extends StatelessWidget {
   /// c'est le même genre de banc d'essai que la calibration de puissance, pas
   /// un réglage caché derrière un flag de build.
   final VoidCallback? onSimulateClimb;
+
+  /// Le col de démonstration lui-même, actif ou non — voir
+  /// `RideShellPage._debugClimb`. Sans lui, `ClimbProfileCard` (composant
+  /// `climb_profile` d'une page) ignorait le col simulé et restait sur
+  /// « Aucun col en cours » pendant que la pastille et la carte, elles,
+  /// l'affichaient déjà : les trois doivent suivre la même source.
+  final NavClimb? debugClimb;
+
+  /// Le profil gradué du col de démonstration, non nul en même temps que
+  /// [debugClimb]. Séparé plutôt que déduit de [debugClimb] : c'est
+  /// `RideShellPage` qui décide, une fois pour toutes, de la forme synthétique
+  /// utilisée (voir `climb_debug_data.dart`).
+  final ClimbProfile? debugClimbProfile;
 
   /// Rentrer : fermer la sortie et retrouver l'accueil.
   ///
@@ -415,7 +431,9 @@ class DashboardPage extends StatelessWidget {
           ),
         final ClimbProfileBlock climbProfile => ClimbProfileCard(
             climbProfile: sources.climbProfile,
-            nav: sources.nav,
+            climb: sources.climb,
+            debugClimb: debugClimb,
+            debugProfile: debugClimbProfile,
             color: climbProfile.color,
             textColor: climbProfile.textColor,
           ),

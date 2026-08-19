@@ -292,7 +292,15 @@ class RideRecorder extends ChangeNotifier {
   void tagClimb(String series, int climbId) {
     final laps = _series[series];
     if (!isActive || laps == null || laps.isEmpty) return;
-    laps.last.climbId = climbId;
+    final lap = laps.last;
+    // Rappelée à chaque trame tant que le col dure (voir
+    // `RideShellPage._onPageMessage`), pas seulement au front montant — sans
+    // cette garde, un col de plusieurs minutes notifiait la page Tours
+    // plusieurs fois par seconde pour réécrire le même id, reconstruisant
+    // toute sa liste défilante en boucle pendant qu'on la lit ou qu'on la
+    // fait défiler.
+    if (lap.climbId == climbId) return;
+    lap.climbId = climbId;
     _notify();
   }
 
@@ -343,8 +351,6 @@ class RideRecorder extends ChangeNotifier {
   /// passé entre deux secondes.
   @visibleForTesting
   void handleFix(GpsFix fix) {
-    _lastFix = fix;
-
     // Cale l'altitude barométrique absolue sur le premier point assez précis.
     // Sans effet passé le premier calage réussi : recaler en route fabriquerait
     // du dénivelé (cf. BarometricAltimeter.calibrateWith).
@@ -357,27 +363,44 @@ class RideRecorder extends ChangeNotifier {
     // En pause, on suit la position sans la compter : reprendre après dix
     // minutes de café ne doit pas ajouter la ligne droite jusqu'au bar.
     if (_state != RecorderState.recording) {
+      _lastFix = fix;
       _referenceFix = fix;
       return;
     }
 
     final reference = _referenceFix;
     if (reference == null) {
+      _lastFix = fix;
+      _referenceFix = fix;
+      return;
+    }
+
+    final seconds = fix.at.difference(reference.at).inMilliseconds / 1000;
+    if (seconds <= 0) {
+      _lastFix = fix;
+      return;
+    }
+
+    // Vérifiée avant l'exactitude : un point aberrant peut très bien se
+    // déclarer précis (p. ex. un relais réseau ponctuel qui reprend la main
+    // sur un GPS mocké) — la vitesse implausible qu'il impliquerait est ce
+    // qui le trahit, pas sa précision annoncée.
+    final step = reference.distanceTo(fix);
+    if (step / seconds > _maxStepMps) {
+      // La référence se recale pour ne pas fausser le prochain pas, mais ce
+      // point n'est ni affiché ni enregistré — on sait déjà qu'il est
+      // aberrant.
       _referenceFix = fix;
       return;
     }
 
     final accuracy = fix.accuracyM;
-    if (accuracy != null && accuracy > _maxAccuracyM) return;
-
-    final seconds = fix.at.difference(reference.at).inMilliseconds / 1000;
-    if (seconds <= 0) return;
-
-    final step = reference.distanceTo(fix);
-    if (step / seconds > _maxStepMps) {
-      _referenceFix = fix;
+    if (accuracy != null && accuracy > _maxAccuracyM) {
+      _lastFix = fix;
       return;
     }
+
+    _lastFix = fix;
     if (step < _minStepM) return;
 
     _distanceM += step;

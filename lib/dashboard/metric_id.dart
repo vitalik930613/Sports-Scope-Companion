@@ -649,6 +649,7 @@ class MetricSources {
     this.drivetrain = Drivetrain.road,
     this.nav,
     this.routeClimbs,
+    this.climb,
     this.climbProfile,
     this.routeProfile,
     this.lap,
@@ -680,6 +681,15 @@ class MetricSources {
   /// profil sans carte**, même raison que [nav] — voir [ClimbListBlock].
   final ValueListenable<RouteClimbs?>? routeClimbs;
 
+  /// Le col en cours, **stabilisé** — jamais `nav.value?.climb` en direct
+  /// (voir `RideShellPage.ClimbEdgePolicy`, `climb_edge_policy.dart`) : brut,
+  /// ce champ peut flickerer `null`/non-`null` d'une trame à l'autre près de
+  /// la frontière du col (position simulée surtout), ce qui faisait battre la
+  /// pastille et retomber `ClimbProfileCard` sur « Aucun col en cours »
+  /// pendant que la pastille, elle, restait allumée. **Nul dans un profil
+  /// sans carte**, même raison que [routeClimbs].
+  final ValueListenable<NavClimb?>? climb;
+
   /// Le profil gradué du col en cours, poussé une fois par col. **Nul dans un
   /// profil sans carte**, même raison que [routeClimbs] — voir
   /// [ClimbProfileBlock].
@@ -708,6 +718,7 @@ class MetricSources {
         drivetrain: drivetrain,
         nav: nav,
         routeClimbs: routeClimbs,
+        climb: climb,
         climbProfile: climbProfile,
         routeProfile: routeProfile,
         lap: lap,

@@ -15,21 +15,39 @@ import 'elevation_profile_surface.dart';
 /// la sortie — voir `AltitudeProfileCard`), mais composable comme n'importe
 /// quel autre bloc de page plutôt que réservé à ce geste.
 ///
-/// **Sans carte dans le profil, [climbProfile] et [nav] sont nuls** : aucune
+/// **Sans carte dans le profil, [climbProfile] et [climb] sont nuls** : aucune
 /// page web pour publier quoi que ce soit, même sort que `ClimbListCard`.
-/// Hors col en cours (`nav.value?.climb == null`), la carte le dit plutôt que
-/// de garder affiché le graphique d'un col déjà terminé.
+/// Hors col en cours ([climb] à `null`), la carte le dit plutôt que de garder
+/// affiché le graphique d'un col déjà terminé.
 class ClimbProfileCard extends StatelessWidget {
   const ClimbProfileCard({
     super.key,
     required this.climbProfile,
-    required this.nav,
+    required this.climb,
+    this.debugClimb,
+    this.debugProfile,
     this.color,
     this.textColor,
   });
 
   final ValueListenable<ClimbProfile?>? climbProfile;
-  final ValueListenable<NavState?>? nav;
+
+  /// Le col en cours, **stabilisé** — voir `MetricSources.climb`. Jamais
+  /// `nav.value?.climb` en direct : brut, il flickerait `null` d'une trame à
+  /// l'autre près de la frontière du col (position simulée surtout) et
+  /// ferait retomber cette carte sur « Aucun col en cours » pendant que la
+  /// pastille, elle, restait allumée.
+  final ValueListenable<NavClimb?>? climb;
+
+  /// Le col de démonstration (`RideShellPage._debugClimb`, bouton « Simuler
+  /// un col » du menu), s'il est actif : prime sur le vrai col, même raison
+  /// que sur la pastille et la carte dépliée (`ClimbBadge`,
+  /// `ClimbProfileOverlay`) — c'est un banc d'essai, pas un second col qui
+  /// s'ajouterait au premier. Suit son propre chemin plutôt que de passer par
+  /// [nav]/[climbProfile] : le col simulé n'a pas de tracé, donc pas de
+  /// `NavState` pour le porter.
+  final NavClimb? debugClimb;
+  final ClimbProfile? debugProfile;
 
   /// Fond/texte réglés dans l'éditeur — voir `DashboardBlock.color`/
   /// `DashboardBlock.textColor`. Ne remplacent jamais les couleurs de pente
@@ -41,9 +59,22 @@ class ClimbProfileCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (debugClimb case final climb?) {
+      final profile = debugProfile;
+      if (profile == null) {
+        return BlockCard(
+          title: _title,
+          lines: const ['Profil du col en cours de réception…'],
+          color: color,
+          textColor: textColor,
+        );
+      }
+      return _Card(climb: climb, profile: profile, color: color, textColor: textColor);
+    }
+
     final climbProfile = this.climbProfile;
-    final nav = this.nav;
-    if (climbProfile == null || nav == null) {
+    final climb = this.climb;
+    if (climbProfile == null || climb == null) {
       return BlockCard(
         title: _title,
         lines: const ['Ce profil roule sans carte.'],
@@ -53,9 +84,9 @@ class ClimbProfileCard extends StatelessWidget {
     }
 
     return ListenableBuilder(
-      listenable: Listenable.merge([climbProfile, nav]),
+      listenable: Listenable.merge([climbProfile, climb]),
       builder: (context, _) {
-        final climb = nav.value?.climb;
+        final climb = this.climb!.value;
         if (climb == null) {
           return BlockCard(
             title: _title,

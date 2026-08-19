@@ -293,7 +293,12 @@ class _FillCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
         width: double.infinity,
-        height: double.infinity,
+        // Jamais `height: double.infinity` — voir la note dans
+        // `elevation_profile_surface.dart` : posée sur une page qui défile,
+        // cette case reçoit une hauteur non bornée, et forcer
+        // `double.infinity` dessus produit une contrainte tendue à l'infini,
+        // invalide. [RadarCanvas], plus bas, sait déjà se dimensionner sur
+        // une hauteur non bornée (`hasBoundedHeight`, `_fallbackPx`).
         decoration: BoxDecoration(
           color: background ?? BlockCard.background,
           borderRadius: BorderRadius.circular(12),

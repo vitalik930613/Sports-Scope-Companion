@@ -148,7 +148,15 @@ class ElevationProfileSurface extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      height: double.infinity,
+      // Jamais `height: double.infinity` : posée dans une page qui défile
+      // (page Tours, `LapListBody`), la case ne borne pas la hauteur — un
+      // `Container` qui la force quand même reçoit une contrainte tendue à
+      // l'infini, invalide (`BoxConstraints forces an infinite height`), et
+      // fait planter toute la mise en page de la liste. Sans hauteur forcée
+      // ici, le `LayoutBuilder` ci-dessous voit les vraies contraintes
+      // (bornées ou non) et choisit lui-même la bonne branche — c'est déjà
+      // lui qui sait remplir une case bornée ou retomber sur [_chartHeight]
+      // quand elle ne l'est pas.
       padding: EdgeInsets.all(metrics.padding),
       decoration: BoxDecoration(
         color: color ?? BlockCard.background,
