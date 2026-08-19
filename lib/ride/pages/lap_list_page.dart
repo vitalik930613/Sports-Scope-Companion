@@ -325,6 +325,11 @@ class _LapListBodyState extends State<LapListBody> {
     }
 
     final lap = laps[selected];
+    // Le col « à venir » ne vaut que pour le tour en cours, pas pour un tour
+    // déjà clos entre deux cols : sans cette garde, consulter un ancien tour
+    // « sans col » afficherait un « Prochain col » qui n'a plus de sens une
+    // fois qu'on l'a dépassé.
+    final isCurrentLap = selected == laps.length - 1;
     return switch (block) {
       final MetricBlock metric => MetricView(
           metric: metric.metric,
@@ -378,6 +383,7 @@ class _LapListBodyState extends State<LapListBody> {
           routeClimbs: widget.sources.routeClimbs,
           climbId: lap.climbId,
           liveClimb: widget.sources.climb,
+          upcomingClimb: isCurrentLap ? widget.sources.upcomingClimb : null,
           color: climbProfile.color,
           textColor: climbProfile.textColor,
         ),

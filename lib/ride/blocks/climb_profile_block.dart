@@ -159,6 +159,7 @@ class LapClimbProfileCard extends StatelessWidget {
     required this.routeClimbs,
     required this.climbId,
     this.liveClimb,
+    this.upcomingClimb,
     this.color,
     this.textColor,
   });
@@ -173,10 +174,18 @@ class LapClimbProfileCard extends StatelessWidget {
   /// profil sans carte, même sort que [routeClimbs].
   final ValueListenable<NavClimb?>? liveClimb;
 
+  /// Le prochain col, à l'approche (voir `MetricSources.upcomingClimb`) — ne
+  /// sert que quand [climbId] est nul : le tour affiché n'a pas encore de
+  /// col, mais un col arrive. Sans lui, la carte resterait sur « Ce tour ne
+  /// couvre aucun col » tout le temps de l'approche, alors que la page
+  /// s'ouvre déjà 500 m avant (voir `RideShellPage._nearCol`).
+  final ValueListenable<RouteClimb?>? upcomingClimb;
+
   final Color? color;
   final Color? textColor;
 
   static const _title = 'Profil du col';
+  static const _upcomingTitle = 'Prochain col';
 
   @override
   Widget build(BuildContext context) {
@@ -192,11 +201,18 @@ class LapClimbProfileCard extends StatelessWidget {
 
     final climbId = this.climbId;
     if (climbId == null) {
-      return BlockCard(
-        title: _title,
-        lines: const ['Ce tour ne couvre aucun col.'],
-        color: color,
-        textColor: textColor,
+      final upcomingClimb = this.upcomingClimb;
+      if (upcomingClimb == null) {
+        return BlockCard(
+          title: _title,
+          lines: const ['Ce tour ne couvre aucun col.'],
+          color: color,
+          textColor: textColor,
+        );
+      }
+      return ListenableBuilder(
+        listenable: upcomingClimb,
+        builder: (context, _) => _upcoming(upcomingClimb.value),
       );
     }
 
@@ -246,6 +262,42 @@ class LapClimbProfileCard extends StatelessWidget {
           textColor: textColor,
         );
       },
+    );
+  }
+
+  /// La carte pendant l'approche — même dessin qu'un col déjà grimpé
+  /// ([ratio] nul, rien de « restant » à distinguer puisque rien n'est encore
+  /// entamé), mais un titre différent pour ne pas laisser croire qu'on y est.
+  Widget _upcoming(RouteClimb? climb) {
+    if (climb == null) {
+      return BlockCard(
+        title: _title,
+        lines: const ['Ce tour ne couvre aucun col.'],
+        color: color,
+        textColor: textColor,
+      );
+    }
+
+    final profile = climb.profile;
+    if (profile == null) {
+      return BlockCard(
+        title: _upcomingTitle,
+        lines: const ['Profil de ce col non reçu.'],
+        color: color,
+        textColor: textColor,
+      );
+    }
+
+    return ElevationProfileSurface(
+      title: profile.category == null ? _upcomingTitle : '$_upcomingTitle · cat. ${profile.category}',
+      headline: '+${climb.gainM.round()} m',
+      aside: formatDistance(climb.lengthM),
+      grade: climb.avgGrade,
+      points: profile.points,
+      segmentGrades: profile.segmentGrades,
+      ratio: null,
+      color: color,
+      textColor: textColor,
     );
   }
 

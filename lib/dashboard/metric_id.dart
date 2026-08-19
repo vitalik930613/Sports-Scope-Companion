@@ -650,6 +650,7 @@ class MetricSources {
     this.nav,
     this.routeClimbs,
     this.climb,
+    this.upcomingClimb,
     this.climbProfile,
     this.routeProfile,
     this.lap,
@@ -690,6 +691,15 @@ class MetricSources {
   /// sans carte**, même raison que [routeClimbs].
   final ValueListenable<NavClimb?>? climb;
 
+  /// Le prochain col, à moins de 500 m de son départ — `null` sinon, ou une
+  /// fois qu'on y est (voir `RideShellPage._upcomingClimb`). Sert à
+  /// préremplir `LapClimbProfileCard` (page Tours)
+  /// pendant l'approche, avant que le tour du col ne soit ouvert : sans lui,
+  /// cette carte n'a rien à montrer tant qu'on n'y est pas, alors que la page
+  /// s'ouvre déjà avant. **Nul dans un profil sans carte**, même raison que
+  /// [routeClimbs].
+  final ValueListenable<RouteClimb?>? upcomingClimb;
+
   /// Le profil gradué du col en cours, poussé une fois par col. **Nul dans un
   /// profil sans carte**, même raison que [routeClimbs] — voir
   /// [ClimbProfileBlock].
@@ -719,6 +729,7 @@ class MetricSources {
         nav: nav,
         routeClimbs: routeClimbs,
         climb: climb,
+        upcomingClimb: upcomingClimb,
         climbProfile: climbProfile,
         routeProfile: routeProfile,
         lap: lap,

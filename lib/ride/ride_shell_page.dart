@@ -27,6 +27,7 @@ import 'battery_alert_sound.dart';
 import 'battery_status.dart';
 import 'battery_wake_policy.dart';
 import 'blocks/bell_player.dart';
+import 'climb_alert_sound.dart';
 import 'climb_edge_policy.dart';
 import 'climb_debug_data.dart';
 import 'climb_profile.dart';
@@ -237,10 +238,13 @@ class _RideShellPageState extends State<RideShellPage>
   /// La pastille de col est-elle dépliée en graphique ? Un simple booléen
   /// possédé par la coquille suffit ici — pas de politique séparée comme
   /// [RadarWakePolicy] : il n'y a qu'une seule transition à arbitrer (le tap),
-  /// pas d'horloge ni de plusieurs sources concurrentes à départager. Repliée
-  /// par défaut et à chaque nouveau col (voir _onPageMessage) : un col qui
-  /// s'ouvre grand tout seul recouvrirait la carte au moment précis où le
-  /// cycliste a le plus besoin de voir la route devant lui.
+  /// pas d'horloge ni de plusieurs sources concurrentes à départager. Reposée
+  /// à [ClimbSettings.expandedByDefault] à chaque nouveau col (voir
+  /// `_onPageMessage`, cas `nav`, et `_toggleDebugClimb`) — repliée par
+  /// défaut, pour qu'un col qui s'ouvrirait grand tout seul ne recouvre pas la
+  /// carte au moment précis où le cycliste a le plus besoin de voir la route
+  /// devant lui. Le tap reste libre dans les deux sens quel que soit ce
+  /// réglage : lui seul choisit l'état de départ.
   final _climbExpanded = ValueNotifier<bool>(false);
 
   /// Cherche l'entrée de [_routeClimbs] qui correspond à [id] — voir son
@@ -288,6 +292,7 @@ class _RideShellPageState extends State<RideShellPage>
       _debugClimbActive = true;
       _debugClimbRatio = 0;
     });
+    _climbExpanded.value = _preset.climb.expandedByDefault;
     // Même geste qu'un vrai front montant de col (voir ClimbEdgePolicy) :
     // isole la montée dans son propre tour de la série `cols`.
     widget.recorder.markLap(climbLapSeries);
@@ -507,6 +512,10 @@ class _RideShellPageState extends State<RideShellPage>
   final _radarVoice = RadarAlertVoice();
   final _radarSound = RadarAlertPlayer();
 
+  /// Les tonalités de début et de fin de col — voir [ClimbEdgePolicy]
+  /// (_climbEdge, plus bas) pour le front qui les déclenche.
+  final _climbSound = ClimbAlertPlayer();
+
   /// Ce qui décide de rallumer l'écran pour une voiture, et de le rendre à la
   /// veille ensuite.
   late final RadarWakePolicy _radarWake;
@@ -596,6 +605,11 @@ class _RideShellPageState extends State<RideShellPage>
     if (_preset.radar.sounds && _preset.sensors.radar) {
       unawaited(_radarSound.warmUp());
     }
+    // Un col n'existe que sur une carte (voir `NavState.climb`) : sans elle,
+    // le front ne se produira jamais et il n'y a rien à charger d'avance.
+    if (_preset.climb.sounds && _preset.hasMap) {
+      unawaited(_climbSound.warmUp());
+    }
 
     _battery = BatteryStatusNotifier(
       widget.devices,
@@ -657,6 +671,7 @@ class _RideShellPageState extends State<RideShellPage>
       nav: _preset.hasMap ? _nav : null,
       routeClimbs: _preset.hasMap ? _routeClimbs : null,
       climb: _preset.hasMap ? _stableClimb : null,
+      upcomingClimb: _preset.hasMap ? _upcomingClimb : null,
       climbProfile: _preset.hasMap ? _climbProfile : null,
       routeProfile: _preset.hasMap ? _routeProfile : null,
     );
@@ -671,6 +686,8 @@ class _RideShellPageState extends State<RideShellPage>
       _updateReminders();
       _updateDebugClimb();
       _checkNativeTurnAlert();
+      // Avant _updateConditionalPages, qui en dépend via _nearCol.
+      _updateUpcomingClimb();
       _updateConditionalPages();
       // Boutons distants : voir `_buttonTick`, plus rapide, pour
       // `Di2ButtonGesturePolicy.resolve`.
@@ -994,23 +1011,39 @@ class _RideShellPageState extends State<RideShellPage>
   /// liste des cols du tracé plutôt que de refaire ce calcul ici.
   static const _nearColLeadM = 500.0;
 
-  bool _nearCol() {
+  bool _nearCol() => _climbEdge.climbing || _upcomingClimb.value != null;
+
+  /// Le prochain col, à moins de [_nearColLeadM] du départ — `null` sinon, ou
+  /// hors trace (voir [_findUpcomingClimb]). Recalculé à chaque tic
+  /// (`_updateUpcomingClimb`, juste avant [_updateConditionalPages], qui en
+  /// dépend via [_nearCol]) plutôt qu'à chaque trame : ni la position ni la
+  /// liste des cols ne changent plus vite que la seconde qui les sépare.
+  ///
+  /// Sert à préremplir la carte de col sur la page Tours pendant l'approche
+  /// (`LapClimbProfileCard`, `MetricSources.upcomingClimb`) : sans lui, cette
+  /// carte n'a rien à montrer tant que le tour du col n'est pas ouvert, alors
+  /// que la page, elle, s'ouvre déjà 500 m avant.
+  final _upcomingClimb = ValueNotifier<RouteClimb?>(null);
+
+  void _updateUpcomingClimb() => _upcomingClimb.value = _findUpcomingClimb();
+
+  RouteClimb? _findUpcomingClimb() {
     final nav = _nav.value;
     // Hors trace, la position à laquelle la page accroche le tracé (et donc le
     // col qu'elle désigne) n'a plus rien de fiable — un GPS instable avant de
     // rejoindre l'itinéraire peut y faire retomber n'importe où, y compris en
     // plein milieu d'un col qu'on n'aborde pas.
-    if (nav == null || nav.offRoute) return false;
-    if (_climbEdge.climbing) return true;
+    if (nav == null || nav.offRoute) return null;
 
     final climbs = _routeClimbs.value;
     final traveled = climbs == null ? null : traveledDistM(climbs, nav);
-    if (climbs == null || traveled == null) return false;
+    if (climbs == null || traveled == null) return null;
 
-    return climbs.climbs.any((climb) {
-      if (climbStatusOf(climb, traveled) != ClimbStatus.upcoming) return false;
-      return climb.startDistM - traveled <= _nearColLeadM;
-    });
+    for (final climb in climbs.climbs) {
+      if (climbStatusOf(climb, traveled) != ClimbStatus.upcoming) continue;
+      if (climb.startDistM - traveled <= _nearColLeadM) return climb;
+    }
+    return null;
   }
 
   /// Va chercher les virages du tracé auprès du site, pour le filet natif.
@@ -1223,6 +1256,7 @@ class _RideShellPageState extends State<RideShellPage>
     // page col ouverte jusqu'à 5 s sur le tracé qui vient de charger.
     _climbEdge.reset();
     _stableClimb.value = null;
+    _upcomingClimb.value = null;
     _offline.reset();
     _nativeTurns = null;
     unawaited(_loadNativeTurnAlerts(target));
@@ -1459,6 +1493,16 @@ class _RideShellPageState extends State<RideShellPage>
           // effet si aucune page ou bouton du profil ne la déclare
           // (`RideRecorder.markLap`, no-op sur une série inconnue).
           widget.recorder.markLap(climbLapSeries);
+          // `edge` porte déjà le front stabilisé : `hasClimb` vrai veut dire
+          // qu'on vient d'entrer, faux qu'on vient de sortir. Rien à relire
+          // sur `climb`, qui peut flickerer juste autour de cette frontière.
+          if (_preset.climb.sounds) {
+            _climbSound.play(hasClimb ? ClimbCue.start : ClimbCue.end);
+          }
+          // Chaque nouveau col repart de l'affichage choisi sur le site — le
+          // tap reste libre de changer d'avis pour ce col-ci, voir
+          // `_climbExpanded` plus haut.
+          if (hasClimb) _climbExpanded.value = _preset.climb.expandedByDefault;
         }
         if (!hasClimb) {
           if (edge) {
@@ -1566,6 +1610,7 @@ class _RideShellPageState extends State<RideShellPage>
     _radar.dispose();
     _mutedRadar.dispose();
     _radarSound.dispose();
+    _climbSound.dispose();
     _battery.removeListener(_onBatteryStatus);
     _battery.dispose();
     _batterySound.dispose();
@@ -1586,6 +1631,7 @@ class _RideShellPageState extends State<RideShellPage>
     _nav.dispose();
     _climbProfile.dispose();
     _stableClimb.dispose();
+    _upcomingClimb.dispose();
     _routeClimbs.dispose();
     _routeProfile.dispose();
     _climbExpanded.dispose();

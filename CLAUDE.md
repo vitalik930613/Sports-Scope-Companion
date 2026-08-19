@@ -757,6 +757,51 @@ normale : un profil qui n'a jamais touché ce réglage n'en affiche aucun.
   `RideRecorder.recorded`. Il fonctionne donc aussi bien sur un profil
   home-trainer sans carte que sur une sortie route.
 
+### Les sons de col
+
+`start.wav` à l'entrée d'un col, `end.wav` à la sortie — `ClimbAlertPlayer`
+(`ride/climb_alert_sound.dart`), même patron que `RadarAlertPlayer` : un
+lecteur par son, chargé d'avance (`warmUp()`, au montage de la coquille, si le
+profil garde une carte). Le front, lui, n'est pas recalculé ici : c'est celui
+que [ClimbEdgePolicy] a déjà stabilisé pour la pastille et la page col
+(`edge`/`hasClimb` dans `_onPageMessage`, cas `nav`) — un col n'a donc qu'un
+seul détecteur d'entrée/sortie dans toute la coquille, jamais deux qui
+pourraient se désaccorder.
+
+`RidePreset.climb.sounds` (`ClimbSettings`, `dashboard/ride_preset.dart`) le
+rend désactivable depuis le site, même réglage `absent vaut activé` que
+`RadarSettings.sounds` et `BatterySettings.sounds` : un document plus ancien
+que ce champ ne doit pas faire perdre le son en silence. Coupé, la pastille et
+la page col restent inchangées — c'est le son qu'on retire, pas
+l'information, même principe que `RadarSettings.overlay`/`.sounds`. Le col de
+démonstration (`_debugClimb`, menu « Simuler un col ») ne sonne pas : il ne
+passe pas par `_climbEdge`, pastille et carte seules le lisent.
+
+### Pastille ou graphique, à l'entrée d'un col
+
+`_climbExpanded` (`ValueNotifier<bool>`, `RideShellPage`) dit si le col en
+cours se montre replié (pastille) ou déplié (graphique gradué) — un tap sur
+l'un ouvre l'autre, un tap sur l'autre referme, dans les deux sens, quel que
+soit ce qui suit. `RidePreset.climb.expandedByDefault` (`ClimbSettings`,
+`dashboard/ride_preset.dart`) ne choisit que l'état de **départ** de chaque
+nouveau col — posé au même front que le son (`edge && hasClimb` dans
+`_onPageMessage`, cas `nav`) plutôt qu'une seconde fois dans le constructeur :
+un col déjà en cours à l'ouverture de la coquille (reprise de sortie) doit
+recevoir le réglage lui aussi, pas seulement le tout premier col d'une
+sortie fraîche.
+
+Faux par défaut, y compris quand la clé manque : c'est *exactement* le
+comportement d'avant ce réglage, pour la raison qui l'a fait choisir replié à
+l'origine — un col qui s'ouvre grand tout seul recouvrirait la carte au
+moment précis où le cycliste a le plus besoin de voir la route devant lui.
+Un profil qui veut le graphique d'entrée de jeu (un col qu'on regarde plus
+qu'on ne roule dessus, par exemple) le demande en toutes lettres.
+
+Contrairement au son, `_toggleDebugClimb` (menu « Simuler un col ») applique
+aussi ce réglage à l'entrée du col de démonstration : c'est justement le banc
+d'essai prévu pour juger l'affichage d'un col sans en grimper un vrai, il
+serait incohérent qu'il ignore le réglage qu'il sert à vérifier.
+
 ## La veille par appui long, sur la carte seulement
 
 **Seule la carte connaît la veille par appui long.** L'appli avait longtemps

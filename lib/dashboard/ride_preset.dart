@@ -32,6 +32,7 @@ class RidePreset {
     this.sensors = const SensorSettings(),
     this.radar = const RadarSettings(),
     this.battery = const BatterySettings(),
+    this.climb = const ClimbSettings(),
     this.lighting = const LightingSettings(),
     this.screen = const ScreenSettings(),
     this.traveledPath = const TraveledPathSettings(),
@@ -104,6 +105,7 @@ class RidePreset {
   final SensorSettings sensors;
   final RadarSettings radar;
   final BatterySettings battery;
+  final ClimbSettings climb;
   final LightingSettings lighting;
   final ScreenSettings screen;
 
@@ -264,6 +266,7 @@ class RidePreset {
       sensors: SensorSettings.parse(raw['sensors']),
       radar: RadarSettings.parse(raw['radar']),
       battery: BatterySettings.parse(raw['battery']),
+      climb: ClimbSettings.parse(raw['climb']),
       lighting: LightingSettings.parse(raw['lighting']),
       screen: ScreenSettings.parse(raw['screen']),
       traveledPath: TraveledPathSettings.parse(raw['traveled_path']),
@@ -1163,6 +1166,45 @@ class BatterySettings {
           ? (raw['threshold_percent'] as num).round().clamp(1, 100)
           : fallback.thresholdPercent,
       sounds: raw['sounds'] is bool ? raw['sounds'] as bool : fallback.sounds,
+    );
+  }
+}
+
+/// Les tonalités de début et de fin de col — voir `ClimbAlertPlayer`
+/// (`lib/ride/climb_alert_sound.dart`) pour la lecture, et `ClimbEdgePolicy`
+/// (`lib/ride/ride_shell_page.dart`) pour le front qui les déclenche.
+///
+/// « Absent vaut activé », même logique que [RadarSettings.sounds] et
+/// [BatterySettings.sounds] : un document plus ancien que ce réglage ne doit
+/// pas faire perdre le son en silence.
+@immutable
+class ClimbSettings {
+  const ClimbSettings({this.sounds = true, this.expandedByDefault = false});
+
+  final bool sounds;
+
+  /// La pastille de col s'ouvre-t-elle en graphique dès l'entrée dans le col,
+  /// plutôt que de rester repliée ? Le tap reste libre dans les deux sens
+  /// (pastille → graphique, graphique → pastille) : ce réglage ne choisit que
+  /// l'état de départ de **chaque nouveau col**, voir `_climbExpanded` dans
+  /// `RideShellPage`.
+  ///
+  /// Faux par défaut, y compris quand la clé manque : un col qui s'ouvre grand
+  /// tout seul recouvrirait la carte au moment précis où le cycliste a le plus
+  /// besoin de voir la route devant lui — voir la doc de `_climbExpanded`. Un
+  /// document plus ancien que ce champ garde donc exactement le comportement
+  /// d'avant qu'il existe.
+  final bool expandedByDefault;
+
+  static ClimbSettings parse(Object? raw) {
+    if (raw is! Map) return const ClimbSettings();
+    const fallback = ClimbSettings();
+
+    return ClimbSettings(
+      sounds: raw['sounds'] is bool ? raw['sounds'] as bool : fallback.sounds,
+      expandedByDefault: raw['expanded_by_default'] is bool
+          ? raw['expanded_by_default'] as bool
+          : fallback.expandedByDefault,
     );
   }
 }
