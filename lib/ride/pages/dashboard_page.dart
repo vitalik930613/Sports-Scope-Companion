@@ -15,6 +15,7 @@ import '../blocks/climb_list_block.dart';
 import '../blocks/climb_profile_block.dart';
 import '../blocks/clock_block.dart';
 import '../blocks/mark_lap_block.dart';
+import '../blocks/metric_trend_block.dart';
 import '../blocks/metric_view.dart';
 import '../blocks/nav_state_block.dart';
 import '../blocks/power_curve_block.dart';
@@ -408,6 +409,14 @@ class DashboardPage extends StatelessWidget {
             windowKm: altitudeProfile.windowKm,
             color: altitudeProfile.color,
             textColor: altitudeProfile.textColor,
+          ),
+        final MetricTrendBlock trend => MetricTrendCard(
+            source: trend.source,
+            recorder: sources.recorder,
+            riderProfile: sources.riderProfile,
+            windowS: trend.windowS,
+            color: trend.color,
+            textColor: trend.textColor,
           ),
         final ClockBlock clock => ClockCard(
             mode: clock.mode,

@@ -9,6 +9,7 @@ import '../blocks/averages_block.dart';
 import '../blocks/climb_profile_block.dart';
 import '../blocks/lap_summary_block.dart';
 import '../blocks/mark_lap_block.dart';
+import '../blocks/metric_trend_block.dart';
 import '../blocks/metric_view.dart';
 import '../blocks/power_curve_block.dart';
 import '../blocks/zones_block.dart';
@@ -363,6 +364,17 @@ class _LapListBodyState extends State<LapListBody> {
           windowKm: altitudeProfile.windowKm,
           color: altitudeProfile.color,
           textColor: altitudeProfile.textColor,
+        ),
+      // La tendance de toute la sortie, jamais recadrée sur `lap` — même
+      // remarque que `AltitudeProfileBlock` juste au-dessus : une courbe dans
+      // le temps n'a pas de variante « depuis ce tour ».
+      final MetricTrendBlock trend => MetricTrendCard(
+          source: trend.source,
+          recorder: widget.sources.recorder,
+          riderProfile: widget.sources.riderProfile,
+          windowS: trend.windowS,
+          color: trend.color,
+          textColor: trend.textColor,
         ),
       final MarkLapBlock markLap => MarkLapControl(
           recorder: widget.sources.recorder,

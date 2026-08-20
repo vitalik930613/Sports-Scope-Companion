@@ -133,6 +133,7 @@ sealed class DashboardBlock {
         ),
       'climb_profile' => ClimbProfileBlock(color: color, textColor: textColor),
       'altitude_profile' => AltitudeProfileBlock.parse(raw),
+      'metric_trend' => MetricTrendBlock.parse(raw),
       'clock' => ClockBlock.parse(raw),
       'sleep' => SleepBlock(
           mode: _modeOf(raw['mode'], SleepMode.values),
@@ -1793,6 +1794,55 @@ class AltitudeProfileBlock extends DashboardBlock {
 
   @override
   int get hashCode => Object.hash(windowKm, color, textColor);
+}
+
+/// La tendance d'une mesure dans le temps — cardio ou puissance ([source],
+/// même énumération que [ZonesBlock]) — voir `MetricTrendCard`
+/// (`ride/blocks/metric_trend_block.dart`) pour le rendu : l'aire sous la
+/// courbe est peinte aux couleurs de zone du cycliste.
+///
+/// Se pose comme [PowerCurveBlock] : pas de variante « Lap » séparée, la même
+/// carte se dessine sur une page de mesures ordinaire ou sur une page Tours
+/// (`LapListPage._block`), toujours sur la sortie entière — un tour n'a pas
+/// de tendance propre à distinguer de celle de la sortie, sa notion de temps
+/// n'étant pas un cumul comme une moyenne ou un temps par zone.
+class MetricTrendBlock extends DashboardBlock {
+  const MetricTrendBlock({
+    required this.source,
+    this.windowS,
+    super.color,
+    super.textColor,
+  });
+
+  final ZonesSource source;
+
+  /// La fenêtre affichée, en secondes — réglée dans l'éditeur (`window_s`).
+  /// `null` : toute la sortie, rééchantillonnée (`RideMetricTrack.points`).
+  final int? windowS;
+
+  static MetricTrendBlock parse(Map<dynamic, dynamic> raw) {
+    final rawWindow = _toDouble(raw['window_s']);
+    return MetricTrendBlock(
+      source: switch (raw['source']) {
+        'power' => ZonesSource.power,
+        _ => ZonesSource.hr,
+      },
+      windowS: rawWindow != null && rawWindow > 0 ? rawWindow.round() : null,
+      color: DashboardBlock._colorOf(raw, 'color'),
+      textColor: DashboardBlock._colorOf(raw, 'text_color'),
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is MetricTrendBlock &&
+      other.source == source &&
+      other.windowS == windowS &&
+      other.color == color &&
+      other.textColor == textColor;
+
+  @override
+  int get hashCode => Object.hash(source, windowS, color, textColor);
 }
 
 /// Une cellule volontairement vide.

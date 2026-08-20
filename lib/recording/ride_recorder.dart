@@ -14,6 +14,7 @@ import 'gps_fix.dart';
 import 'gps_source.dart';
 import 'ride_elevation_track.dart';
 import 'ride_lap.dart';
+import 'ride_metric_track.dart';
 import 'ride_session.dart';
 import 'ride_stats.dart';
 import 'ride_store.dart';
@@ -144,6 +145,13 @@ class RideRecorder extends ChangeNotifier {
   /// `ride_elevation_track.dart`. Local au téléphone, jamais transmis.
   final elevationTrack = RideElevationTrack();
 
+  /// La série temporelle du cardio et de la puissance de la sortie en cours,
+  /// pour le composant « Tendance » (`MetricTrendCard`,
+  /// `lib/ride/blocks/metric_trend_block.dart`) — même principe que
+  /// [elevationTrack], local au téléphone.
+  final heartRateTrack = RideMetricTrack();
+  final powerTrack = RideMetricTrack();
+
   /// Les séries de tours de la sortie en cours, par clé de série. Plusieurs
   /// séries tournent en parallèle sans se fermer l'une l'autre — voir
   /// [markLap]. Connues dès [start] (le paramètre `lapSeries`) : une série
@@ -204,6 +212,8 @@ class RideRecorder extends ChangeNotifier {
     _recordedSeconds = 0;
     stats.reset();
     elevationTrack.reset();
+    heartRateTrack.reset();
+    powerTrack.reset();
     _lastFix = null;
     _referenceFix = null;
     _lastMetaSave = DateTime.now();
@@ -424,6 +434,8 @@ class RideRecorder extends ChangeNotifier {
     // manque — deux sources décalées de plusieurs mètres feraient une marche.
     final altitude = stats.hasBaroAltitude ? point.baroAltitudeM : point.altitudeM;
     if (altitude != null) elevationTrack.add(point.distanceM, altitude);
+    heartRateTrack.add(_recordedSeconds, point.heartRate);
+    powerTrack.add(_recordedSeconds, point.power);
     for (final laps in _series.values) {
       final lap = laps.last;
       lap.stats.add(point);
