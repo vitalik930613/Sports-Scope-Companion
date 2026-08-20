@@ -200,9 +200,9 @@ class DashboardPage extends StatelessWidget {
   final VoidCallback? onHidePage;
 
   /// L'inverse de [onHidePage] : remet cette page dans le défilement. Non nul
-  /// seulement quand la page ouverte ici a été masquée à la main — une page
-  /// rangée par le site depuis l'éditeur n'a pas vocation à en sortir d'un tap
-  /// dans l'appli.
+  /// sur une page ouverte depuis le menu, qu'elle y ait été rangée par le site
+  /// ou masquée à la main — les deux rejoignent le défilement de la même
+  /// façon, le temps de la sortie (voir `RideShellPage._showPage`).
   final VoidCallback? onShowPage;
 
   @override

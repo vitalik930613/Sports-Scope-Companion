@@ -368,6 +368,14 @@ class _RideShellPageState extends State<RideShellPage>
   /// ou non, [_baseRidePages] repart telles que le site les décrit.
   Set<RidePageSpec> _manuallyHidden = const {};
 
+  /// Les pages du menu rejointes au défilement à la main, depuis le menu ⋮ de
+  /// la page ouverte (« Afficher dans le défilement », voir [_showPage]).
+  /// Symétrique de [_manuallyHidden] : un geste de l'instant, jamais écrit sur
+  /// le profil. Une page qu'un [PageMenuCondition] a fait rejoindre le
+  /// défilement n'y figure pas — c'est [_activeConditional] qui la porte, et
+  /// [_ridePages] se garde de l'ajouter deux fois.
+  Set<RidePageSpec> _manuallyShown = const {};
+
   /// Le défilement du moment : les pages toujours-défilantes non masquées à la
   /// main, puis les pages conditionnelles actives, **toujours en fin de
   /// liste**. Cet ordre garde la carte et les pages qui la précèdent à un
@@ -379,15 +387,21 @@ class _RideShellPageState extends State<RideShellPage>
           if (!_manuallyHidden.contains(page)) page,
         for (final page in _conditionalPages)
           if (_activeConditional.contains(page)) page,
+        for (final page in _baseMenuPages)
+          if (_manuallyShown.contains(page) &&
+              !(_conditionalPages.contains(page) && _activeConditional.contains(page)))
+            page,
       ];
 
   /// Les pages rangées derrière le menu du moment : celles masquées à la main,
-  /// les pages sans condition, et les pages conditionnelles **inactives** —
-  /// une page active est dans [_ridePages], pas ici, elle n'a donc pas besoin
-  /// d'être allée chercher.
+  /// les pages sans condition et non rejointes à la main, et les pages
+  /// conditionnelles **inactives** — une page active est dans [_ridePages],
+  /// pas ici, elle n'a donc pas besoin d'être allée chercher.
   List<RidePageSpec> get _menuPages => [
         for (final page in _baseMenuPages)
-          if (!_conditionalPages.contains(page) || !_activeConditional.contains(page)) page,
+          if (!_manuallyShown.contains(page) &&
+              (!_conditionalPages.contains(page) || !_activeConditional.contains(page)))
+            page,
         for (final page in _baseRidePages)
           if (_manuallyHidden.contains(page)) page,
       ];
@@ -946,6 +960,11 @@ class _RideShellPageState extends State<RideShellPage>
   /// de la sortie, exactement comme si le site l'y avait mise, mais sans
   /// toucher au profil ni à rien qui survive au prochain lancement.
   ///
+  /// [page] peut venir d'une des deux origines — un page toujours-défilante
+  /// qu'on range, ou une page du menu rejointe à la main qu'on relâche — d'où
+  /// le test sur [_baseMenuPages] : c'est l'origine qui dit quel ensemble
+  /// corriger, [_ridePages] ne connaît que le résultat des deux.
+  ///
   /// Refusé quand [page] est la dernière page hors carte du défilement — même
   /// garde que `RidePreset._promotedPage` côté profil : une sortie ne doit
   /// jamais se retrouver sans aucune page à faire défiler.
@@ -955,7 +974,13 @@ class _RideShellPageState extends State<RideShellPage>
     _setMenuPage(null);
     final currentSpec = _pageCount > 0 ? _ridePages[_page] : null;
 
-    setState(() => _manuallyHidden = {..._manuallyHidden, page});
+    setState(() {
+      if (_baseMenuPages.contains(page)) {
+        _manuallyShown = {..._manuallyShown}..remove(page);
+      } else {
+        _manuallyHidden = {..._manuallyHidden, page};
+      }
+    });
     // La carte a pu décaler : voir la note sur [_autoReturn].
     _autoReturn = AutoReturnPolicy(
       mapPage: _mapPage,
@@ -968,10 +993,19 @@ class _RideShellPageState extends State<RideShellPage>
   /// L'inverse de [_hidePage], depuis le menu ⋮ de la page ouverte — voir
   /// `DashboardPage.onShowPage`. Rejoint aussitôt le défilement sur [page],
   /// plutôt que de la laisser réapparaître dans un coin qu'on ne regarde pas :
-  /// c'est justement pour la regarder qu'on vient de l'aller chercher.
+  /// c'est justement pour la regarder qu'on vient de l'aller chercher. Même
+  /// origine à deux ensembles que [_hidePage] : une page rangée par le site
+  /// rejoint [_manuallyShown], une page masquée à la main ressort de
+  /// [_manuallyHidden].
   void _showPage(RidePageSpec page) {
     _setMenuPage(null);
-    setState(() => _manuallyHidden = {..._manuallyHidden}..remove(page));
+    setState(() {
+      if (_baseMenuPages.contains(page)) {
+        _manuallyShown = {..._manuallyShown, page};
+      } else {
+        _manuallyHidden = {..._manuallyHidden}..remove(page);
+      }
+    });
     // La carte a pu décaler : voir la note sur [_autoReturn].
     _autoReturn = AutoReturnPolicy(
       mapPage: _mapPage,
@@ -1765,13 +1799,12 @@ class _RideShellPageState extends State<RideShellPage>
                   onCalibratePower:
                       powerCalibrationAvailable(widget.hub) ? _calibratePower : null,
                   onClose: () => _setMenuPage(null),
-                  // Seulement quand la page qu'on a ouverte a été rangée à la
-                  // main (`_hidePage`) : une page rangée par le site n'a pas
-                  // vocation à rejoindre le défilement d'un tap, c'est un
-                  // choix de l'éditeur, pas le nôtre.
-                  onShowPage: _manuallyHidden.contains(openedPage)
-                      ? () => _showPage(openedPage)
-                      : null,
+                  // Toute page ouverte depuis le menu peut rejoindre le
+                  // défilement — qu'elle y ait été rangée par le site ou
+                  // masquée à la main (`_hidePage` en distingue l'origine) —
+                  // et pourra en ressortir ensuite comme n'importe quelle
+                  // autre page, depuis son propre menu ⋮ une fois affichée.
+                  onShowPage: () => _showPage(openedPage),
                 ),
               ),
             // La page radar : le seul écran qui s'invite. Elle ne paraît que
