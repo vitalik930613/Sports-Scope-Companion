@@ -166,11 +166,24 @@ class ElevationProfileSurface extends StatelessWidget {
       child: LayoutBuilder(
         builder: (context, constraints) {
           if (!constraints.hasBoundedHeight) {
+            // Même parade que la branche bornée ci-dessous : une colonne de
+            // page liste (`cols` à 3 ou 4) peut être bien plus étroite que
+            // `_naturalWidth`, et rien dans `header` (chiffre, distance,
+            // pastille de pente) n'a de plancher — sans le `FittedBox`, c'est
+            // le `Row` de la ligne de chiffres qui déborde en `RenderFlex
+            // overflowed`, la largeur y étant resserrée mais pas la hauteur.
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                header,
+                SizedBox(
+                  height: _naturalHeaderHeight,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: header,
+                  ),
+                ),
                 SizedBox(height: metrics.gap),
                 SizedBox(height: _chartHeight, child: chart),
               ],

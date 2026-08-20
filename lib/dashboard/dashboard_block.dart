@@ -115,6 +115,7 @@ sealed class DashboardBlock {
       'precip_radar' => PrecipRadarBlock(color: color, textColor: textColor),
       'precip_forecast' => PrecipForecastBlock(color: color, textColor: textColor),
       'weather_forecast' => WeatherForecastBlock(color: color, textColor: textColor),
+      'weather_compact' => WeatherCompactBlock(color: color, textColor: textColor),
       'training_budget' => TrainingBudgetBlock(
           mode: _modeOf(raw['mode'], TrainingBudgetMode.values),
           color: color,
@@ -1519,12 +1520,43 @@ class PrecipForecastBlock extends DashboardBlock {
 /// heures qui viennent. La donnée vient du GPS et non de la page de navigation,
 /// donc un profil de home-trainer sans WebView peut quand même le poser (il
 /// affichera l'état "pas de GPS", comme les deux autres).
+///
+/// Distinct aussi de [WeatherCompactBlock] : un genre à part et non un mode de
+/// plus ici, même choix que [PrecipRadarBlock]/[PrecipForecastBlock] déjà deux
+/// genres pour une même donnée GPS — celui-ci répond à « comment ça évolue
+/// dans le détail » (le graphique), l'autre à « où en est-on maintenant »
+/// (trois chiffres et leur tendance).
 class WeatherForecastBlock extends DashboardBlock {
   const WeatherForecastBlock({super.color, super.textColor});
 
   @override
   bool operator ==(Object other) =>
       other is WeatherForecastBlock &&
+      other.color == color &&
+      other.textColor == textColor;
+
+  @override
+  int get hashCode => Object.hash(color, textColor);
+}
+
+/// Les valeurs météo actuelles (Open-Meteo), pour la position GPS courante :
+/// température, vent et pluie tels que maintenant, chacun avec une flèche qui
+/// dit s'ils montent, tiennent ou baissent dans les six prochaines heures.
+///
+/// Complète [WeatherForecastBlock] plutôt que de le remplacer : trois
+/// chiffres et trois flèches tiennent dans un quart d'écran là où le
+/// graphique a besoin de toute la case pour rester lisible — la case exigüe
+/// d'une grille dense n'a souvent la place que pour celui-ci. Même source de
+/// données que [WeatherForecastBlock] ([WeatherForecastClient], `lib/weather/`),
+/// donc même repli : la donnée vient du GPS et non de la page de navigation,
+/// un profil de home-trainer sans WebView peut quand même le poser (il
+/// affichera l'état "pas de GPS").
+class WeatherCompactBlock extends DashboardBlock {
+  const WeatherCompactBlock({super.color, super.textColor});
+
+  @override
+  bool operator ==(Object other) =>
+      other is WeatherCompactBlock &&
       other.color == color &&
       other.textColor == textColor;
 

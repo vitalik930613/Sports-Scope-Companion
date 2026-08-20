@@ -346,21 +346,35 @@ class _ZoneLine extends StatelessWidget {
                   ),
           ),
           const SizedBox(width: 10),
-          Text(
-            share.key.toUpperCase(),
-            style: TextStyle(
-              color: ink,
-              fontSize: BlockMetrics.natural.lineSize,
-              fontWeight: FontWeight.w600,
+          // `Flexible` + ellipsis plutôt qu'un `Text` nu : dans une page liste
+          // à 3-4 colonnes, la case peut être plus étroite que la largeur
+          // naturelle de la légende (`ZonesBlock._naturalWidth`), et
+          // `ScaleToFit` ne fait rien tant que la hauteur n'est pas bornée
+          // (page qui défile) — sans ça, clé ou durée déborde le `Row` en
+          // `RenderFlex overflowed`.
+          Flexible(
+            child: Text(
+              share.key.toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: ink,
+                fontSize: BlockMetrics.natural.lineSize,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
           const Spacer(),
-          Text(
-            formatDuration(share.time),
-            style: TextStyle(
-              color: ink,
-              fontSize: BlockMetrics.natural.lineSize,
-              fontFeatures: const [FontFeature.tabularFigures()],
+          Flexible(
+            child: Text(
+              formatDuration(share.time),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: ink,
+                fontSize: BlockMetrics.natural.lineSize,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
             ),
           ),
           const SizedBox(width: 12),

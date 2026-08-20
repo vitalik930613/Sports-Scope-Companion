@@ -20,6 +20,7 @@ import '../blocks/nav_state_block.dart';
 import '../blocks/power_curve_block.dart';
 import '../blocks/precip_forecast_block.dart';
 import '../blocks/precip_radar_block.dart';
+import '../blocks/weather_compact_block.dart';
 import '../blocks/weather_forecast_block.dart';
 import '../blocks/radar_block.dart';
 import '../blocks/recording_block.dart';
@@ -371,6 +372,11 @@ class DashboardPage extends StatelessWidget {
             recorder: sources.recorder,
             color: weatherForecast.color,
             textColor: weatherForecast.textColor,
+          ),
+        final WeatherCompactBlock weatherCompact => WeatherCompactBlockView(
+            recorder: sources.recorder,
+            color: weatherCompact.color,
+            textColor: weatherCompact.textColor,
           ),
         final TrainingBudgetBlock budget => TrainingBudgetCard(
             budgets: sources.trainingBudget,
