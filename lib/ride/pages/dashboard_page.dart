@@ -268,6 +268,7 @@ class DashboardPage extends StatelessWidget {
             gaugeSegments: metric.gaugeSegments,
             gaugeColorMode: metric.gaugeColorMode,
             gaugeColor: metric.gaugeColor,
+            gaugeThickness: metric.gaugeThickness,
             color: metric.color,
             textColor: metric.textColor,
             // Le tap des watts ouvre la calibration : c'est là qu'on *constate*

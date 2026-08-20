@@ -309,6 +309,7 @@ class _LapListBodyState extends State<LapListBody> {
           gaugeSegments: metric.gaugeSegments,
           gaugeColorMode: metric.gaugeColorMode,
           gaugeColor: metric.gaugeColor,
+          gaugeThickness: metric.gaugeThickness,
           color: metric.color,
           textColor: metric.textColor,
         ),

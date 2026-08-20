@@ -39,6 +39,7 @@ class MetricView extends StatelessWidget {
     this.gaugeSegments,
     this.gaugeColorMode,
     this.gaugeColor,
+    this.gaugeThickness = GaugeThickness.normal,
     this.color,
     this.textColor,
     this.onTap,
@@ -76,6 +77,9 @@ class MetricView extends StatelessWidget {
   final int? gaugeSegments;
   final GaugeColorMode? gaugeColorMode;
   final Color? gaugeColor;
+
+  /// Épaisseur de la jauge — voir [MetricBlock.gaugeThickness].
+  final GaugeThickness gaugeThickness;
 
   /// Fond réglé dans l'éditeur — voir [DashboardBlock.color]. Prioritaire sur
   /// [MetricReading.background]/la couleur de zone : c'est le seul moyen de
@@ -281,7 +285,7 @@ class MetricView extends StatelessWidget {
     Widget? secondaryAt(GridColumn c) {
       for (final entry in secondaryReadings.entries) {
         if (entry.key.position.row == row && entry.key.position.column == c) {
-          return _secondaryWidget(entry.key, entry.value, ink, scale);
+          return _secondaryWidget(entry.key, entry.value, ink, scale * entry.key.size.factor);
         }
       }
       return null;
@@ -441,6 +445,9 @@ class MetricView extends StatelessWidget {
   /// Une annotation de coin : un petit repère (« MOY », « MAX »…) collé au
   /// chiffre — jamais d'icône ni d'unité, qui la feraient répéter toute la
   /// mise en forme d'une carte dans un espace prévu pour rester minuscule.
+  /// [scale] porte déjà le facteur de la rangée (voir [RowHeight]) composé
+  /// avec celui propre au slot (voir [SecondaryMetricSize]) — l'appelant
+  /// ([_gridRow.secondaryAt]) les multiplie avant d'arriver ici.
   Widget _secondaryWidget(SecondaryMetricSlot slot, MetricReading reading, Color ink, double scale) {
     final caption = slot.label ?? _defaultSecondaryCaption(slot.metric);
     return Row(
@@ -538,7 +545,14 @@ class MetricView extends StatelessWidget {
     }
 
     final fraction = index < 0 ? null : (index + 1) / zones.length;
-    return _resolvedFillBar(reading, fraction, fill: fill, colorMode: colorMode, naturalSegments: zones.length);
+    return _resolvedFillBar(
+      reading,
+      fraction,
+      fill: fill,
+      colorMode: colorMode,
+      naturalSegments: zones.length,
+      hasZone: true,
+    );
   }
 
   /// La jauge à plage libre : le pendant de [_zoneGaugeBar] pour une mesure
@@ -574,19 +588,30 @@ class MetricView extends StatelessWidget {
   /// Le point commun aux trois natures de jauge une fois qu'elles ne
   /// dessinent plus leur rendu spécifique (le ladder de zones de
   /// [_zoneGaugeBar]) : des tronçons ([_segments]) ou une barre continue
-  /// ([_fullBar]), d'une seule couleur — fixe ([gaugeColor], repli
-  /// [_defaultColor]) ou celle de la zone du moment
-  /// (`zoneColorOf(reading.zoneKey)`, même repli si la mesure n'a pas de
-  /// zone, cardio/puissance sans seuil réglé côté site compris).
+  /// ([_fullBar]) — fixe ([gaugeColor], repli [_defaultColor]) partout,
+  /// automatique différemment selon [hasZone] : la couleur de la zone du
+  /// moment (`zoneColorOf(reading.zoneKey)`, même repli fixe si la mesure
+  /// n'en a pas de courante) pour une jauge de zones, un dégradé bleu →
+  /// violet sur [fraction] sinon — une mesure sans zone (vitesse…) n'a pas de
+  /// teinte propre à s'y raccrocher. En tronçons, le dégradé porte sur
+  /// chaque palier selon sa position plutôt que sur une seule couleur
+  /// commune : un ladder, comme la jauge de zones en est déjà un.
   Widget _resolvedFillBar(
     MetricReading reading,
     double? fraction, {
     required GaugeFill fill,
     required GaugeColorMode colorMode,
     required int naturalSegments,
+    bool hasZone = false,
   }) {
     final fallback = gaugeColor ?? _defaultColor;
-    final color = colorMode == GaugeColorMode.fixed ? fallback : zoneColorOf(reading.zoneKey) ?? fallback;
+    final auto = colorMode == GaugeColorMode.auto;
+    final gradient = auto && !hasZone;
+    final color = !auto
+        ? fallback
+        : hasZone
+            ? zoneColorOf(reading.zoneKey) ?? fallback
+            : _gaugeGradientColor(fraction ?? 0);
 
     if (fill == GaugeFill.full) return _fullBar(fraction ?? 0, color);
 
@@ -595,44 +620,61 @@ class MetricView extends StatelessWidget {
     return _segments(
       count: count,
       isLit: (i) => i < lit,
-      litColorAt: (_) => color,
+      litColorAt: (i) => gradient ? _gaugeGradientColor((i + 1) / count) : color,
     );
   }
 
+  /// Les deux bornes du dégradé — mêmes couleurs que
+  /// `GAUGE_AUTO_GRADIENT_FROM`/`GAUGE_AUTO_GRADIENT_TO` (`companionSettings.ts`).
+  static const _gaugeGradientFrom = Color(0xFF2196F3);
+  static const _gaugeGradientTo = Color(0xFF673AB7);
+
+  /// Interpolation linéaire entre les deux bornes du dégradé — [fraction]
+  /// bornée à 0–1 : au-delà, on sortirait du dégradé plutôt que de rester à
+  /// sa couleur terminale.
+  Color _gaugeGradientColor(double fraction) =>
+      Color.lerp(_gaugeGradientFrom, _gaugeGradientTo, fraction.clamp(0, 1))!;
+
   /// Les paliers communs aux trois natures de jauge — seuls leur nombre, leur
-  /// éclairage et leur couleur changent d'un appelant à l'autre.
+  /// éclairage et leur couleur changent d'un appelant à l'autre. La hauteur
+  /// naturelle (8) est multipliée par [GaugeThickness.factor] — voir
+  /// [MetricBlock.gaugeThickness].
   Widget _segments({
     required int count,
     required bool Function(int i) isLit,
     required Color Function(int i) litColorAt,
-  }) =>
-      Row(
-        children: [
-          for (var i = 0; i < count; i++) ...[
-            if (i > 0) const SizedBox(width: 2),
-            Expanded(
-              child: Container(
-                height: 8,
-                decoration: BoxDecoration(
-                  color: isLit(i) ? litColorAt(i) : Colors.white12,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+  }) {
+    final height = 8 * gaugeThickness.factor;
+    return Row(
+      children: [
+        for (var i = 0; i < count; i++) ...[
+          if (i > 0) const SizedBox(width: 2),
+          Expanded(
+            child: Container(
+              height: height,
+              decoration: BoxDecoration(
+                color: isLit(i) ? litColorAt(i) : Colors.white12,
+                borderRadius: BorderRadius.circular(height / 4),
               ),
             ),
-          ],
+          ),
         ],
-      );
+      ],
+    );
+  }
 
   /// Le remplissage continu d'une jauge en mode [GaugeFill.full] : une piste
   /// jusqu'à la position réelle, pas des paliers — la plage (échelle de
   /// zones, min/max de la sortie, ou progression vers l'itinéraire) est une
   /// vraie progression, pas des seuils entre lesquels un dégradé mentirait
   /// comme pour les zones, d'où une seule couleur ([color]). Plus épaisse
-  /// que [_segments] aussi ([BlockMetrics.natural.barHeight], la même que la
-  /// barre de zones) — c'est elle qui porte l'information ici, pas des
-  /// paliers à côté d'un chiffre déjà lisible seul.
+  /// que [_segments] à épaisseur égale aussi ([BlockMetrics.natural.barHeight],
+  /// la même hauteur naturelle que la barre de zones) — c'est elle qui porte
+  /// l'information ici, pas des paliers à côté d'un chiffre déjà lisible
+  /// seul. Hauteur naturelle multipliée par [GaugeThickness.factor], comme
+  /// [_segments].
   Widget _fullBar(double fraction, Color color) {
-    final barHeight = BlockMetrics.natural.barHeight;
+    final barHeight = BlockMetrics.natural.barHeight * gaugeThickness.factor;
 
     return SizedBox(
       height: barHeight,

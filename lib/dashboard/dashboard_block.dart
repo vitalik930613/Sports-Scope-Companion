@@ -215,6 +215,7 @@ class MetricBlock extends DashboardBlock {
     this.gaugeSegments,
     this.gaugeColorMode,
     this.gaugeColor,
+    this.gaugeThickness = GaugeThickness.normal,
     super.color,
     super.textColor,
   });
@@ -277,6 +278,11 @@ class MetricBlock extends DashboardBlock {
   /// `null` : la couleur d'avant ce réglage (`#26A69A`).
   final Color? gaugeColor;
 
+  /// L'épaisseur de la jauge (tronçons ou barre continue) — voir
+  /// [GaugeThickness]. Tronçons et barre continue s'y ajustent toutes les
+  /// deux du même facteur, pour rester la même jauge à une épaisseur près.
+  final GaugeThickness gaugeThickness;
+
   /// `null` si la mesure nommée n'existe pas dans cette version : mieux vaut
   /// une cellule vide qu'une case qui affiche un tiret pour toujours.
   static MetricBlock? parse(Map<dynamic, dynamic> raw) {
@@ -323,6 +329,7 @@ class MetricBlock extends DashboardBlock {
         _ => null,
       },
       gaugeColor: DashboardBlock._colorOf(raw, 'gauge_color'),
+      gaugeThickness: GaugeThickness.fromKey(raw['gauge_thickness'] as String?),
       color: DashboardBlock._colorOf(raw, 'color'),
       textColor: DashboardBlock._colorOf(raw, 'text_color'),
     );
@@ -342,6 +349,7 @@ class MetricBlock extends DashboardBlock {
       other.gaugeSegments == gaugeSegments &&
       other.gaugeColorMode == gaugeColorMode &&
       other.gaugeColor == gaugeColor &&
+      other.gaugeThickness == gaugeThickness &&
       other.color == color &&
       other.textColor == textColor;
 
@@ -358,6 +366,7 @@ class MetricBlock extends DashboardBlock {
       gaugeSegments,
       gaugeColorMode,
       gaugeColor,
+      gaugeThickness,
       color,
       textColor);
 }
@@ -390,6 +399,32 @@ enum GaugeColorMode with BlockMode {
 
   @override
   final String key;
+}
+
+/// L'épaisseur d'une jauge — voir [MetricBlock.gaugeThickness]. Même contrat
+/// que `CompanionSettings::GAUGE_THICKNESSES` côté site et
+/// `GAUGE_THICKNESS_SCALE` (`companionSettings.ts`). Pas de [BlockMode] : à
+/// la différence de [GaugeFill]/[GaugeColorMode], [normal] n'a pas de clé
+/// JSON — c'est la valeur par défaut d'une jauge qui n'a pas touché ce
+/// réglage, jamais écrite pour rester silencieuse (même contrat que
+/// [RowHeight]).
+enum GaugeThickness {
+  small('small', 0.65),
+  normal(null, 1),
+  large('large', 1.5);
+
+  const GaugeThickness(this.key, this.factor);
+
+  final String? key;
+
+  /// Multiplie la hauteur naturelle de la jauge — tronçons et barre continue
+  /// ([BlockMetrics.natural.barHeight]) s'y ajustent toutes les deux du même
+  /// facteur, pour rester la même jauge à une épaisseur près plutôt que deux
+  /// dessins différents (voir [MetricView._segments]/[MetricView._fullBar]).
+  final double factor;
+
+  /// [normal] pour toute clé absente ou inconnue — même repli que [RowHeight].
+  static GaugeThickness fromKey(String? raw) => values.firstWhere((t) => t.key == raw, orElse: () => normal);
 }
 
 double? _toDouble(Object? raw) => raw is num ? raw.toDouble() : null;
@@ -441,7 +476,12 @@ class GridPosition {
 /// propre repère (« MOY », « MAX »…). Voir [MetricLayout.secondary].
 @immutable
 class SecondaryMetricSlot {
-  const SecondaryMetricSlot({required this.metric, required this.position, this.label});
+  const SecondaryMetricSlot({
+    required this.metric,
+    required this.position,
+    this.label,
+    this.size = SecondaryMetricSize.small,
+  });
 
   final MetricId metric;
   final GridPosition position;
@@ -452,6 +492,9 @@ class SecondaryMetricSlot {
   /// jamais sur le nom complet de la mesure ([MetricId.name]), trop long pour
   /// un coin de carte.
   final String? label;
+
+  /// Sa propre taille, indépendante de [RowHeight] — voir [SecondaryMetricSize].
+  final SecondaryMetricSize size;
 
   /// `null` si `raw` ne décrit pas un slot exploitable — mesure inconnue de
   /// cette version, ou position absente/invalide. Même tolérance que le reste
@@ -470,6 +513,7 @@ class SecondaryMetricSlot {
       metric: metric,
       position: position,
       label: label is String && label.trim().isNotEmpty ? label.trim() : null,
+      size: SecondaryMetricSize.fromKey(raw['size'] as String?),
     );
   }
 
@@ -478,10 +522,36 @@ class SecondaryMetricSlot {
       other is SecondaryMetricSlot &&
       other.metric == metric &&
       other.position == position &&
-      other.label == label;
+      other.label == label &&
+      other.size == size;
 
   @override
-  int get hashCode => Object.hash(metric, position, label);
+  int get hashCode => Object.hash(metric, position, label, size);
+}
+
+/// La taille d'une annotation de coin — indépendante de [RowHeight] : c'est
+/// elle qui permet un grand chiffre au centre flanqué d'annotations moyennes
+/// plutôt que minuscules, sans grossir aussi le chiffre principal de la
+/// rangée. Même contrat que `CompanionSettings::SECONDARY_SIZES` côté site et
+/// `SECONDARY_SIZE_SCALE` (`companionSettings.ts`).
+enum SecondaryMetricSize {
+  small(null, 1),
+  normal('normal', 1.6),
+  large('large', 2.3);
+
+  const SecondaryMetricSize(this.key, this.factor);
+
+  final String? key;
+
+  /// Multiplie la taille naturelle de l'annotation (elle-même déjà mise à
+  /// l'échelle par [RowHeight.scale] de sa rangée) — les deux facteurs se
+  /// composent, comme `flex-grow`/`font-size` de rangée et `font-size`
+  /// d'annotation se composent déjà en cascade côté CSS.
+  final double factor;
+
+  /// [small] pour toute clé absente ou inconnue — c'est le dessin d'avant ce
+  /// réglage (minuscule à dessein), jamais écrite pour rester silencieuse.
+  static SecondaryMetricSize fromKey(String? raw) => values.firstWhere((s) => s.key == raw, orElse: () => small);
 }
 
 /// La disposition d'un bloc `metric` : une grille à 3 colonnes et jusqu'à
