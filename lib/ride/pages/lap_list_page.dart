@@ -15,6 +15,7 @@ import '../blocks/zones_block.dart';
 import '../climb_profile.dart' show climbLapSeries;
 import '../route_climbs.dart';
 import '../widgets/dashboard_grid.dart';
+import '../widgets/list_body.dart';
 
 /// Le corps d'une page de tours : ses composants, dont le sélecteur de tour
 /// s'il en porte un.
@@ -164,68 +165,31 @@ class _LapListBodyState extends State<LapListBody> {
           ),
       };
 
-  /// Une colonne (le cas courant), ou plusieurs côte à côte — même disposition
-  /// et même raison que `DashboardPage._listBody` sur une page de mesures :
-  /// toute la page défile d'un bloc, colonnes comprises.
+  /// Une colonne (le cas courant), ou plusieurs côte à côte — même
+  /// disposition, partagée avec une page de mesures, que `DashboardListBody`.
   Widget _listBody(
     LapBlocksLayout list, {
     required List<RideLap> laps,
     required int selected,
-  }) {
-    // Sans la barre de défilement Material (interactive depuis les versions
-    // récentes de Flutter, y compris tactile) : taper sur son rail déclenche
-    // un défilement *animé* (`.animateTo()`, une `DrivenScrollActivity`) —
-    // exactement le genre d'activité qui plante si la liste change de forme
-    // (le graphique du col qui apparaît) pendant qu'elle est encore en vol.
-    // Une piste, pas une certitude : ni les glissés au doigt ni le
-    // défilement lui-même n'en ont besoin ici, page rangée derrière un menu
-    // dédié plutôt qu'à faire défiler d'un geste précis.
-    if (list.cols <= 1) {
-      return ScrollConfiguration(
+  }) =>
+      // Sans la barre de défilement Material (interactive depuis les
+      // versions récentes de Flutter, y compris tactile) : taper sur son
+      // rail déclenche un défilement *animé* (`.animateTo()`, une
+      // `DrivenScrollActivity`) — exactement le genre d'activité qui plante
+      // si la liste change de forme (le graphique du col qui apparaît)
+      // pendant qu'elle est encore en vol. Une piste, pas une certitude : ni
+      // les glissés au doigt ni le défilement lui-même n'en ont besoin ici,
+      // page rangée derrière un menu dédié plutôt qu'à faire défiler d'un
+      // geste précis.
+      ScrollConfiguration(
         behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-        child: ListView(
+        child: DashboardListBody(
+          blocks: list.blocks,
+          cols: list.cols,
           controller: _scrollController,
-          padding: const EdgeInsets.only(bottom: 24),
-          children: [
-            for (final placement in list.blocks)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _block(placement.block, laps: laps, selected: selected),
-              ),
-          ],
+          blockBuilder: (block) => _block(block, laps: laps, selected: selected),
         ),
       );
-    }
-
-    return ScrollConfiguration(
-      behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-      child: SingleChildScrollView(
-        controller: _scrollController,
-        padding: const EdgeInsets.only(bottom: 24),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (var col = 0; col < list.cols; col++) ...[
-              if (col > 0) const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  children: [
-                    for (final placement in list.blocks)
-                      if (placement.col == col)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: _block(placement.block,
-                              laps: laps, selected: selected),
-                        ),
-                  ],
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
 
   /// Le contrôle fermé : le fond anthracite des cartes, et un tap ouvre le
   /// choix en plein écran plutôt qu'un menu qui se referme au moindre cahot

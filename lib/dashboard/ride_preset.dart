@@ -598,11 +598,13 @@ class GridCell {
 /// l'arrêt d'un col ou au feu rouge.
 ///
 /// Une seule colonne par défaut — la disposition d'avant ce réglage. Le site
-/// peut en demander plusieurs ([cols]) et viser la sienne pour chaque bloc
-/// ([ListBlockPlacement.col]) : jamais de ligne ni d'étendue comme [GridCell],
-/// parce qu'une liste n'a pas de hauteur à tenir — chaque colonne empile ses
-/// blocs dans l'ordre du document et peut déborder, c'est justement ce qui la
-/// distingue d'une grille.
+/// peut en demander plusieurs ([cols]) ; chaque bloc reste alors par défaut
+/// dans la colonne de celui qui le précède, et ne marque une rupture que
+/// s'il en a une ([ListBlockPlacement.newColumn]/
+/// [ListBlockPlacement.fullWidth], voir [listSegmentsOf]) : jamais de ligne
+/// ni d'étendue comme [GridCell], parce qu'une liste n'a pas de hauteur à
+/// tenir — chaque colonne empile ses blocs dans l'ordre du document et peut
+/// déborder, c'est justement ce qui la distingue d'une grille.
 class ListPageSpec extends RidePageSpec {
   const ListPageSpec({
     required super.title,
@@ -640,8 +642,7 @@ class ListPageSpec extends RidePageSpec {
         : 1;
     final blocks = [
       for (final entry in (raw['blocks'] is List ? raw['blocks'] as List : []))
-        if (ListBlockPlacement.parse(entry, cols: cols) case final placement?)
-          placement,
+        if (ListBlockPlacement.parse(entry) case final placement?) placement,
     ];
     if (blocks.isEmpty) return null;
     return ListPageSpec(
@@ -657,30 +658,47 @@ class ListPageSpec extends RidePageSpec {
   }
 }
 
-/// Un bloc de [ListPageSpec], et la colonne qui l'affiche.
+/// Un bloc de [ListPageSpec], et la rupture qu'il marque éventuellement dans
+/// le flux des colonnes — voir [listSegmentsOf].
 @immutable
 class ListBlockPlacement {
-  const ListBlockPlacement({this.col = 0, required this.block});
+  const ListBlockPlacement({
+    this.newColumn = false,
+    this.fullWidth = false,
+    required this.block,
+  });
 
-  final int col;
+  /// Passe à la colonne suivante avant de poser ce bloc (retour à la
+  /// première après la dernière). Sans effet si [fullWidth] est vrai — un
+  /// bloc qui rompt déjà le flux à lui seul n'a plus de colonne à changer.
+  final bool newColumn;
+
+  /// Occupe toute la largeur, hors des colonnes : clôt le groupe de
+  /// colonnes en cours et fait repartir la suite en première colonne.
+  final bool fullWidth;
+
   final DashboardBlock block;
 
-  /// `col` est **fusionné dans le bloc lui-même**, jamais une enveloppe à
-  /// part comme [GridCell] : une entrée reste le bloc, avec une clé de plus,
-  /// donc un document d'avant ce réglage (aucune entrée n'a `col`) se lit
-  /// sans distinguer un ancien format d'un nouveau — l'absence vaut `0` des
-  /// deux côtés. Même contrat que `CompanionSettings.place_list_blocks`
-  /// (Rails).
+  /// `newColumn`/`fullWidth` sont **fusionnés dans le bloc lui-même**,
+  /// jamais une enveloppe à part comme [GridCell] : une entrée reste le
+  /// bloc, avec une clé de plus. Même contrat que
+  /// `CompanionSettings.place_list_blocks` (Rails), y compris leur exclusion
+  /// mutuelle — `fullWidth` l'emporte quand les deux sont posés.
   ///
-  /// `col` est ramené dans `0..cols-1` plutôt que rejeté : contrairement à
-  /// l'origine d'une cellule de grille, il y a toujours une colonne la plus
-  /// proche, et perdre un composant entier pour une colonne hors service
-  /// serait pire qu'un mauvais rangement.
-  static ListBlockPlacement? parse(Object? raw, {required int cols}) {
+  /// Un document d'avant ce réglage porte encore l'ancien `col` par bloc :
+  /// ignoré comme n'importe quelle clé inconnue, il retombe sur les deux
+  /// ruptures absentes — tous ses blocs se retrouvent dans une seule colonne
+  /// qui défile, dégradé plutôt qu'un bloc perdu.
+  static ListBlockPlacement? parse(Object? raw) {
     final block = DashboardBlock.parse(raw);
     if (block == null) return null;
-    final col = raw is Map && raw['col'] is num ? (raw['col'] as num).toInt() : 0;
-    return ListBlockPlacement(col: col.clamp(0, cols - 1), block: block);
+    final fullWidth = raw is Map && raw['full_width'] == true;
+    final newColumn = !fullWidth && raw is Map && raw['new_column'] == true;
+    return ListBlockPlacement(
+      newColumn: newColumn,
+      fullWidth: fullWidth,
+      block: block,
+    );
   }
 }
 
@@ -757,9 +775,9 @@ sealed class LapPageLayout {
 
 /// La liste défilante, telle qu'elle existait avant que le choix se pose.
 ///
-/// Mêmes colonnes qu'une [ListPageSpec] ordinaire ([cols],
-/// [ListBlockPlacement.col]) : rien ne distingue les deux dispositions une
-/// fois le tour choisi, c'est la même page qui défile.
+/// Mêmes colonnes qu'une [ListPageSpec] ordinaire ([cols], ruptures de
+/// [ListBlockPlacement]) : rien ne distingue les deux dispositions une fois
+/// le tour choisi, c'est la même page qui défile.
 class LapBlocksLayout extends LapPageLayout {
   const LapBlocksLayout(this.blocks, {this.cols = 1});
 
@@ -772,8 +790,7 @@ class LapBlocksLayout extends LapPageLayout {
         : 1;
     final blocks = [
       for (final entry in (raw['blocks'] is List ? raw['blocks'] as List : []))
-        if (ListBlockPlacement.parse(entry, cols: cols) case final placement?)
-          placement,
+        if (ListBlockPlacement.parse(entry) case final placement?) placement,
     ];
     return blocks.isEmpty ? null : LapBlocksLayout(blocks, cols: cols);
   }
