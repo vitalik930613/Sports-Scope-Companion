@@ -1359,7 +1359,18 @@ class _RideShellPageState extends State<RideShellPage>
 
   /// Avance ou recule d'une page, sans se soucier de laquelle : c'est ce que
   /// demandent les bandes du bord, qui parlent en gestes et pas en destinations.
-  void _stepPage(int direction) => _animateTo(_rawPage + direction);
+  ///
+  /// Une page du menu ouverte absorbe le premier geste pour se refermer,
+  /// plutôt que de laisser le défilement changer sous elle : les bandes de
+  /// bord n'existent que sur la carte (donc menu forcément fermé), seul le
+  /// bouton Di2 peut appeler ceci pendant qu'une page du menu est affichée.
+  void _stepPage(int direction) {
+    if (_menuPage != null) {
+      _setMenuPage(null);
+      return;
+    }
+    _animateTo(_rawPage + direction);
+  }
 
   /// [auto] : le déplacement vient de la politique, pas du cycliste. C'est ce
   /// qui empêche le retour automatique de se prendre lui-même pour une reprise
