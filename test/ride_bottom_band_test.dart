@@ -80,6 +80,7 @@ void main() {
               child: RideBottomBand(
                 bands: bands,
                 sources: sources,
+                recorder: recorder,
               ),
             ),
           ),
@@ -99,6 +100,7 @@ void main() {
               child: RideBottomBand(
                 bands: bands,
                 sources: sources,
+                recorder: recorder,
                 onCalibratePower: onCalibratePower,
               ),
             ),

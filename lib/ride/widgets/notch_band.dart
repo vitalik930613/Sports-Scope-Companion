@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../../dashboard/dashboard_block.dart' show BellMode, RadarMode, SleepMode;
 import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
+import '../../recording/ride_recorder.dart';
 import '../blocks/bell_block.dart';
 import '../blocks/radar_block.dart';
 import '../blocks/sleep_block.dart';
@@ -35,6 +36,7 @@ class NotchBand extends StatefulWidget {
     super.key,
     required this.notch,
     required this.sources,
+    required this.recorder,
     this.radar,
     this.onSleep,
   });
@@ -44,6 +46,9 @@ class NotchBand extends StatefulWidget {
   final List<NotchSpec> notch;
 
   final MetricSources sources;
+
+  /// Pour la case `mark_lap` — même rôle que `RideBottomBand.recorder`.
+  final RideRecorder recorder;
 
   /// Nul quand le profil a coupé le radar — même source que le bandeau du
   /// bas (`RideBottomBand.radar`) et le cadre d'alerte.
@@ -147,8 +152,49 @@ class _NotchBandState extends State<NotchBand> {
       BandActionSlot(:final action) => _action(action),
       BandBellSlot(:final sound) => BellControl(mode: BellMode.compact, sound: sound),
       BandRadarSlot(:final mode) => _radar(mode),
+      BandMarkLapSlot(:final series, :final label) => _markLap(series, label),
     };
   }
+
+  // Même geste que [MarkLapControl] (`mark_lap_block.dart`) et même garde que
+  // `RideBottomBand._markLap` : un tour ne veut rien dire hors
+  // enregistrement.
+  Widget _markLap(String series, String? label) => ListenableBuilder(
+        listenable: widget.recorder,
+        builder: (context, _) {
+          final onTap = widget.recorder.isActive ? () => widget.recorder.markLap(series) : null;
+          final color = onTap == null ? Colors.white24 : Colors.white70;
+          return FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Material(
+              color: const Color(0xFF1F2226),
+              borderRadius: BorderRadius.circular(6),
+              child: InkWell(
+                onTap: onTap,
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.flag_outlined, color: color, size: 18),
+                      const SizedBox(width: 4),
+                      Text(
+                        // Sans label posé par le site, le nom de la série
+                        // reste le repère le plus utile — sauf `'default'`,
+                        // qui ne veut rien dire pour le cycliste.
+                        label ?? (series == 'default' ? 'Tour' : series),
+                        maxLines: 1,
+                        style: TextStyle(color: color, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      );
 
   // Pas de `FittedBox` ici, à l'inverse de [_metric] : [RadarBlockView] se
   // met déjà à l'échelle de sa case via [BlockSurface] (`block_card.dart`),

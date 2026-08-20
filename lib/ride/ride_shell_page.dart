@@ -1843,6 +1843,7 @@ class _RideShellPageState extends State<RideShellPage>
               child: RideBottomBand(
                 bands: _preset.bands,
                 sources: _sources,
+                recorder: widget.recorder,
                 radar: _preset.sensors.radar ? _radar : null,
                 // Toujours branché, sans filtrer sur la découverte GATT : la
                 // coquille ne se redessine pas quand le capteur finit sa
@@ -1901,6 +1902,7 @@ class _RideShellPageState extends State<RideShellPage>
               child: NotchBand(
                 notch: _preset.notch,
                 sources: _sources,
+                recorder: widget.recorder,
                 radar: _preset.sensors.radar ? _radar : null,
                 onSleep: _preset.hasMap ? _sleep : null,
               ),

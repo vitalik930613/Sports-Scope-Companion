@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../dashboard/dashboard_block.dart' show BellMode, BellSound, RadarMode, SleepMode;
 import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
+import '../../recording/ride_recorder.dart';
 import '../blocks/bell_block.dart';
 import '../blocks/radar_block.dart';
 import '../blocks/sleep_block.dart';
@@ -43,6 +44,7 @@ class RideBottomBand extends StatefulWidget {
     super.key,
     required this.bands,
     required this.sources,
+    required this.recorder,
     this.radar,
     this.onCalibratePower,
     this.onSleep,
@@ -53,6 +55,11 @@ class RideBottomBand extends StatefulWidget {
 
   /// D'où les mesures se lisent — et de quoi elles dépendent.
   final MetricSources sources;
+
+  /// Pour la case `mark_lap` : `isActive` dit si un tour a un sens à marquer,
+  /// et `markLap` l'ouvre — voir [MarkLapControl], le même geste posé sur une
+  /// page plutôt qu'ici.
+  final RideRecorder recorder;
 
   /// Nul quand le profil a coupé le radar — même source que la page de
   /// données (`DashboardPage.radar`) et le cadre d'alerte, pas une seconde
@@ -151,8 +158,52 @@ class _RideBottomBandState extends State<RideBottomBand> {
       BandActionSlot(:final action) => _action(action),
       BandBellSlot(:final sound) => _bell(sound),
       BandRadarSlot(:final mode) => _radar(mode),
+      BandMarkLapSlot(:final series, :final label) => _markLap(series, label),
     };
   }
+
+  // Même geste que [MarkLapControl] (`mark_lap_block.dart`) : un tour ne veut
+  // rien dire hors enregistrement. `ListenableBuilder` et non un simple
+  // `onTap` figé au premier rendu : `recorder.isActive` change en cours de
+  // sortie (démarrage/pause), sans reconstruire toute la coquille.
+  Widget _markLap(String series, String? label) => Padding(
+        padding: const EdgeInsets.fromLTRB(2, 3, 2, 3),
+        child: ListenableBuilder(
+          listenable: widget.recorder,
+          builder: (context, _) {
+            final onTap = widget.recorder.isActive ? () => widget.recorder.markLap(series) : null;
+            final color = onTap == null ? Colors.white24 : Colors.white70;
+            return Material(
+              color: const Color(0xFF1F2226),
+              borderRadius: BorderRadius.circular(6),
+              child: InkWell(
+                onTap: onTap,
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.flag_outlined, color: color, size: 20),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          // Sans label posé par le site, le nom de la série
+                          // reste le repère le plus utile — sauf `'default'`,
+                          // qui ne veut rien dire pour le cycliste.
+                          label ?? (series == 'default' ? 'Tour' : series),
+                          maxLines: 1,
+                          style: TextStyle(color: color, fontSize: 11),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      );
 
   // Même marge que `BandMetricTile` : sans elle, l'icône touchait ses
   // voisines alors que chaque case de mesure en garde une.

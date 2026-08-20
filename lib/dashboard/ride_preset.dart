@@ -841,6 +841,15 @@ sealed class BandSlot {
   /// l'appli — même repli que [MetricId.fromKey], pour la même raison : un
   /// document plus récent que l'appli ne doit rien faire échouer.
   static BandSlot? parse(Object? raw) {
+    if (raw is Map && raw['kind'] == 'mark_lap') {
+      final series = raw['series'];
+      if (series is! String || series.trim().isEmpty) return null;
+      final label = raw['label'];
+      return BandMarkLapSlot(
+        series: series.trim(),
+        label: label is String && label.trim().isNotEmpty ? label.trim() : null,
+      );
+    }
     if (raw == 'sleep') return const BandActionSlot(BandAction.sleep);
     if (raw is String && raw.startsWith('bell_')) {
       return BandBellSlot(_bellSoundOf(raw.substring('bell_'.length)));
@@ -967,6 +976,20 @@ class BandRadarSlot extends BandSlot {
 class BandBellSlot extends BandSlot {
   const BandBellSlot(this.sound);
   final BellSound sound;
+}
+
+/// Marquer un tour, en case de bandeau ou d'encoche — voir [MarkLapControl]
+/// pour le bouton équivalent posé sur une page. Seule case de bandeau/encoche
+/// dont le jeton JSON est un objet plutôt qu'une chaîne (`{"kind":
+/// "mark_lap", "series": ..., "label": ...}`) : contrairement au son d'une
+/// sonnette ou au mode d'un radar, [series] et [label] sont du texte libre,
+/// qu'un préfixe de chaîne ne peut pas porter sans risque d'ambiguïté — voir
+/// `CompanionSettings.sanitize_band_lap_slot` côté site.
+@immutable
+class BandMarkLapSlot extends BandSlot {
+  const BandMarkLapSlot({required this.series, this.label});
+  final String series;
+  final String? label;
 }
 
 /// Un jeu de valeurs du bandeau.
