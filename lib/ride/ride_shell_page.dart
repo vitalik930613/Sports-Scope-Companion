@@ -20,6 +20,10 @@ import '../navigation/screen_dimmer.dart';
 import '../phone/phone_sensors.dart';
 import '../phone/rider_compass.dart';
 import '../recording/ride_recorder.dart';
+import '../training_program/training_program.dart';
+import '../training_program/training_program_catalog_store.dart';
+import '../training_program/workout_lap_series.dart';
+import '../training_program/workout_picker_sheet.dart';
 import '../ui/offline_download_dialog.dart';
 import '../ui/power_calibration_dialog.dart';
 import 'auto_return_policy.dart';
@@ -47,6 +51,8 @@ import 'route_climbs.dart';
 import 'route_profile.dart';
 import 'screen_policy.dart';
 import 'turn_proximity.dart';
+import 'workout_cue_player.dart';
+import 'workout_policy.dart';
 import 'widgets/battery_alert_banner.dart';
 import 'widgets/climb_badge.dart';
 import 'widgets/compass_badge.dart';
@@ -100,6 +106,7 @@ class RideShellPage extends StatefulWidget {
     required this.riderProfile,
     required this.trainingBudget,
     required this.routes,
+    required this.trainingPrograms,
     this.onGridMeasured,
     this.baseUrl = sportsScopeBaseUrl,
   });
@@ -122,6 +129,10 @@ class RideShellPage extends StatefulWidget {
   /// même magasin que l'écran des capteurs : son cache est ce qui rend le choix
   /// possible là où le réseau manque, c'est-à-dire sur la route.
   final RouteCatalogStore routes;
+
+  /// Les programmes d'entraînement du compte, pour en choisir (ou en changer)
+  /// sans quitter la sortie — même rôle que [routes], voir `_chooseWorkout`.
+  final TrainingProgramCatalogStore trainingPrograms;
 
   /// L'enregistrement en cours, pour le bandeau et les pages de données. La
   /// coquille ne le pilote pas — il vit au-dessus des écrans et survit à la
@@ -573,6 +584,25 @@ class _RideShellPageState extends State<RideShellPage>
   /// que [_batteryAlert].
   final _reminderAlert = ValueNotifier<List<ReminderSpec>>(const []);
 
+  /// Ce qui décide quel jalon d'un programme d'entraînement vient d'être
+  /// franchi — `null` tant qu'aucun n'est actif. Reconstruite (pas juste
+  /// lue) à chaque changement de `widget.recorder.activeWorkout`, voir
+  /// `_updateWorkout`.
+  WorkoutPolicy? _workoutPolicy;
+
+  /// Le programme sur lequel [_workoutPolicy] a été construite — sert à
+  /// détecter qu'il a changé (nouvelle activation, ou détaché) sans
+  /// s'abonner à `widget.recorder` en plus du tic déjà en place partout
+  /// ailleurs dans cette coquille.
+  TrainingProgram? _workoutProgram;
+
+  /// Les sons des jalons — même patron que [_climbSound], contexte audio
+  /// « duck » plutôt que le flux alarme de [_reminderBell] : un programme
+  /// peut sonner toutes les 30 secondes, bien plus intrusif à couper la
+  /// musique à chaque fois qu'un col ou un rappel, tous deux rares par
+  /// comparaison.
+  final _workoutCue = WorkoutCuePlayer();
+
   late final MetricSources _sources;
 
   /// Construit une fois : un changement de page ne doit pas reconstruire l'arbre
@@ -619,6 +649,10 @@ class _RideShellPageState extends State<RideShellPage>
     if (_preset.radar.sounds && _preset.sensors.radar) {
       unawaited(_radarSound.warmUp());
     }
+    // Chargé d'office, contrairement au radar/à la batterie : un programme
+    // peut être choisi à tout moment de la sortie (menu ⋮), pas seulement au
+    // départ — pas de réglage de profil à consulter avant de précharger.
+    unawaited(_workoutCue.warmUp());
     // Un col n'existe que sur une carte (voir `NavState.climb`) : sans elle,
     // le front ne se produira jamais et il n'y a rien à charger d'avance.
     if (_preset.climb.sounds && _preset.hasMap) {
@@ -698,6 +732,7 @@ class _RideShellPageState extends State<RideShellPage>
       _updateRadarWake();
       _updateBatteryWake();
       _updateReminders();
+      _updateWorkout();
       _updateDebugClimb();
       _checkNativeTurnAlert();
       // Avant _updateConditionalPages, qui en dépend via _nearCol.
@@ -821,6 +856,41 @@ class _RideShellPageState extends State<RideShellPage>
 
     _applyScreen(_screenPolicy.reminderAwake(_reminderWake.awake));
     _reminderAlert.value = const [];
+  }
+
+  /// À chaque tic : le programme actif a-t-il changé (nouvelle activation
+  /// depuis le menu, ou remontage de la coquille avec un programme déjà en
+  /// cours) ? La policy est alors reconstruite, seedée sur ce qui est déjà
+  /// écoulé — même garde que [_reminderPolicy], pour ne jamais rejouer les
+  /// jalons déjà franchis. Puis : un jalon vient-il d'être franchi ?
+  ///
+  /// Gardé sur `isActive` comme [RideRecorder.markLap] : `workoutElapsed`
+  /// n'avance que pendant l'enregistrement, donc un programme attaché avant
+  /// le départ ne perd rien — son premier jalon se déclenche dès que
+  /// l'enregistrement démarre réellement, sans distinguer les deux cas.
+  void _updateWorkout() {
+    if (!mounted) return;
+
+    final program = widget.recorder.activeWorkout;
+    if (program != _workoutProgram) {
+      _workoutProgram = program;
+      _workoutPolicy = program == null
+          ? null
+          : WorkoutPolicy(
+              milestones: program.milestones,
+              elapsed: widget.recorder.workoutElapsed ?? Duration.zero,
+            );
+    }
+
+    final policy = _workoutPolicy;
+    final elapsed = widget.recorder.workoutElapsed;
+    if (policy == null || elapsed == null || !widget.recorder.isActive) return;
+
+    final milestone = policy.read(elapsed);
+    if (milestone == null) return;
+
+    widget.recorder.markLap(workoutLapSeries, label: milestone.segmentName);
+    if (milestone.sound != null) _workoutCue.play(milestone.sound!);
   }
 
   /// Faut-il ramener le cycliste sur la carte, ou lui rendre sa page ?
@@ -1167,6 +1237,32 @@ class _RideShellPageState extends State<RideShellPage>
     if (confirmed != true || !mounted) return;
     _openTarget(const NavigationTarget.free());
   }
+
+  /// Démarrer (ou remplacer) un programme d'entraînement sans quitter la
+  /// sortie — le cas soulevé en conception : décider en pleine route, se
+  /// sentant en forme, de lancer un entraînement sans redémarrer la
+  /// navigation. Même feuille que le FAB « Entraînement » de l'accueil
+  /// (`WorkoutPickerSheet`) et le même magasin en cache — pas de
+  /// re-téléchargement pour la même liste.
+  ///
+  /// `recorder.startWorkout` compte les jalons depuis CET instant, pas
+  /// depuis le départ de la sortie (voir `RideRecorder.workoutElapsed`) :
+  /// aucune distinction de code entre « choisi avant de partir » et « choisi
+  /// en route ».
+  Future<void> _chooseWorkout() async {
+    final program = await showModalBottomSheet<TrainingProgram>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => WorkoutPickerSheet(catalog: widget.trainingPrograms),
+    );
+
+    if (program == null || !mounted) return;
+    widget.recorder.startWorkout(program);
+  }
+
+  /// Détacher le programme actif, sans arrêter la sortie ni l'enregistrement
+  /// — les tours déjà ouverts restent lisibles sur une page Tours.
+  void _stopWorkout() => widget.recorder.stopWorkout();
 
   /// Calibrer le capteur de puissance sans quitter la sortie.
   ///
@@ -1656,6 +1752,7 @@ class _RideShellPageState extends State<RideShellPage>
     _mutedRadar.dispose();
     _radarSound.dispose();
     _climbSound.dispose();
+    unawaited(_workoutCue.dispose());
     _battery.removeListener(_onBatteryStatus);
     _battery.dispose();
     _batterySound.dispose();
@@ -1809,6 +1906,12 @@ class _RideShellPageState extends State<RideShellPage>
                   onDownloadOffline: _preset.hasMap ? _downloadOffline : null,
                   onCalibratePower:
                       powerCalibrationAvailable(widget.hub) ? _calibratePower : null,
+                  // Sans rapport avec la carte, contrairement aux commandes
+                  // ci-dessus : un programme d'entraînement se démarre aussi
+                  // bien sur home-trainer.
+                  onStartWorkout: _chooseWorkout,
+                  onStopWorkout:
+                      widget.recorder.activeWorkout != null ? _stopWorkout : null,
                   onClose: () => _setMenuPage(null),
                   // Toute page ouverte depuis le menu peut rejoindre le
                   // défilement — qu'elle y ait été rangée par le site ou
@@ -2086,6 +2189,10 @@ class _RideShellPageState extends State<RideShellPage>
       // calibrer : évalué à chaque rendu, donc juste dès que le capteur répond.
       onCalibratePower:
           powerCalibrationAvailable(widget.hub) ? _calibratePower : null,
+      // Sans rapport avec la carte : un programme d'entraînement se démarre
+      // aussi bien sur home-trainer.
+      onStartWorkout: _chooseWorkout,
+      onStopWorkout: widget.recorder.activeWorkout != null ? _stopWorkout : null,
       debugClimbActive: _debugClimbActive,
       onSimulateClimb: _toggleDebugClimb,
       // Même col que la pastille et la carte dépliée (voir [_debugClimb]) :

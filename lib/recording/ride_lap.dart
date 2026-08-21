@@ -18,6 +18,7 @@ class RideLap {
     required this.index,
     required this.startedAt,
     required this.startDistanceM,
+    this.label,
   }) : stats = RideStats();
 
   final int index;
@@ -41,6 +42,13 @@ class RideLap {
   /// toute autre série, et sur un tour de `cols` qui n'est pas une montée (le
   /// tracé entre deux cols).
   int? climbId;
+
+  /// Sur la série `workout` (`workoutLapSeries`) seulement : le nom du
+  /// tronçon que ce tour couvre, posé par `RideRecorder.markLap` dès
+  /// l'ouverture — contrairement à [climbId], connu immédiatement (le
+  /// programme porte déjà le nom, pas besoin d'attendre une trame réseau).
+  /// `null` sur toute autre série.
+  final String? label;
 
   /// Distance parcourue pendant ce tour, jamais la distance cumulée de la
   /// sortie. Bornée à 0 : avant le premier point du tour, `stats.distanceM`

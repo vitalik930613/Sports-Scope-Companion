@@ -10,6 +10,8 @@ import '../dashboard/ride_preset.dart';
 import '../drivetrain.dart';
 import '../phone/barometric_altitude.dart';
 import '../phone/phone_sensors.dart';
+import '../training_program/training_program.dart';
+import '../training_program/workout_lap_series.dart';
 import 'gps_fix.dart';
 import 'gps_source.dart';
 import 'ride_elevation_track.dart';
@@ -165,6 +167,56 @@ class RideRecorder extends ChangeNotifier {
   List<RideLap> lapsOf(String series) =>
       List.unmodifiable(_series[series] ?? const []);
 
+  /// Le programme d'entraînement en cours, `null` tant qu'aucun n'a été
+  /// démarré (voir [startWorkout]). Attachable à tout moment — avant le
+  /// départ (lien, FAB « Entraînement ») ou en pleine sortie (menu ⋮) — un
+  /// programme n'est pas un sous-mode de la navigation, c'est une cible
+  /// indépendante que [RideRecorder] porte pour la même raison qu'il porte
+  /// déjà les séries de tours : elle doit survivre au démontage/remontage de
+  /// la coquille.
+  TrainingProgram? get activeWorkout => _activeWorkout;
+  TrainingProgram? _activeWorkout;
+
+  /// Valeur de [_recordedSeconds] au moment de l'activation — 0 si le
+  /// programme a été attaché avant que l'enregistrement démarre (les deux
+  /// horloges partent alors ensemble), la valeur courante s'il est attaché
+  /// en cours de route. **Jamais lu directement** : c'est [workoutElapsed]
+  /// qui en fait quelque chose d'utile.
+  int? _workoutStartSeconds;
+
+  /// Temps écoulé depuis l'activation du programme (pauses exclues, comme
+  /// [recorded]) — ce que compare `WorkoutPolicy` aux jalons. `null` tant
+  /// qu'aucun programme n'est actif.
+  Duration? get workoutElapsed => _workoutStartSeconds == null
+      ? null
+      : Duration(seconds: _recordedSeconds - _workoutStartSeconds!);
+
+  /// Démarre (ou remplace) le programme actif.
+  ///
+  /// Sans garde sur [isActive] — contrairement à [markLap] — parce
+  /// qu'attacher un programme avant le départ doit justement pouvoir
+  /// précéder [start] : c'est ce qui permet à [start] de déclarer
+  /// [workoutLapSeries] dès le premier tour 0, plutôt que de la perdre au
+  /// prochain `_series.clear()`.
+  void startWorkout(TrainingProgram program) {
+    _activeWorkout = program;
+    _workoutStartSeconds = isActive ? _recordedSeconds : 0;
+    _series.putIfAbsent(
+      workoutLapSeries,
+      () => [RideLap(index: 0, startedAt: DateTime.now(), startDistanceM: _distanceM)],
+    );
+    _notify();
+  }
+
+  /// Détache le programme actif, sans arrêter la sortie ni l'enregistrement.
+  /// Les tours déjà ouverts dans [workoutLapSeries] restent lisibles (page
+  /// Tours) : seul le déroulement automatique s'arrête.
+  void stopWorkout() {
+    _activeWorkout = null;
+    _workoutStartSeconds = null;
+    _notify();
+  }
+
   /// Dernière position connue, même périmée — l'UI s'en sert pour dire si le
   /// GPS a accroché.
   GpsFix? get lastFix => _lastFix;
@@ -219,11 +271,18 @@ class RideRecorder extends ChangeNotifier {
     _lastMetaSave = DateTime.now();
 
     // Un tour 0 par série dès le départ, jamais au premier tour marqué : sinon
-    // ce premier tour perdrait tout ce qui le précède.
+    // ce premier tour perdrait tout ce qui le précède. La série `workout` y
+    // est ajoutée d'office si un programme est déjà actif (attaché avant le
+    // départ, via un lien ou le FAB « Entraînement ») : sans quoi ce `clear()`
+    // effacerait l'entrée que `startWorkout` aurait pu poser avant `start()`.
     final now = DateTime.now();
+    final series = {
+      ...lapSeries,
+      if (_activeWorkout != null) workoutLapSeries,
+    };
     _series
       ..clear()
-      ..addEntries(lapSeries.map(
+      ..addEntries(series.map(
         (key) => MapEntry(key, [RideLap(index: 0, startedAt: now, startDistanceM: 0)]),
       ));
 
@@ -280,13 +339,14 @@ class RideRecorder extends ChangeNotifier {
   /// Sans effet — jamais une exception — si [series] n'a pas été déclarée à
   /// [start] (profil différent de celui attendu) ou si rien n'est enregistré :
   /// un tap égaré ne doit jamais faire tomber la sortie.
-  void markLap(String series) {
+  void markLap(String series, {String? label}) {
     final laps = _series[series];
     if (!isActive || laps == null) return;
     laps.add(RideLap(
       index: laps.length,
       startedAt: DateTime.now(),
       startDistanceM: _distanceM,
+      label: label,
     ));
     _notify();
   }
@@ -350,6 +410,11 @@ class RideRecorder extends ChangeNotifier {
     _session = null;
     _state = RecorderState.idle;
     _resetSensors();
+    // Le programme de CETTE sortie ne doit pas se retrouver actif sur la
+    // prochaine : une sortie qui recommence sans lien ni FAB dédié repart
+    // sans entraînement, comme elle repart sans tour déjà ouvert.
+    _activeWorkout = null;
+    _workoutStartSeconds = null;
     _notify();
     return finished;
   }

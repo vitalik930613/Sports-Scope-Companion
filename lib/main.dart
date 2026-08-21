@@ -38,6 +38,10 @@ import 'recording/recording_card.dart';
 import 'recording/ride_recorder.dart';
 import 'recording/ride_store.dart';
 import 'recording/rides_page.dart';
+import 'training_program/training_program.dart';
+import 'training_program/training_program_catalog_store.dart';
+import 'training_program/training_program_fetch.dart';
+import 'training_program/workout_picker_sheet.dart';
 import 'ui/metric_tile.dart';
 import 'ui/radar_card.dart';
 import 'update/update_card.dart';
@@ -66,6 +70,9 @@ Future<void> main() async {
   // tracé au départ, c'est-à-dire à l'endroit de la sortie où le réseau manque
   // le plus souvent.
   final routes = await RouteCatalogStore.open();
+  // Les programmes d'entraînement, même raison que les itinéraires : on en
+  // choisit un au départ, ou en pleine sortie, sac au dos, sans réseau.
+  final trainingPrograms = await TrainingProgramCatalogStore.open();
   // Les profils de sortie, enfin : ils décident du tableau de bord et des
   // capteurs, donc ils doivent être là avant le premier écran — et surtout avant
   // qu'on puisse lancer un enregistrement depuis l'accueil.
@@ -77,6 +84,7 @@ Future<void> main() async {
     riderProfile: riderProfile,
     trainingBudget: trainingBudget,
     routes: routes,
+    trainingPrograms: trainingPrograms,
     settings: settings,
   ));
 }
@@ -90,12 +98,18 @@ class SportsScopeApp extends StatefulWidget {
     required this.riderProfile,
     required this.trainingBudget,
     required this.routes,
+    required this.trainingPrograms,
     required this.settings,
   });
 
   final KnownDevicesStore devices;
   final RideStore rides;
   final RouteCatalogStore routes;
+
+  /// Les programmes d'entraînement du compte — même rôle que [routes], pour
+  /// le sélecteur du FAB « Entraînement » et celui du menu ⋮ en pleine
+  /// sortie.
+  final TrainingProgramCatalogStore trainingPrograms;
   final SiteSession session;
   final RiderProfileStore riderProfile;
 
@@ -221,6 +235,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
       riderProfile: widget.riderProfile,
       trainingBudget: widget.trainingBudget,
       routes: widget.routes,
+      trainingPrograms: widget.trainingPrograms,
       settings: widget.settings,
       resume: _resume,
     );
@@ -259,6 +274,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
         riderProfile: widget.riderProfile,
         trainingBudget: widget.trainingBudget,
         routes: widget.routes,
+        trainingPrograms: widget.trainingPrograms,
         resume: _resume,
         updates: _updates,
       ),
@@ -283,6 +299,7 @@ Future<void> openNavigation(
   required RiderProfileStore riderProfile,
   required TrainingBudgetStore trainingBudget,
   required RouteCatalogStore routes,
+  required TrainingProgramCatalogStore trainingPrograms,
   required CompanionSettingsStore settings,
   required ValueNotifier<NavigationTarget?> resume,
 }) async {
@@ -295,6 +312,20 @@ Future<void> openNavigation(
   if (target.presetKey != null) {
     await settings.select(target.presetKey!);
     if (!context.mounted) return;
+  }
+
+  // Programme d'entraînement couplé au lien (`?workout=<token>`), avec ou
+  // sans itinéraire — pas un sous-mode de la navigation, une cible à part que
+  // `RideRecorder` porte. Résolu et attaché AVANT de démarrer
+  // l'enregistrement ci-dessous : c'est ce qui permet à `RideRecorder.start`
+  // de déclarer `workoutLapSeries` dès le premier tour 0 plutôt que d'avoir à
+  // toucher `preset.lapSeries`. Un jeton introuvable (programme supprimé
+  // depuis, site injoignable) laisse simplement la sortie partir sans lui —
+  // même tolérance que pour un `presetKey` inconnu.
+  if (target.workoutToken != null) {
+    final program = await fetchSharedTrainingProgram(target.workoutToken!);
+    if (!context.mounted) return;
+    if (program != null) recorder.startWorkout(program);
   }
 
   final preset = settings.preset;
@@ -347,6 +378,7 @@ Future<void> openNavigation(
         riderProfile: riderProfile,
         trainingBudget: trainingBudget,
         routes: routes,
+        trainingPrograms: trainingPrograms,
         // Ce que le tableau de bord mesure part au site au prochain
         // rafraîchissement : son éditeur cesse alors de supposer un téléphone.
         onGridMeasured: settings.recordGrid,
@@ -471,6 +503,7 @@ class HomePage extends StatefulWidget {
     required this.riderProfile,
     required this.trainingBudget,
     required this.routes,
+    required this.trainingPrograms,
     required this.settings,
     required this.resume,
     required this.updates,
@@ -494,6 +527,9 @@ class HomePage extends StatefulWidget {
 
   /// Les itinéraires du compte, pour le sélecteur de navigation.
   final RouteCatalogStore routes;
+
+  /// Les programmes d'entraînement du compte, pour le FAB « Entraînement ».
+  final TrainingProgramCatalogStore trainingPrograms;
 
   /// Le hub appartient à l'application, pas à cet écran : les capteurs doivent
   /// rester connectés quand on passe en navigation.
@@ -723,6 +759,29 @@ class _HomePageState extends State<HomePage> {
     await _navigate(target);
   }
 
+  /// Démarrer un programme d'entraînement seul, sans itinéraire — le cas du
+  /// home-trainer ou de la course à pied. Distinct de [_chooseNavigation] :
+  /// un programme n'est pas un sous-mode de la navigation, il a son propre
+  /// bouton d'accueil. (Le coupler à un itinéraire se choisit côté site,
+  /// dans la modale « Ouvrir dans l'application » d'un itinéraire — le lien
+  /// qui en sort porte alors `?workout=` en plus du jeton de route, et c'est
+  /// [openNavigation] qui le résout.)
+  ///
+  /// Le programme est déjà résolu (pas qu'un jeton) en sortie de la feuille :
+  /// [WorkoutPickerSheet] l'a fait en le choisissant, pas la peine de le
+  /// redemander au site.
+  Future<void> _startWorkout() async {
+    final program = await showModalBottomSheet<TrainingProgram>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => WorkoutPickerSheet(catalog: widget.trainingPrograms),
+    );
+
+    if (program == null || !mounted) return;
+    widget.recorder.startWorkout(program);
+    await _navigate(const NavigationTarget.free());
+  }
+
   /// Choisir le profil de la sortie, depuis l'accueil plutôt que depuis le
   /// sélecteur de navigation : c'est le geste qu'on fait en premier — on
   /// choisit son vélo avant son itinéraire — et il doit rester possible sans
@@ -743,6 +802,7 @@ class _HomePageState extends State<HomePage> {
         riderProfile: widget.riderProfile,
         trainingBudget: widget.trainingBudget,
         routes: widget.routes,
+        trainingPrograms: widget.trainingPrograms,
         settings: widget.settings,
         resume: widget.resume,
       );
@@ -844,6 +904,17 @@ class _HomePageState extends State<HomePage> {
             onPressed: _chooseNavigation,
             icon: const Icon(Icons.navigation),
             label: const Text('Naviguer'),
+          ),
+          const SizedBox(width: 12),
+          // Icône seule, pas « extended » comme les deux précédents : un
+          // programme d'entraînement est un départ moins fréquent qu'une
+          // navigation, il n'a pas à réclamer autant de largeur sur un petit
+          // écran déjà partagé entre deux ou trois boutons.
+          FloatingActionButton(
+            heroTag: 'workout',
+            onPressed: _startWorkout,
+            tooltip: 'Entraînement',
+            child: const Icon(Icons.timer_outlined),
           ),
         ],
       ),

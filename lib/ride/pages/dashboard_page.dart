@@ -5,6 +5,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../dashboard/dashboard_block.dart';
 import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
+import '../../training_program/training_program.dart';
 import '../battery_status.dart';
 import '../blocks/altitude_profile_block.dart';
 import '../blocks/averages_block.dart';
@@ -61,6 +62,8 @@ class DashboardPage extends StatelessWidget {
     this.onClose,
     this.onChooseRoute,
     this.onClearRoute,
+    this.onStartWorkout,
+    this.onStopWorkout,
     this.onSleep,
     this.offlineMap,
     this.onDownloadOffline,
@@ -118,6 +121,16 @@ class DashboardPage extends StatelessWidget {
   /// que pas de commande.
   final VoidCallback? onChooseRoute;
   final VoidCallback? onClearRoute;
+
+  /// Démarrer (ou remplacer) un programme d'entraînement, à tout moment de la
+  /// sortie — pas seulement au départ. Confié à la coquille, qui possède le
+  /// magasin des programmes et l'enregistrement (voir
+  /// `RideShellPage._chooseWorkout`, `RideRecorder.startWorkout`).
+  final VoidCallback? onStartWorkout;
+
+  /// Détacher le programme actif, sans arrêter la sortie ni l'enregistrement.
+  /// Nul tant qu'aucun programme n'est actif — voir [onStartWorkout].
+  final VoidCallback? onStopWorkout;
 
   /// Mettre la carte en veille depuis cette page de données — voir
   /// `SleepBlock` et `NavigationWebController.requestSleep`.
@@ -513,6 +526,7 @@ class DashboardPage extends StatelessWidget {
               onClearRoute != null ||
               onDownloadOffline != null ||
               onCalibratePower != null ||
+              onStartWorkout != null ||
               onSimulateClimb != null ||
               onLeaveRide != null)
             _actionsMenu(),
@@ -537,21 +551,24 @@ class DashboardPage extends StatelessWidget {
     final nav = sources.nav;
     final offline = offlineMap;
 
-    // Sans page web, il n'y a pas d'état à écouter et le menu est fixe : un
-    // `Listenable` fabriqué ici pour la forme ne serait jamais libéré.
+    // L'enregistrement écoute toujours, contrairement à `nav`/`offline` — c'est
+    // le seul moyen de savoir si un programme d'entraînement est déjà actif
+    // (pour proposer « remplacer » plutôt que « démarrer »), et il est de toute
+    // façon déjà vivant pour toute la durée de la sortie.
     final listenables = <Listenable>[
+      sources.recorder,
       if (nav != null) nav,
       if (offline != null) offline,
     ];
-    if (listenables.isEmpty) return _menuFor(null, null);
 
     return ListenableBuilder(
       listenable: Listenable.merge(listenables),
-      builder: (context, _) => _menuFor(nav?.value, offline?.value),
+      builder: (context, _) =>
+          _menuFor(nav?.value, offline?.value, sources.recorder.activeWorkout),
     );
   }
 
-  Widget _menuFor(NavState? state, OfflineMapState? offline) =>
+  Widget _menuFor(NavState? state, OfflineMapState? offline, TrainingProgram? activeWorkout) =>
       PopupMenuButton<VoidCallback>(
         icon: const Icon(Icons.more_vert, color: Colors.white70),
         tooltip: 'Actions',
@@ -631,6 +648,30 @@ class DashboardPage extends StatelessWidget {
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.bolt),
                 title: Text('Calibrer la puissance'),
+              ),
+            ),
+          // Toujours proposé, avant comme en pleine sortie : un programme
+          // choisi une fois n'empêche pas d'en reprendre un autre — le tap
+          // suivant remplace, il ne s'ajoute pas.
+          if (onStartWorkout case final start?)
+            PopupMenuItem(
+              value: start,
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.timer_outlined),
+                title: Text(activeWorkout == null
+                    ? 'Démarrer un entraînement'
+                    : 'Changer de programme'),
+                subtitle: activeWorkout != null ? Text(activeWorkout.name) : null,
+              ),
+            ),
+          if (onStopWorkout case final stop? when activeWorkout != null)
+            PopupMenuItem(
+              value: stop,
+              child: const ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.layers_clear),
+                title: Text('Arrêter l\'entraînement'),
               ),
             ),
           if (onSimulateClimb case final simulate?)

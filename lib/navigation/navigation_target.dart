@@ -20,6 +20,7 @@ class NavigationTarget {
     this.presetKey,
     this.autoRecord,
     this.autoDownloadOffline = false,
+    this.workoutToken,
   });
 
   /// Partir sans tracé : la carte nue, et rien de ce qui traînait.
@@ -70,6 +71,15 @@ class NavigationTarget {
   /// liste des itinéraires (`RoutesList.vue`, `?download=1`) — jamais par la
   /// modale de navigation, qui ne concerne que le guidage.
   final bool autoDownloadOffline;
+
+  /// Jeton de partage d'un programme d'entraînement à coupler à cette
+  /// navigation (`?workout=<token>`) — posé soit par le sélecteur combiné de
+  /// la page de partage/liste d'itinéraires (couplé à un [shareToken]), soit
+  /// par le bouton « Entraînement » de l'accueil (seul, sans itinéraire). Un
+  /// programme n'est pas un sous-mode de la navigation : ce paramètre se lit
+  /// indépendamment de tout le reste de cette classe, sur n'importe laquelle
+  /// des trois formes de lien reconnues par [parse].
+  final String? workoutToken;
 
   bool get isFree => shareToken == null;
 
@@ -126,6 +136,11 @@ class NavigationTarget {
     // des itinéraires (RoutesList.vue) — ne concerne jamais la reprise ni un
     // lien de partage ordinaire, absent partout ailleurs.
     final autoDownloadOffline = uri.queryParameters['download'] == '1';
+    // `?workout=<token>` : programme d'entraînement à coupler, posé soit par
+    // le sélecteur combiné (avec un itinéraire), soit par le bouton
+    // « Entraînement » de l'accueil (seul) — composable sur les trois formes
+    // de lien ci-dessous, jamais un quatrième schéma dédié.
+    final workoutToken = uri.queryParameters['workout'];
 
     if (uri.scheme == 'sportsscope') {
       // sportsscope://navigate/<token> : `navigate` est l'hôte, le token le
@@ -138,6 +153,7 @@ class NavigationTarget {
         presetKey: presetKey,
         autoRecord: autoRecord,
         autoDownloadOffline: autoDownloadOffline,
+        workoutToken: workoutToken,
       );
     }
 
@@ -163,6 +179,7 @@ class NavigationTarget {
         presetKey: presetKey,
         autoRecord: autoRecord,
         autoDownloadOffline: autoDownloadOffline,
+        workoutToken: workoutToken,
       );
     }
     if (path.length == 3 &&
@@ -175,6 +192,7 @@ class NavigationTarget {
         presetKey: presetKey,
         autoRecord: autoRecord,
         autoDownloadOffline: autoDownloadOffline,
+        workoutToken: workoutToken,
       );
     }
     return null;

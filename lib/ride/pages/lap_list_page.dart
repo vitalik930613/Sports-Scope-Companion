@@ -393,6 +393,13 @@ class _LapListBodyState extends State<LapListBody> {
 /// Partagé entre le contrôle fermé et la page de choix, pour qu'ils ne
 /// disent jamais deux choses différentes du même tour.
 ///
+/// Sur la série `workout` (`workoutLapSeries`), un tour reprend **le nom du
+/// tronçon** que le programme d'entraînement lui a donné ([RideLap.label],
+/// posé dès l'ouverture par `RideRecorder.markLap` — contrairement à
+/// [RideLap.climbId], connu immédiatement, pas besoin d'attendre une trame
+/// réseau). Un tronçon jamais nommé dans l'éditeur (`segment_name` vide)
+/// garde « Tour N » plutôt qu'un libellé blanc.
+///
 /// Sur la série `cols` (`climbLapSeries`), un tour qui couvre une montée
 /// ([RideLap.climbId] posé) reprend **le nom du col**, comme le composant
 /// Cols du tracé ([ClimbListCard]) — même repli « Col N » quand il n'a jamais
@@ -407,6 +414,9 @@ String _lapLabel(
   RouteClimbs? routeClimbs,
 }) {
   final suffix = index == laps.length - 1 ? ' (en cours)' : '';
+
+  final label = laps[index].label;
+  if (label != null && label.isNotEmpty) return '$label$suffix';
 
   if (series == climbLapSeries && routeClimbs != null) {
     final climbId = laps[index].climbId;
