@@ -67,6 +67,8 @@ import 'widgets/reminder_banner.dart';
 import 'widgets/ride_bottom_band.dart';
 import 'widgets/ride_button_flash.dart';
 import 'widgets/ride_page_flash.dart';
+import 'widgets/workout_badge.dart';
+import 'widgets/workout_change_popup.dart';
 
 /// La coquille d'une sortie : ce qui appartient à l'écran, pas à la page web.
 ///
@@ -608,6 +610,18 @@ class _RideShellPageState extends State<RideShellPage>
   /// comparaison.
   final _workoutCue = WorkoutCuePlayer();
 
+  /// Le jalon dont le popup de changement est à l'écran, `null` = rien à
+  /// montrer — même patron que [_batteryAlert]/[_reminderAlert], mais un
+  /// minuteur propre plutôt que la veille d'écran : ce popup s'efface après
+  /// un délai fixe, il ne tient pas d'état « éveillé/rendormi » comme les
+  /// alertes batterie/rappel.
+  final _workoutChangeAlert = ValueNotifier<WorkoutMilestone?>(null);
+
+  /// Combien de temps le popup reste affiché avant de s'effacer tout seul.
+  static const _workoutChangeDuration = Duration(seconds: 3);
+
+  Timer? _workoutChangeTimer;
+
   late final MetricSources _sources;
 
   /// Construit une fois : un changement de page ne doit pas reconstruire l'arbre
@@ -928,6 +942,20 @@ class _RideShellPageState extends State<RideShellPage>
     final milestone = _workoutPolicy?.read(elapsed);
     if (milestone == null) return;
     widget.recorder.markLap(workoutLapSeries, label: milestone.segmentName);
+    if (_preset.workout.popup) _showWorkoutChangePopup(milestone);
+  }
+
+  /// Affiche le popup de changement de tronçon, et programme son effacement.
+  /// Un nouveau jalon avant l'échéance annule le minuteur précédent plutôt
+  /// que d'empiler deux effacements : c'est toujours le dernier tronçon
+  /// entré qui doit rester affiché [_workoutChangeDuration].
+  void _showWorkoutChangePopup(WorkoutMilestone milestone) {
+    _workoutChangeTimer?.cancel();
+    _workoutChangeAlert.value = milestone;
+    _workoutChangeTimer = Timer(_workoutChangeDuration, () {
+      if (!mounted) return;
+      _workoutChangeAlert.value = null;
+    });
   }
 
   /// Faut-il ramener le cycliste sur la carte, ou lui rendre sa page ?
@@ -1790,6 +1818,8 @@ class _RideShellPageState extends State<RideShellPage>
     _radarSound.dispose();
     _climbSound.dispose();
     unawaited(_workoutCue.dispose());
+    _workoutChangeTimer?.cancel();
+    _workoutChangeAlert.dispose();
     _battery.removeListener(_onBatteryStatus);
     _battery.dispose();
     _batterySound.dispose();
@@ -2047,6 +2077,43 @@ class _RideShellPageState extends State<RideShellPage>
                 onSleep: _preset.hasMap ? _sleep : null,
               ),
             ),
+            // La pastille du tronçon en cours d'un programme d'entraînement :
+            // centrée en haut, entre la boussole (gauche) et la pastille de
+            // col (droite). Ni carte ni GPS requis, contrairement à ces deux
+            // autres pastilles : un programme se déroule aussi bien sur
+            // home-trainer.
+            //
+            // Dérivée à chaque tic de [widget.recorder] plutôt que d'un
+            // curseur propre — même patron que `WorkoutSegmentCard` : c'est
+            // une pastille, pas une politique de franchissement, elle n'a
+            // rien à se souvenir entre deux rebuilds.
+            if (_preset.workout.badge)
+              Positioned(
+                key: const ValueKey('entrainement-pastille'),
+                top: 8,
+                left: RadarSideGauge.width + 8,
+                right: RadarSideGauge.width + 8,
+                child: SafeArea(
+                  bottom: false,
+                  child: Center(
+                    child: ListenableBuilder(
+                      listenable: widget.recorder,
+                      builder: (context, _) {
+                        final program = widget.recorder.activeWorkout;
+                        final elapsed = widget.recorder.workoutElapsed;
+                        final milestone = program != null && elapsed != null
+                            ? program.milestoneAt(elapsed)
+                            : null;
+                        if (milestone == null) return const SizedBox.shrink();
+                        return WorkoutBadge(
+                          milestone: milestone,
+                          remaining: program!.remainingAt(elapsed!),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
             // La pastille de col : repliée, épinglée en haut à droite. Posée
             // après le bandeau/numéro de page pour rester visible même
             // par-dessus la veille radar (reveil-radar) —
@@ -2185,6 +2252,18 @@ class _RideShellPageState extends State<RideShellPage>
                 builder: (context, reminders, _) => reminders.isEmpty
                     ? const SizedBox.shrink()
                     : ReminderBanner(reminders: reminders),
+              ),
+            ),
+            // Le popup de changement de tronçon : au centre, au-dessus de
+            // tout — c'est le front qu'on ne doit pas manquer, même par-dessus
+            // une alerte batterie ou un rappel qui tomberait au même instant.
+            Positioned.fill(
+              key: const ValueKey('popup-entrainement'),
+              child: ValueListenableBuilder<WorkoutMilestone?>(
+                valueListenable: _workoutChangeAlert,
+                builder: (context, milestone, _) => milestone == null
+                    ? const SizedBox.shrink()
+                    : WorkoutChangePopup(milestone: milestone),
               ),
             ),
           ],

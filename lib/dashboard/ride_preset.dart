@@ -33,6 +33,7 @@ class RidePreset {
     this.radar = const RadarSettings(),
     this.battery = const BatterySettings(),
     this.climb = const ClimbSettings(),
+    this.workout = const WorkoutSettings(),
     this.lighting = const LightingSettings(),
     this.screen = const ScreenSettings(),
     this.traveledPath = const TraveledPathSettings(),
@@ -106,6 +107,7 @@ class RidePreset {
   final RadarSettings radar;
   final BatterySettings battery;
   final ClimbSettings climb;
+  final WorkoutSettings workout;
   final LightingSettings lighting;
   final ScreenSettings screen;
 
@@ -267,6 +269,7 @@ class RidePreset {
       radar: RadarSettings.parse(raw['radar']),
       battery: BatterySettings.parse(raw['battery']),
       climb: ClimbSettings.parse(raw['climb']),
+      workout: WorkoutSettings.parse(raw['workout']),
       lighting: LightingSettings.parse(raw['lighting']),
       screen: ScreenSettings.parse(raw['screen']),
       traveledPath: TraveledPathSettings.parse(raw['traveled_path']),
@@ -1245,6 +1248,32 @@ class ClimbSettings {
       expandedByDefault: raw['expanded_by_default'] is bool
           ? raw['expanded_by_default'] as bool
           : fallback.expandedByDefault,
+    );
+  }
+}
+
+/// Les deux seuls repères visuels d'un programme d'entraînement en dehors
+/// des blocs qu'on peut poser sur une page (`workout_segment`/
+/// `workout_remaining`) et des sons (`WorkoutCuePlayer`) : la pastille du
+/// tronçon en cours, épinglée en haut d'écran quelle que soit la page, et le
+/// popup qui paraît 2-3 s au centre à chaque changement de tronçon — voir
+/// `WorkoutBadge`/`WorkoutChangePopup` (`lib/ride/widgets/`).
+///
+/// « Absent vaut activé » pour les deux, même logique que [ClimbSettings.sounds].
+@immutable
+class WorkoutSettings {
+  const WorkoutSettings({this.badge = true, this.popup = true});
+
+  final bool badge;
+  final bool popup;
+
+  static WorkoutSettings parse(Object? raw) {
+    if (raw is! Map) return const WorkoutSettings();
+    const fallback = WorkoutSettings();
+
+    return WorkoutSettings(
+      badge: raw['badge'] is bool ? raw['badge'] as bool : fallback.badge,
+      popup: raw['popup'] is bool ? raw['popup'] as bool : fallback.popup,
     );
   }
 }
