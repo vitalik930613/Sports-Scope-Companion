@@ -205,6 +205,17 @@ class TrainingProgram {
     return null;
   }
 
+  /// Le jalon qui suit [elapsed], `null` une fois le dernier dépassé — sert à
+  /// annoncer le tronçon suivant en aperçu (`WorkoutBadge.upcoming`) avant
+  /// qu'il ne devienne le tronçon en cours. Même caractère pur que
+  /// [milestoneAt]/[remainingAt].
+  WorkoutMilestone? nextMilestoneAt(Duration elapsed) {
+    for (final milestone in milestones) {
+      if (milestone.offsetSeconds > elapsed.inSeconds) return milestone;
+    }
+    return null;
+  }
+
   /// Décode `{ training_program: {...} }` ou l'objet programme directement.
   /// Défensif comme `RidePreset.parse` : jamais d'exception, `null` si le
   /// document est inexploitable (jalons manquants, mal triés, sans jalon à 0)

@@ -2078,10 +2078,15 @@ class _RideShellPageState extends State<RideShellPage>
               ),
             ),
             // La pastille du tronçon en cours d'un programme d'entraînement :
-            // centrée en haut, entre la boussole (gauche) et la pastille de
-            // col (droite). Ni carte ni GPS requis, contrairement à ces deux
-            // autres pastilles : un programme se déroule aussi bien sur
-            // home-trainer.
+            // épinglée tout en haut à gauche, au ras du bord (même abscisse
+            // que la boussole, qui ne paraît que sur la carte) — pas décalée
+            // de la gouttière radar comme la pastille de col, qui reste à
+            // droite. Sur une page de données, l'en-tête (icône + titre,
+            // `DashboardPage._header`) commence à la même hauteur — mais lui
+            // aussi à gauche, jamais au centre comme avant ce réglage, les
+            // deux ne se recouvrent donc plus. Ni carte ni GPS requis,
+            // contrairement à la boussole/pastille de col : un programme se
+            // déroule aussi bien sur home-trainer.
             //
             // Dérivée à chaque tic de [widget.recorder] plutôt que d'un
             // curseur propre — même patron que `WorkoutSegmentCard` : c'est
@@ -2091,26 +2096,39 @@ class _RideShellPageState extends State<RideShellPage>
               Positioned(
                 key: const ValueKey('entrainement-pastille'),
                 top: 8,
-                left: RadarSideGauge.width + 8,
-                right: RadarSideGauge.width + 8,
+                left: 8,
                 child: SafeArea(
                   bottom: false,
-                  child: Center(
-                    child: ListenableBuilder(
-                      listenable: widget.recorder,
-                      builder: (context, _) {
-                        final program = widget.recorder.activeWorkout;
-                        final elapsed = widget.recorder.workoutElapsed;
-                        final milestone = program != null && elapsed != null
-                            ? program.milestoneAt(elapsed)
-                            : null;
-                        if (milestone == null) return const SizedBox.shrink();
-                        return WorkoutBadge(
-                          milestone: milestone,
-                          remaining: program!.remainingAt(elapsed!),
-                        );
-                      },
-                    ),
+                  child: ListenableBuilder(
+                    listenable: widget.recorder,
+                    builder: (context, _) {
+                      final program = widget.recorder.activeWorkout;
+                      final elapsed = widget.recorder.workoutElapsed;
+                      final milestone = program != null && elapsed != null
+                          ? program.milestoneAt(elapsed)
+                          : null;
+                      if (milestone == null) return const SizedBox.shrink();
+                      final remaining = program!.remainingAt(elapsed!);
+                      // L'aperçu du tronçon suivant, dans les dernières secondes
+                      // de celui-ci seulement — pas plus tôt, sinon la pastille
+                      // annoncerait un changement bien avant qu'il ne compte
+                      // vraiment.
+                      final next = remaining != null && remaining <= WorkoutBadge.upcomingLead
+                          ? program.nextMilestoneAt(elapsed)
+                          : null;
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          WorkoutBadge(milestone: milestone, remaining: remaining),
+                          if (next != null) ...[
+                            const SizedBox(height: 6),
+                            WorkoutBadge(milestone: next, upcoming: true),
+                          ],
+                        ],
+                      );
+                    },
                   ),
                 ),
               ),
