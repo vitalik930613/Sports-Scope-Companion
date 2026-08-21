@@ -17,7 +17,9 @@ import '../../ui/zone_colors.dart';
 ///
 /// Quatre habillages ([BandWorkoutMode]) : le nom du tronçon, le compte à
 /// rebours, les deux fondus en une icône et un chiffre, ou les trois — icône,
-/// nom et chiffre — sur une seule ligne.
+/// nom et chiffre — sur une seule ligne. Pas de libellé séparé (« Tronçon »,
+/// « Restant ») : la case est trop étroite pour se le permettre en plus de
+/// l'icône, qui porte déjà le sens.
 ///
 /// **Jamais de [Flexible]/[Expanded].** `NotchBand` pose sa case dans un
 /// `FittedBox` qui mesure son enfant sans aucune contrainte (voir
@@ -33,18 +35,11 @@ class WorkoutBandTile extends StatelessWidget {
     super.key,
     required this.recorder,
     required this.mode,
-    this.labelFirst = false,
     this.altBackground,
   });
 
   final RideRecorder recorder;
   final BandWorkoutMode mode;
-
-  /// Le libellé au-dessus de la valeur plutôt qu'en dessous — voir
-  /// [BandMetricTile.labelFirst], même raison (`NotchBand` plutôt que
-  /// `RideBottomBand`). Sans effet en mode [BandWorkoutMode.combo]/
-  /// [BandWorkoutMode.line], qui ne portent pas de libellé séparé.
-  final bool labelFirst;
 
   /// Le noir ou l'anthracite de l'alternance, quand le tronçon ne porte pas
   /// de couleur propre — voir [BandMetricTile.altBackground].
@@ -65,9 +60,7 @@ class WorkoutBandTile extends StatelessWidget {
           final foreground =
               milestone?.textColor ?? (zoneColor == null ? Colors.white : foregroundOf(zoneColor));
 
-          final icon = mode == BandWorkoutMode.remaining
-              ? FontAwesomeIcons.stopwatch
-              : workoutMilestoneIconFor(milestone?.icon);
+          final icon = workoutMilestoneIconFor(milestone?.icon);
 
           final segmentName = milestone?.segmentName;
           final segmentLabel = (segmentName == null || segmentName.isEmpty) ? '—' : segmentName;
@@ -77,9 +70,8 @@ class WorkoutBandTile extends StatelessWidget {
           final content = switch (mode) {
             BandWorkoutMode.combo => _combo(icon, remainingLabel, foreground),
             BandWorkoutMode.line => _line(icon, segmentLabel, remainingLabel, foreground),
-            BandWorkoutMode.segment => _titled('Tronçon', icon, segmentLabel, foreground, dim: zoneColor == null),
-            BandWorkoutMode.remaining =>
-              _titled('Restant', icon, remainingLabel, foreground, dim: zoneColor == null),
+            BandWorkoutMode.segment => _iconValue(icon, segmentLabel, foreground),
+            BandWorkoutMode.remaining => _iconValue(icon, remainingLabel, foreground),
           };
 
           final surface = zoneColor ?? altBackground;
@@ -131,36 +123,22 @@ class WorkoutBandTile extends StatelessWidget {
         ]),
       );
 
-  /// [BandWorkoutMode.segment]/[BandWorkoutMode.remaining] : un titre
-  /// discret (« Tronçon »/« Restant »), puis l'icône et la valeur — même
-  /// disposition que [BandMetricTile].
-  Widget _titled(String title, FaIconData icon, String value, Color foreground, {required bool dim}) {
-    final titleText = Text(
-      title.toUpperCase(),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: TextStyle(color: foreground.withValues(alpha: dim ? 0.54 : 0.75), fontSize: 11),
-    );
-
-    final valueRow = _fit([
-      FaIcon(icon, size: 14, color: foreground.withValues(alpha: 0.85)),
-      const SizedBox(width: 4),
-      Text(
-        value,
-        maxLines: 1,
-        style: TextStyle(color: foreground, fontSize: 20, fontWeight: FontWeight.w500),
-      ),
-    ]);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: labelFirst ? [titleText, valueRow] : [valueRow, titleText],
-      ),
-    );
-  }
+  /// [BandWorkoutMode.segment]/[BandWorkoutMode.remaining] : l'icône et la
+  /// valeur seules, sans libellé — l'icône (celle du tronçon, ou le
+  /// chronomètre pour le compte à rebours) porte déjà la distinction entre
+  /// les deux.
+  Widget _iconValue(FaIconData icon, String value, Color foreground) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: _fit([
+          FaIcon(icon, size: 14, color: foreground.withValues(alpha: 0.85)),
+          const SizedBox(width: 4),
+          Text(
+            value,
+            maxLines: 1,
+            style: TextStyle(color: foreground, fontSize: 20, fontWeight: FontWeight.w500),
+          ),
+        ]),
+      );
 
   /// Une ligne à taille naturelle (`mainAxisSize: min`, jamais de
   /// [Flexible]), réduite si besoin par le [FittedBox] qui l'entoure — voir

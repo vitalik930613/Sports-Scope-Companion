@@ -230,6 +230,5 @@ class _NotchBandState extends State<NotchBand> {
   // Pas de `FittedBox` externe ici, à l'inverse de [_metric] :
   // [WorkoutBandTile] se met déjà à l'échelle elle-même (voir sa note de
   // classe) — un `FittedBox` de plus l'envelopperait pour rien.
-  Widget _workout(BandWorkoutMode mode) =>
-      WorkoutBandTile(recorder: widget.recorder, mode: mode, labelFirst: true);
+  Widget _workout(BandWorkoutMode mode) => WorkoutBandTile(recorder: widget.recorder, mode: mode);
 }
