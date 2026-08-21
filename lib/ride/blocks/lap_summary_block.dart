@@ -58,7 +58,7 @@ class LapSummaryCard extends StatelessWidget {
         final rows = [
           StatRow(
             'Durée',
-            formatDurationHm(Duration(seconds: lap.pointCount)),
+            formatDurationHms(Duration(seconds: lap.pointCount)),
           ),
           StatRow('Distance', formatDistanceKm(lap.distanceM)),
           StatRow('D+', '${lap.stats.ascentM.round()} m'),
