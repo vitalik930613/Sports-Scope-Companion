@@ -57,6 +57,7 @@ import 'widgets/battery_alert_banner.dart';
 import 'widgets/climb_badge.dart';
 import 'widgets/compass_badge.dart';
 import 'widgets/climb_profile_overlay.dart';
+import 'widgets/lap_started_toast.dart';
 import 'widgets/map_edge_handle.dart';
 import 'widgets/map_swipe_zone.dart';
 import 'widgets/notch_band.dart';
@@ -622,6 +623,17 @@ class _RideShellPageState extends State<RideShellPage>
 
   Timer? _workoutChangeTimer;
 
+  /// Le nom du tour dont le toast est à l'écran, `null` = rien à montrer —
+  /// même patron que [_workoutChangeAlert], sur un événement distinct
+  /// ([RideRecorder.lapStarted]) : voir [_onLapStarted].
+  final _lapToast = ValueNotifier<String?>(null);
+
+  /// Même délai que [_workoutChangeDuration] : assez long pour se lire d'un
+  /// coup d'œil, assez court pour ne pas s'attarder sur un tour déjà en cours.
+  static const _lapToastDuration = Duration(seconds: 3);
+
+  Timer? _lapToastTimer;
+
   late final MetricSources _sources;
 
   /// Construit une fois : un changement de page ne doit pas reconstruire l'arbre
@@ -768,6 +780,7 @@ class _RideShellPageState extends State<RideShellPage>
     // Deux déclencheurs pour une seule décision : le pont pour les fronts, le
     // temps pour les délais. Le tic sert aussi au maintien du réveil radar.
     _nav.addListener(_decideReturn);
+    widget.recorder.lapStarted.addListener(_onLapStarted);
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       _decideReturn();
       _updateRadarWake();
@@ -957,6 +970,24 @@ class _RideShellPageState extends State<RideShellPage>
     _workoutChangeTimer = Timer(_workoutChangeDuration, () {
       if (!mounted) return;
       _workoutChangeAlert.value = null;
+    });
+  }
+
+  /// [RideRecorder.lapStarted] couvre toutes les séries — manuelle
+  /// (bandeau/encoche/page), Di2, col et entraînement. La série `workout` en
+  /// est écartée ici plutôt que côté [RideRecorder] : elle a déjà sa propre
+  /// annonce ([_showWorkoutChangePopup], réglage [WorkoutSettings.popup]), un
+  /// second toast au même instant ferait doublon.
+  void _onLapStarted() {
+    final event = widget.recorder.lapStarted.value;
+    if (event == null || event.series == workoutLapSeries) return;
+    if (!_preset.laps.toast) return;
+    final label = event.label?.isNotEmpty == true ? event.label! : 'Tour ${event.index + 1}';
+    _lapToastTimer?.cancel();
+    _lapToast.value = label;
+    _lapToastTimer = Timer(_lapToastDuration, () {
+      if (!mounted) return;
+      _lapToast.value = null;
     });
   }
 
@@ -1814,6 +1845,9 @@ class _RideShellPageState extends State<RideShellPage>
     // dossier qui coûterait de la batterie une fois l'écran refermé.
     unawaited(widget.compass?.stop());
     _nav.removeListener(_decideReturn);
+    widget.recorder.lapStarted.removeListener(_onLapStarted);
+    _lapToastTimer?.cancel();
+    _lapToast.dispose();
     _radar.removeListener(_onRadar);
     _radar.dispose();
     _mutedRadar.dispose();
@@ -2284,6 +2318,18 @@ class _RideShellPageState extends State<RideShellPage>
                 builder: (context, milestone, _) => milestone == null
                     ? const SizedBox.shrink()
                     : WorkoutChangePopup(milestone: milestone),
+              ),
+            ),
+            // Le toast d'ouverture de tour : en bas, au plus près du geste
+            // (bandeau, encoche) qui vient de le déclencher — voir
+            // _onLapStarted.
+            Positioned.fill(
+              key: const ValueKey('toast-tour'),
+              child: ValueListenableBuilder<String?>(
+                valueListenable: _lapToast,
+                builder: (context, label, _) => label == null
+                    ? const SizedBox.shrink()
+                    : LapStartedToast(label: label),
               ),
             ),
           ],

@@ -24,6 +24,19 @@ import 'track_point.dart';
 
 enum RecorderState { idle, recording, paused }
 
+/// L'ouverture d'un tour, telle que publiée par [RideRecorder.markLap] sur
+/// [RideRecorder.lapStarted] — de quoi l'annoncer sans que l'appelant ait à
+/// rouvrir la série pour retrouver l'index ou le libellé qu'il vient de
+/// poser.
+@immutable
+class LapStarted {
+  const LapStarted({required this.series, required this.label, required this.index});
+
+  final String series;
+  final String? label;
+  final int index;
+}
+
 /// Enregistre une sortie : GPS et capteurs réunis, une ligne par seconde.
 ///
 /// Il vit au niveau de l'application, à côté du [SensorHub] et pour la même
@@ -166,6 +179,15 @@ class RideRecorder extends ChangeNotifier {
   /// ou si rien n'est enregistré.
   List<RideLap> lapsOf(String series) =>
       List.unmodifiable(_series[series] ?? const []);
+
+  /// Le dernier tour ouvert par [markLap], toutes séries confondues — port
+  /// unique pour la coquille, qui seule décide, selon la série et le profil,
+  /// s'il faut l'annoncer (voir `RideShellPage._onLapStarted`). Une nouvelle
+  /// instance à chaque tour, jamais comparée par égalité : deux tours de
+  /// séries différentes peuvent partager le même index sans que le second
+  /// soit pris pour une répétition du premier et perdu par
+  /// `ValueNotifier.value`.
+  final lapStarted = ValueNotifier<LapStarted?>(null);
 
   /// Le programme d'entraînement en cours, `null` tant qu'aucun n'a été
   /// démarré (voir [startWorkout]). Attachable à tout moment — avant le
@@ -342,12 +364,14 @@ class RideRecorder extends ChangeNotifier {
   void markLap(String series, {String? label}) {
     final laps = _series[series];
     if (!isActive || laps == null) return;
+    final index = laps.length;
     laps.add(RideLap(
-      index: laps.length,
+      index: index,
       startedAt: DateTime.now(),
       startDistanceM: _distanceM,
       label: label,
     ));
+    lapStarted.value = LapStarted(series: series, label: label, index: index);
     _notify();
   }
 
@@ -635,6 +659,7 @@ class RideRecorder extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    lapStarted.dispose();
     _timer?.cancel();
     unawaited(_gpsSub?.cancel());
     unawaited(_samplesSub?.cancel());

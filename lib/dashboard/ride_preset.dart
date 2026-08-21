@@ -34,6 +34,7 @@ class RidePreset {
     this.battery = const BatterySettings(),
     this.climb = const ClimbSettings(),
     this.workout = const WorkoutSettings(),
+    this.laps = const LapSettings(),
     this.lighting = const LightingSettings(),
     this.screen = const ScreenSettings(),
     this.traveledPath = const TraveledPathSettings(),
@@ -108,6 +109,7 @@ class RidePreset {
   final BatterySettings battery;
   final ClimbSettings climb;
   final WorkoutSettings workout;
+  final LapSettings laps;
   final LightingSettings lighting;
   final ScreenSettings screen;
 
@@ -270,6 +272,7 @@ class RidePreset {
       battery: BatterySettings.parse(raw['battery']),
       climb: ClimbSettings.parse(raw['climb']),
       workout: WorkoutSettings.parse(raw['workout']),
+      laps: LapSettings.parse(raw['laps']),
       lighting: LightingSettings.parse(raw['lighting']),
       screen: ScreenSettings.parse(raw['screen']),
       traveledPath: TraveledPathSettings.parse(raw['traveled_path']),
@@ -1331,6 +1334,36 @@ class WorkoutSettings {
       badge: raw['badge'] is bool ? raw['badge'] as bool : fallback.badge,
       popup: raw['popup'] is bool ? raw['popup'] as bool : fallback.popup,
       sounds: raw['sounds'] is bool ? raw['sounds'] as bool : fallback.sounds,
+    );
+  }
+}
+
+/// Le toast qui annonce l'ouverture d'un tour — manuel (bandeau/encoche/page
+/// `mark_lap`), Di2 ([StartLapAction]) ou col ([ClimbEdgePolicy]) — voir
+/// `LapStartedToast` (`lib/ride/widgets/`) pour l'affichage, et
+/// `RideShellPage._onLapStarted` pour le déclenchement.
+///
+/// La série `workout` en est exclue à la source (`RideShellPage._onLapStarted`),
+/// pas ici : elle a déjà sa propre annonce ([WorkoutSettings.popup]), un
+/// second toast au même instant ferait doublon.
+///
+/// « Absent vaut désactivé », à l'inverse de [ClimbSettings.sounds] ou
+/// [WorkoutSettings.popup] : ces réglages-là gardent le comportement déjà
+/// livré avant qu'on puisse le couper, alors que ce toast est un ajout — un
+/// profil qui n'a jamais touché ce réglage doit garder l'écran exactement
+/// tel qu'il était avant qu'il existe, même logique que [notch]/[reminders].
+@immutable
+class LapSettings {
+  const LapSettings({this.toast = false});
+
+  final bool toast;
+
+  static LapSettings parse(Object? raw) {
+    if (raw is! Map) return const LapSettings();
+    const fallback = LapSettings();
+
+    return LapSettings(
+      toast: raw['toast'] is bool ? raw['toast'] as bool : fallback.toast,
     );
   }
 }
