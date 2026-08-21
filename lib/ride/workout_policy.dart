@@ -87,14 +87,17 @@ class WorkoutCuePolicy {
   int _next = 0;
 
   /// L'instant, en secondes depuis l'activation, où le son du jalon
-  /// [index] doit démarrer pour se terminer pile à son offset. Sans son (ou
-  /// pour le premier jalon), c'est l'offset lui-même. Jamais avant le
-  /// jalon précédent : un son plus long que le tronçon qui le porte ne doit
-  /// pas empiéter sur l'annonce d'avant.
+  /// [index] doit démarrer pour se terminer pile à son offset. Sans son, pour
+  /// le premier jalon, ou quand le jalon est réglé sur
+  /// [WorkoutCueTiming.at], c'est l'offset lui-même. Jamais avant le jalon
+  /// précédent : un son plus long que le tronçon qui le porte ne doit pas
+  /// empiéter sur l'annonce d'avant.
   int _cueOffsetSeconds(int index) {
     final milestone = milestones[index];
     final sound = milestone.sound;
-    if (index == 0 || sound == null) return milestone.offsetSeconds;
+    if (index == 0 || sound == null || milestone.cueTiming == WorkoutCueTiming.at) {
+      return milestone.offsetSeconds;
+    }
 
     final leadMs = soundDuration(sound).inMilliseconds;
     final leadSeconds = (leadMs / 1000).ceil();

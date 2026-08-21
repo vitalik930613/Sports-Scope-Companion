@@ -135,6 +135,8 @@ sealed class DashboardBlock {
       'altitude_profile' => AltitudeProfileBlock.parse(raw),
       'metric_trend' => MetricTrendBlock.parse(raw),
       'clock' => ClockBlock.parse(raw),
+      'workout_segment' => WorkoutSegmentBlock(color: color, textColor: textColor),
+      'workout_remaining' => WorkoutRemainingBlock(color: color, textColor: textColor),
       'sleep' => SleepBlock(
           mode: _modeOf(raw['mode'], SleepMode.values),
           color: color,
@@ -1760,6 +1762,36 @@ enum TrainingBudgetMode with BlockMode {
 
   @override
   final String key;
+}
+
+/// Le nom du tronçon d'entraînement en cours, avec son icône.
+///
+/// Rien à régler au-delà de couleur/texte — le contenu est entièrement dérivé
+/// du programme actif (`RideRecorder.activeWorkout`/`workoutElapsed`,
+/// `TrainingProgram.milestoneAt`), même famille que [NavStateBlock]/
+/// [SleepBlock] : un seul mode implicite, pas de catalogue à choisir dedans.
+class WorkoutSegmentBlock extends DashboardBlock {
+  const WorkoutSegmentBlock({super.color, super.textColor});
+
+  @override
+  bool operator ==(Object other) =>
+      other is WorkoutSegmentBlock && other.color == color && other.textColor == textColor;
+
+  @override
+  int get hashCode => Object.hash(color, textColor);
+}
+
+/// Le temps restant avant le prochain jalon du programme d'entraînement actif
+/// (`TrainingProgram.remainingAt`) — même famille que [WorkoutSegmentBlock].
+class WorkoutRemainingBlock extends DashboardBlock {
+  const WorkoutRemainingBlock({super.color, super.textColor});
+
+  @override
+  bool operator ==(Object other) =>
+      other is WorkoutRemainingBlock && other.color == color && other.textColor == textColor;
+
+  @override
+  int get hashCode => Object.hash(color, textColor);
 }
 
 /// La liste des cols du tracé, avec un repère « en cours / prochain ».

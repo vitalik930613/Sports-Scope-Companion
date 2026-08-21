@@ -12,6 +12,8 @@ import '../blocks/mark_lap_block.dart';
 import '../blocks/metric_trend_block.dart';
 import '../blocks/metric_view.dart';
 import '../blocks/power_curve_block.dart';
+import '../blocks/workout_remaining_block.dart';
+import '../blocks/workout_segment_block.dart';
 import '../blocks/zones_block.dart';
 import '../climb_profile.dart' show climbLapSeries;
 import '../route_climbs.dart';
@@ -383,6 +385,18 @@ class _LapListBodyState extends State<LapListBody> {
           mode: markLap.mode,
           color: markLap.color,
           textColor: markLap.textColor,
+        ),
+      // Comme `MarkLapBlock` : la timeline d'entraînement ne dépend pas du
+      // tour affiché, `widget.sources.recorder` (pas `lap`).
+      final WorkoutSegmentBlock segment => WorkoutSegmentCard(
+          recorder: widget.sources.recorder,
+          color: segment.color,
+          textColor: segment.textColor,
+        ),
+      final WorkoutRemainingBlock remaining => WorkoutRemainingCard(
+          recorder: widget.sources.recorder,
+          color: remaining.color,
+          textColor: remaining.textColor,
         ),
       _ => const SizedBox.shrink(),
     };

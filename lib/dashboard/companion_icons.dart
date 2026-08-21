@@ -1,5 +1,7 @@
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
+import '../training_program/training_program.dart';
+
 /// Le registre des icônes personnalisables d'un bloc `metric` — une clé de
 /// `CompanionSettings::ICONS` (dépôt site, `app/models/companion_settings.rb`)
 /// vers l'icône FontAwesome qu'elle dessine. Même liste blanche des deux
@@ -52,3 +54,27 @@ const Map<String, FaIconData> companionIcons = {
 /// inconnue de cette version — l'appelant retombe alors sur l'icône par
 /// défaut de la mesure ([MetricId.icon]), jamais sur une icône manquante.
 FaIconData? companionIconFor(String? key) => key == null ? null : companionIcons[key];
+
+/// Le registre des icônes de jalon — catalogue fermé et distinct de
+/// [companionIcons] : celui-ci vient des classes CSS FontAwesome libres d'un
+/// bloc `metric` ([MetricBlock.icon]), quand [WorkoutMilestoneIcon] est un
+/// vocabulaire fermé à dix valeurs, partagé mot pour mot avec
+/// `TrainingProgram::ICONS` (site) et `MILESTONE_ICONS` (`trainingProgramStore.ts`).
+const Map<WorkoutMilestoneIcon, FaIconData> _workoutMilestoneIcons = {
+  WorkoutMilestoneIcon.warmup: FontAwesomeIcons.personWalking,
+  WorkoutMilestoneIcon.sprint: FontAwesomeIcons.bolt,
+  WorkoutMilestoneIcon.effort: FontAwesomeIcons.fire,
+  WorkoutMilestoneIcon.recovery: FontAwesomeIcons.heartPulse,
+  WorkoutMilestoneIcon.climb: FontAwesomeIcons.mountain,
+  WorkoutMilestoneIcon.cooldown: FontAwesomeIcons.snowflake,
+  WorkoutMilestoneIcon.interval: FontAwesomeIcons.repeat,
+  WorkoutMilestoneIcon.hydration: FontAwesomeIcons.droplet,
+  WorkoutMilestoneIcon.alert: FontAwesomeIcons.triangleExclamation,
+  WorkoutMilestoneIcon.finish: FontAwesomeIcons.flagCheckered,
+};
+
+/// L'icône du jalon, ou un repère neutre sans jalon/icône réglée — jamais de
+/// case sans icône du tout, contrairement à [companionIconFor] dont l'absence
+/// se comble ailleurs (icône par défaut de la mesure).
+FaIconData workoutMilestoneIconFor(WorkoutMilestoneIcon? icon) =>
+    icon == null ? FontAwesomeIcons.flag : _workoutMilestoneIcons[icon]!;
