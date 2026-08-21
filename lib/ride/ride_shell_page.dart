@@ -2361,6 +2361,12 @@ class _RideShellPageState extends State<RideShellPage>
       // page de tours héritait alors du `_selectedIndex` d'une autre page de
       // tours (ou de tours de col) qui avait occupé le même index avant elle.
       key: ObjectKey(page),
+      // `index == _page` : cette entrée est-elle celle sous les yeux, ou une
+      // voisine que le `PageView` garde construite en cache pendant qu'on est
+      // ailleurs ? `LapListBody` s'en sert pour revenir au tour en cours
+      // chaque fois qu'on revient sur cette page, quel que soit le sort de
+      // son `Element` entre-temps.
+      visible: index == _page,
       page: page,
       sources: _sources,
       radar: _preset.sensors.radar ? _radar : null,

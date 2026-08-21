@@ -44,6 +44,7 @@ class LapListBody extends StatefulWidget {
     required this.spec,
     required this.sources,
     this.onGridMeasured,
+    this.visible = true,
   });
 
   final LapListPageSpec spec;
@@ -54,6 +55,14 @@ class LapListBody extends StatefulWidget {
   /// mesurée ne dépend pas de ce que la grille contient.
   final ValueChanged<Size>? onGridMeasured;
 
+  /// Cette page est-elle celle actuellement affichée du défilement ?
+  ///
+  /// Passé par `RideShellPage._pageAt`, `false` pour une page voisine que le
+  /// `PageView` garde construite en cache pendant qu'on est ailleurs. Sert
+  /// uniquement à détecter le **front** « redevient visible » — voir
+  /// [_LapListBodyState._selectedIndex].
+  final bool visible;
+
   @override
   State<LapListBody> createState() => _LapListBodyState();
 }
@@ -62,7 +71,14 @@ class _LapListBodyState extends State<LapListBody> {
   /// `null` tant qu'aucun choix explicite n'a été fait : on suit alors le
   /// tour courant. Dès qu'on en choisit un dans la liste déroulante, ce choix
   /// est gardé même quand un nouveau tour démarre — le cycliste garde le
-  /// dernier mot, même principe que le retour automatique sur la carte.
+  /// dernier mot, même principe que le retour automatique sur la carte —
+  /// **tant qu'on reste sur cette page**. Revenir dessus depuis une autre
+  /// (glissé, pastille du numéro de page) efface ce choix : voir
+  /// [didUpdateWidget]. Sans ce reset, le `PageView` gardant parfois la page
+  /// voisine construite en cache (`RideShellPage`, `PageView.builder`), un
+  /// tour choisi puis quitté restait affiché à un prochain passage, ou pas,
+  /// selon que Flutter avait ou non recyclé l'`Element` entre-temps — un
+  /// comportement qui dépendait du hasard du cache plutôt que du geste.
   int? _selectedIndex;
 
   /// La liste des tours, recopiée ici plutôt que relue à chaque notification
@@ -97,6 +113,13 @@ class _LapListBodyState extends State<LapListBody> {
       oldWidget.sources.recorder.removeListener(_onRecorderChanged);
       widget.sources.recorder.addListener(_onRecorderChanged);
       _laps = widget.sources.recorder.lapsOf(widget.spec.series);
+    }
+    // Le front, pas le niveau — sinon un widget qui reste visible (le cas
+    // courant, une fois par sortie) se remettrait au tour en cours à chaque
+    // reconstruction, y compris celles qui n'ont rien à voir avec la page
+    // (nouvelle mesure, tic de la coquille).
+    if (widget.visible && !oldWidget.visible) {
+      _selectedIndex = null;
     }
   }
 

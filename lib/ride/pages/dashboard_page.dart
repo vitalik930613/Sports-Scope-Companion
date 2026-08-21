@@ -79,6 +79,7 @@ class DashboardPage extends StatelessWidget {
     this.onGridMeasured,
     this.onHidePage,
     this.onShowPage,
+    this.visible = true,
   });
 
   /// La description de la page. Jamais une [MapPageSpec] : la carte n'est pas
@@ -221,6 +222,16 @@ class DashboardPage extends StatelessWidget {
   /// façon, le temps de la sortie (voir `RideShellPage._showPage`).
   final VoidCallback? onShowPage;
 
+  /// Cette page est-elle celle actuellement affichée du défilement ?
+  ///
+  /// `true` par défaut — vrai pour une page ouverte depuis le menu, toujours
+  /// démontée puis remontée à chaque ouverture, donc jamais concernée par la
+  /// distinction. Seule `RideShellPage._pageAt` la passe à `false`, pour une
+  /// page voisine que le `PageView` garde construite en cache. Ne sert qu'à
+  /// [LapListBody], qui en a besoin pour remettre le tour affiché au tour en
+  /// cours quand on revient dessus (voir sa doc).
+  final bool visible;
+
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
@@ -261,6 +272,7 @@ class DashboardPage extends StatelessWidget {
             spec: laps,
             sources: sources,
             onGridMeasured: onGridMeasured,
+            visible: visible,
           ),
       };
 
