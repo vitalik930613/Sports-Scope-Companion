@@ -1375,9 +1375,12 @@ enum BellSound with BlockMode {
   /// (radar, virages), pas seulement fort.
   horn('horn'),
 
-  /// Le plus long des trois sons (~6 s) — voir le minuteur de secours de
+  /// Le plus long des sons (~6 s) — voir le minuteur de secours de
   /// `BellPlayer` (`ride/blocks/bell_player.dart`), calé dessus.
-  booster('booster');
+  booster('booster'),
+
+  /// Une variante du klaxon (~4,8 s, sous le même minuteur).
+  horn2('horn2');
 
   const BellSound(this.key);
 

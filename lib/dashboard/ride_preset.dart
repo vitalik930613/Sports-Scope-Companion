@@ -1364,12 +1364,16 @@ sealed class ButtonAction {
       final pageKey = raw.substring('go_to_page:'.length);
       return pageKey.isEmpty ? null : GoToPageAction(pageKey);
     }
+    // Un jeton de `BellSound` (`bell`, `horn`, `booster`, `horn2`, …) avant le
+    // `switch` : même catalogue que `_bellSoundOf`, pour qu'un nouveau son
+    // ajouté à l'enum se retrouve automatiquement disponible sur un bouton
+    // Di2 sans toucher cette fonction.
+    for (final sound in BellSound.values) {
+      if (sound.key == raw) return RingBellAction(sound);
+    }
     return switch (raw) {
       'next_page' => const NextPageAction(),
       'previous_page' => const PreviousPageAction(),
-      'bell' => const RingBellAction(BellSound.bell),
-      'horn' => const RingBellAction(BellSound.horn),
-      'booster' => const RingBellAction(BellSound.booster),
       'start_lap' => const StartLapAction(),
       'sleep' => const EnterSleepAction(),
       'wake' => const ExitSleepAction(),
