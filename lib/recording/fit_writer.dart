@@ -119,11 +119,13 @@ class FitWriter {
 
     file.data(_Local.event, {253: _timestamp(end), 0: 0, 1: 4, 4: 0});
 
-    // — lap : un groupe par tour de la série de tours 'default' — c'est la
-    // seule que le format .fit puisse porter (une hiérarchie de tours, pas
-    // plusieurs séries en parallèle comme l'appli en connaît). Une sortie sans
-    // tour marqué dans cette série donne un seul groupe couvrant toute la
-    // sortie : exactement le comportement d'avant les tours manuels.
+    // — lap : le format .fit ne porte qu'une seule séquence de tours par
+    // session, pas plusieurs séries en parallèle comme l'appli en connaît
+    // (`default`, `workout`, `cols`, une série personnalisée posée sur un
+    // bouton Di2…) — voir `_lapGroups`, qui fusionne leurs frontières. Une
+    // sortie où aucune série n'a jamais dépassé son tour 0 donne un seul
+    // groupe couvrant toute la sortie : exactement le comportement d'avant
+    // les tours manuels.
     final lapGroups = _lapGroups(points);
     // Le temps chronométré compte une seconde par point capturé, donc aussi les
     // feux rouges : sans `total_moving_time` à côté, un lecteur prend le premier
@@ -398,19 +400,38 @@ class FitWriter {
 
   static int _milliseconds(Duration duration) => duration.inMilliseconds;
 
-  /// Découpe les points par tour de la série `'default'`, dans l'ordre
-  /// d'enregistrement. Un simple changement d'index suffit à trancher : les
-  /// tours d'une série se suivent, jamais entrelacés.
+  /// Découpe les points par tour, sur **toutes** les séries qui ont servi
+  /// pendant la sortie — pas seulement `'default'`. `TrackPoint.laps` porte
+  /// l'index courant de chaque série qui a été utilisée au moins une fois
+  /// (`workout`, `cols`, une série personnalisée posée sur un bouton Di2 ou
+  /// une case de bandeau, voir sa doc) ; un `.fit` n'a qu'une seule séquence
+  /// de tours à offrir, donc un nouveau tour s'ouvre ici dès qu'*une* des
+  /// séries change d'index — ce qui revient à fusionner leurs frontières en
+  /// une seule chronologie plutôt que de n'en garder qu'une et perdre les
+  /// autres.
+  ///
+  /// Une sortie qui n'a touché qu'à une seule série retombe exactement sur
+  /// son découpage à elle, comme avant. Le nom du tronçon d'un tour
+  /// `workout` (`RideLap.label`) et l'identifiant d'un col (`RideLap.
+  /// climbId`) ne sont en revanche pas persistés dans le JSONL (voir
+  /// `lapSeriesHistoryOf`) : cette fonction ne peut donc reprendre que les
+  /// frontières, jamais leur nom.
   static List<List<TrackPoint>> _lapGroups(List<TrackPoint> points) {
+    final seriesKeys = <String>{};
+    for (final point in points) {
+      seriesKeys.addAll(point.laps.keys);
+    }
+    final orderedKeys = seriesKeys.toList()..sort();
+
     final groups = <List<TrackPoint>>[];
     List<TrackPoint>? current;
-    int? currentIndex;
+    String? currentKey;
     for (final point in points) {
-      final index = point.laps['default'] ?? 0;
-      if (current == null || index != currentIndex) {
+      final key = orderedKeys.map((series) => point.laps[series] ?? 0).join(',');
+      if (current == null || key != currentKey) {
         current = [];
         groups.add(current);
-        currentIndex = index;
+        currentKey = key;
       }
       current.add(point);
     }

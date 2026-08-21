@@ -1608,10 +1608,10 @@ class _RideShellPageState extends State<RideShellPage>
         _stepPage(-1);
       case RingBellAction(:final sound):
         unawaited(_buttonBell.toggle(sound));
-      case StartLapAction():
+      case StartLapAction(:final series):
         // Même garde que `MarkLapControl` (`mark_lap_block.dart`) : un tour
         // ne veut rien dire hors enregistrement.
-        if (widget.recorder.isActive) widget.recorder.markLap('default');
+        if (widget.recorder.isActive) widget.recorder.markLap(series);
       case EnterSleepAction():
         _sleep();
       case ExitSleepAction():

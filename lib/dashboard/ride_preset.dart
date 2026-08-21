@@ -1450,6 +1450,13 @@ sealed class ButtonAction {
       final pageKey = raw.substring('go_to_page:'.length);
       return pageKey.isEmpty ? null : GoToPageAction(pageKey);
     }
+    // Même jeton composé que `go_to_page:<clé>` : `start_lap` seul reste
+    // valide (série `'default'`, comportement d'avant ce réglage) pour un
+    // profil plus ancien que ce paramètre.
+    if (raw.startsWith('start_lap:')) {
+      final series = raw.substring('start_lap:'.length);
+      return StartLapAction(series.isEmpty ? 'default' : series);
+    }
     // Un jeton de `BellSound` (`bell`, `horn`, `booster`, `horn2`, …) avant le
     // `switch` : même catalogue que `_bellSoundOf`, pour qu'un nouveau son
     // ajouté à l'enum se retrouve automatiquement disponible sur un bouton
@@ -1482,8 +1489,13 @@ class RingBellAction extends ButtonAction {
   final BellSound sound;
 }
 
+/// Marque un tour de [series] — même paramètre libre que `MarkLapBlock.series`
+/// et `BandMarkLapSlot.series` (`RideRecorder.markLap`), plutôt qu'une série
+/// figée sur `'default'` : sans ça, un bouton Di2 ne pouvait jamais viser la
+/// série d'une page `laps` particulière quand un profil en pose plusieurs.
 class StartLapAction extends ButtonAction {
-  const StartLapAction();
+  const StartLapAction([this.series = 'default']);
+  final String series;
 }
 
 class EnterSleepAction extends ButtonAction {
