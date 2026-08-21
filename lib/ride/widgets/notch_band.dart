@@ -4,13 +4,14 @@ import 'dart:ui' show DisplayFeature, DisplayFeatureType;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../../dashboard/dashboard_block.dart' show BellMode, RadarMode, SleepMode;
+import '../../dashboard/dashboard_block.dart' show BellMode, RadarMode, SleepMode, ToggleWorkoutMode;
 import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
 import '../../recording/ride_recorder.dart';
 import '../blocks/bell_block.dart';
 import '../blocks/radar_block.dart';
 import '../blocks/sleep_block.dart';
+import '../blocks/toggle_workout_block.dart';
 import '../radar_severity.dart';
 import 'band_metric_tile.dart';
 import 'swipe_zone.dart';
@@ -40,6 +41,7 @@ class NotchBand extends StatefulWidget {
     required this.recorder,
     this.radar,
     this.onSleep,
+    this.onChooseWorkout,
   });
 
   /// Les jeux de la bande, dans l'ordre. Vide (le cas par défaut) laisse la
@@ -59,6 +61,12 @@ class NotchBand extends StatefulWidget {
   /// [SleepControl]. `null` sur un profil sans carte, comme la commande de
   /// la grille : rien à endormir.
   final VoidCallback? onSleep;
+
+  /// Ouvre le choix de programme d'entraînement, sur un tap d'un côté réglé
+  /// sur `toggle_workout` — voir [ToggleWorkoutControl]. Toujours
+  /// utilisable, contrairement à [onSleep] : un programme se démarre aussi
+  /// bien sur home-trainer, sans carte.
+  final VoidCallback? onChooseWorkout;
 
   /// Plancher pour les écrans sans encoche : sans lui, la valeur se collerait
   /// au bord. Un peu plus haut que l'ancienne bande `RadarDistanceBadges`
@@ -225,6 +233,11 @@ class _NotchBandState extends State<NotchBand> {
 
   Widget _action(BandAction action) => switch (action) {
         BandAction.sleep => SleepControl(onSleep: widget.onSleep, mode: SleepMode.compact),
+        BandAction.toggleWorkout => ToggleWorkoutControl(
+            recorder: widget.recorder,
+            onChooseWorkout: widget.onChooseWorkout,
+            mode: ToggleWorkoutMode.compact,
+          ),
       };
 
   // Pas de `FittedBox` externe ici, à l'inverse de [_metric] :

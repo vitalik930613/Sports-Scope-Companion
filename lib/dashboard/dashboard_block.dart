@@ -96,6 +96,11 @@ sealed class DashboardBlock {
           color: color,
           textColor: textColor,
         ),
+      'toggle_workout' => ToggleWorkoutBlock(
+          mode: _modeOf(raw['mode'], ToggleWorkoutMode.values),
+          color: color,
+          textColor: textColor,
+        ),
       'nav_state' => NavStateBlock(
           mode: _modeOf(raw['mode'], NavStateMode.values),
           color: color,
@@ -1284,6 +1289,45 @@ enum RouteMode with BlockMode {
   compact('compact');
 
   const RouteMode(this.key);
+
+  @override
+  final String key;
+}
+
+/// Démarrer (ou remplacer) un programme d'entraînement, ou le détacher —
+/// combinés en un seul bouton, même principe que [RouteBlock] pour la
+/// navigation. C'est [RideRecorder.activeWorkout] qui décide côté appli
+/// lequel des deux gestes le bouton pose (voir `ToggleWorkoutControl`,
+/// `ride/blocks/toggle_workout_block.dart`).
+///
+/// Aucune paire de commandes séparées à côté, contrairement à [RouteBlock] :
+/// rien n'existait avant ce bouton, pas de profil déjà composé à qui ne rien
+/// faire perdre.
+class ToggleWorkoutBlock extends DashboardBlock {
+  const ToggleWorkoutBlock({
+    this.mode = ToggleWorkoutMode.full,
+    super.color,
+    super.textColor,
+  });
+
+  final ToggleWorkoutMode mode;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ToggleWorkoutBlock &&
+      other.mode == mode &&
+      other.color == color &&
+      other.textColor == textColor;
+
+  @override
+  int get hashCode => Object.hash(mode, color, textColor);
+}
+
+enum ToggleWorkoutMode with BlockMode {
+  full('full'),
+  compact('compact');
+
+  const ToggleWorkoutMode(this.key);
 
   @override
   final String key;

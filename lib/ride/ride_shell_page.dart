@@ -2067,6 +2067,10 @@ class _RideShellPageState extends State<RideShellPage>
                 // pour la commande de la grille (`DashboardPage.onSleep`
                 // plus bas).
                 onSleep: _preset.hasMap ? _sleep : null,
+                // Sans rapport avec la carte, même raison que
+                // `DashboardPage.onStartWorkout` plus bas : un programme se
+                // démarre aussi bien sur home-trainer.
+                onChooseWorkout: _chooseWorkout,
               ),
             ),
             // Le numéro de la page, juste au-dessus du bandeau et le temps de le
@@ -2118,6 +2122,7 @@ class _RideShellPageState extends State<RideShellPage>
                 recorder: widget.recorder,
                 radar: _preset.sensors.radar ? _radar : null,
                 onSleep: _preset.hasMap ? _sleep : null,
+                onChooseWorkout: _chooseWorkout,
               ),
             ),
             // La pastille du tronçon en cours d'un programme d'entraînement :

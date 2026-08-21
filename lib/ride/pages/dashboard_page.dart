@@ -29,6 +29,7 @@ import '../blocks/recording_block.dart';
 import '../blocks/route_block.dart';
 import '../blocks/bell_block.dart';
 import '../blocks/sleep_block.dart';
+import '../blocks/toggle_workout_block.dart';
 import '../blocks/training_budget_block.dart';
 import '../blocks/workout_remaining_block.dart';
 import '../blocks/workout_segment_block.dart';
@@ -369,6 +370,13 @@ class DashboardPage extends StatelessWidget {
             mode: route.mode,
             color: route.color,
             textColor: route.textColor,
+          ),
+        final ToggleWorkoutBlock toggleWorkout => ToggleWorkoutControl(
+            recorder: sources.recorder,
+            onChooseWorkout: onStartWorkout,
+            mode: toggleWorkout.mode,
+            color: toggleWorkout.color,
+            textColor: toggleWorkout.textColor,
           ),
         final NavStateBlock nav => NavStateCard(
             nav: sources.nav,

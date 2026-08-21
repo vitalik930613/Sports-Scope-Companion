@@ -857,6 +857,7 @@ sealed class BandSlot {
       );
     }
     if (raw == 'sleep') return const BandActionSlot(BandAction.sleep);
+    if (raw == 'toggle_workout') return const BandActionSlot(BandAction.toggleWorkout);
     if (raw is String && raw.startsWith('bell_')) {
       return BandBellSlot(_bellSoundOf(raw.substring('bell_'.length)));
     }
@@ -976,7 +977,12 @@ class BandMetricSlot extends BandSlot {
 /// ([BandBellSlot]) — même raison que [BandRadarSlot] plutôt qu'un radar
 /// fondu ici, pour la même faute qu'aurait porté un `"bell"` sans dire lequel
 /// des deux sons il joue.
-enum BandAction { sleep }
+///
+/// `toggleWorkout` n'a pas de préfixe `workout_` côté document
+/// (`'toggle_workout'`, voir [BandSlot.parse]), contrairement aux cinq
+/// habillages de [BandWorkoutMode] : ce n'est pas un habillage du tronçon en
+/// cours, c'est un bouton — même nature que `sleep`.
+enum BandAction { sleep, toggleWorkout }
 
 @immutable
 class BandActionSlot extends BandSlot {
