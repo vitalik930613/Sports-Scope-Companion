@@ -15,6 +15,16 @@ import '../training_program/training_program.dart';
 class WorkoutCuePlayer {
   final _players = <WorkoutSound, AudioPlayer>{};
 
+  /// Durée de chaque son, connue une fois [warmUp] terminé — c'est elle qui
+  /// permet à `WorkoutCuePolicy` de faire démarrer le son assez tôt pour
+  /// qu'il se termine au départ du jalon plutôt que d'y commencer.
+  final _durations = <WorkoutSound, Duration>{};
+
+  /// `Duration.zero` tant que [warmUp] n'a pas résolu ce son (ou a échoué) :
+  /// une durée inconnue vaut « pas d'anticipation », jamais un son qui parte
+  /// en retard sur son jalon.
+  Duration durationOf(WorkoutSound sound) => _durations[sound] ?? Duration.zero;
+
   static final _context = AudioContext(
     android: const AudioContextAndroid(
       contentType: AndroidContentType.sonification,
@@ -30,6 +40,8 @@ class WorkoutCuePlayer {
         final player = AudioPlayer()..setReleaseMode(ReleaseMode.stop);
         await player.setSource(AssetSource(sound.asset));
         _players[sound] = player;
+        final duration = await player.getDuration();
+        if (duration != null) _durations[sound] = duration;
       }
     } catch (e) {
       debugPrint('[entraînement] sons indisponibles : $e');

@@ -596,6 +596,11 @@ class _RideShellPageState extends State<RideShellPage>
   /// ailleurs dans cette coquille.
   TrainingProgram? _workoutProgram;
 
+  /// Ce qui décide quand lancer le son d'un jalon — décalé plus tôt que son
+  /// franchissement (voir `WorkoutCuePolicy`), donc un curseur distinct de
+  /// [_workoutPolicy] bien que reconstruit aux mêmes instants.
+  WorkoutCuePolicy? _workoutCuePolicy;
+
   /// Les sons des jalons — même patron que [_climbSound], contexte audio
   /// « duck » plutôt que le flux alarme de [_reminderBell] : un programme
   /// peut sonner toutes les 30 secondes, bien plus intrusif à couper la
@@ -636,6 +641,26 @@ class _RideShellPageState extends State<RideShellPage>
       reminders: _preset.reminders,
       recorded: widget.recorder.recorded,
     );
+
+    // Comme `_reminderPolicy` : si un programme est déjà actif au montage
+    // (démontage/remontage en pleine sortie), on le seede sur l'écoulé réel
+    // pour ne pas rejouer ses jalons déjà franchis. `_updateWorkout` peut
+    // alors supposer que tout changement qu'il observe ensuite est une
+    // activation en direct — jamais un remontage — et seeder à zéro sans y
+    // repenser (voir le commentaire là-bas).
+    _workoutProgram = widget.recorder.activeWorkout;
+    final workoutProgram = _workoutProgram;
+    final workoutElapsed = widget.recorder.workoutElapsed ?? Duration.zero;
+    _workoutPolicy = workoutProgram == null
+        ? null
+        : WorkoutPolicy(milestones: workoutProgram.milestones, elapsed: workoutElapsed);
+    _workoutCuePolicy = workoutProgram == null
+        ? null
+        : WorkoutCuePolicy(
+            milestones: workoutProgram.milestones,
+            soundDuration: _workoutCue.durationOf,
+            elapsed: workoutElapsed,
+          );
 
     _mutedRadar = ValueNotifier<RadarSample?>(null);
     _radar = RadarViewNotifier(
@@ -858,11 +883,17 @@ class _RideShellPageState extends State<RideShellPage>
     _reminderAlert.value = const [];
   }
 
-  /// À chaque tic : le programme actif a-t-il changé (nouvelle activation
-  /// depuis le menu, ou remontage de la coquille avec un programme déjà en
-  /// cours) ? La policy est alors reconstruite, seedée sur ce qui est déjà
-  /// écoulé — même garde que [_reminderPolicy], pour ne jamais rejouer les
-  /// jalons déjà franchis. Puis : un jalon vient-il d'être franchi ?
+  /// À chaque tic : le programme actif a-t-il changé ? Le seul cas où ça
+  /// arrive ici, c'est une nouvelle activation en direct (menu ⋮) — un
+  /// programme déjà en cours au montage de la coquille (remontage) est déjà
+  /// pris en compte dans `initState`, qui seede alors sur l'écoulé réel pour
+  /// ne pas rejouer les jalons déjà franchis. Une activation en direct, elle,
+  /// seede toujours à zéro : rien n'a encore pu être franchi. Seeder plutôt
+  /// sur `workoutElapsed` ici serait racy — son horloge (le timer du
+  /// [RideRecorder]) tourne indépendamment de celle de ce tic, `elapsed`
+  /// pourrait donc déjà valoir 1s ou plus au moment de cette reconstruction,
+  /// assez pour que le jalon d'ouverture (toujours à l'offset 0) soit
+  /// considéré à tort comme déjà franchi et ne sonne jamais.
   ///
   /// Gardé sur `isActive` comme [RideRecorder.markLap] : `workoutElapsed`
   /// n'avance que pendant l'enregistrement, donc un programme attaché avant
@@ -876,21 +907,27 @@ class _RideShellPageState extends State<RideShellPage>
       _workoutProgram = program;
       _workoutPolicy = program == null
           ? null
-          : WorkoutPolicy(
+          : WorkoutPolicy(milestones: program.milestones, elapsed: Duration.zero);
+      _workoutCuePolicy = program == null
+          ? null
+          : WorkoutCuePolicy(
               milestones: program.milestones,
-              elapsed: widget.recorder.workoutElapsed ?? Duration.zero,
+              soundDuration: _workoutCue.durationOf,
+              elapsed: Duration.zero,
             );
     }
 
-    final policy = _workoutPolicy;
     final elapsed = widget.recorder.workoutElapsed;
-    if (policy == null || elapsed == null || !widget.recorder.isActive) return;
+    if (elapsed == null || !widget.recorder.isActive) return;
 
-    final milestone = policy.read(elapsed);
+    // Lu avant le franchissement lui-même : c'est ce qui fait démarrer le
+    // son en avance sur l'offset qu'il annonce.
+    final cue = _workoutCuePolicy?.read(elapsed);
+    if (cue?.sound != null) _workoutCue.play(cue!.sound!);
+
+    final milestone = _workoutPolicy?.read(elapsed);
     if (milestone == null) return;
-
     widget.recorder.markLap(workoutLapSeries, label: milestone.segmentName);
-    if (milestone.sound != null) _workoutCue.play(milestone.sound!);
   }
 
   /// Faut-il ramener le cycliste sur la carte, ou lui rendre sa page ?
