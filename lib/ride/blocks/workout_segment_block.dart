@@ -16,18 +16,25 @@ import 'block_card.dart';
 /// marquer les tours). Sans programme actif, un tiret plutôt qu'une carte qui
 /// disparaît : même convention qu'une mesure indisponible.
 class WorkoutSegmentCard extends StatelessWidget {
-  const WorkoutSegmentCard({super.key, required this.recorder, this.color, this.textColor});
+  const WorkoutSegmentCard({super.key, required this.recorder, this.upcoming = false, this.color, this.textColor});
 
   final RideRecorder recorder;
 
+  /// Montre le tronçon qui suivra celui en cours ([TrainingProgram.
+  /// nextMilestoneAt]) plutôt que le tronçon en cours — un aperçu de ce qui
+  /// arrive, posable à côté d'une carte qui montre déjà le tronçon en cours.
+  final bool upcoming;
+
   /// Fond/texte réglés dans l'éditeur — voir [DashboardBlock.color]/
   /// [DashboardBlock.textColor]. À défaut, [WorkoutMilestone.color]/
-  /// [WorkoutMilestone.textColor] du tronçon en cours font foi : le réglage du
-  /// bloc l'emporte toujours, le jalon n'est qu'un repli.
+  /// [WorkoutMilestone.textColor] du tronçon affiché (en cours ou suivant)
+  /// font foi : le réglage du bloc l'emporte toujours, le jalon n'est qu'un
+  /// repli.
   final Color? color;
   final Color? textColor;
 
   static const _title = 'Tronçon';
+  static const _upcomingTitle = 'Suivant';
   static const _naturalWidth = 220.0;
   static const _figureSize = 30.0;
 
@@ -37,7 +44,9 @@ class WorkoutSegmentCard extends StatelessWidget {
         builder: (context, _) {
           final program = recorder.activeWorkout;
           final elapsed = recorder.workoutElapsed;
-          final milestone = program != null && elapsed != null ? program.milestoneAt(elapsed) : null;
+          final milestone = program != null && elapsed != null
+              ? (upcoming ? program.nextMilestoneAt(elapsed) : program.milestoneAt(elapsed))
+              : null;
 
           final background = color ?? milestone?.color;
           final ink = textColor ??
@@ -57,7 +66,7 @@ class WorkoutSegmentCard extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    _title.toUpperCase(),
+                    (upcoming ? _upcomingTitle : _title).toUpperCase(),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: ink.withValues(alpha: 0.7), fontSize: metrics.titleSize),

@@ -135,10 +135,19 @@ sealed class DashboardBlock {
       'altitude_profile' => AltitudeProfileBlock.parse(raw),
       'metric_trend' => MetricTrendBlock.parse(raw),
       'clock' => ClockBlock.parse(raw),
-      'workout_segment' => WorkoutSegmentBlock(color: color, textColor: textColor),
-      'workout_remaining' => WorkoutRemainingBlock(color: color, textColor: textColor),
+      'workout_segment' => WorkoutSegmentBlock(
+          upcoming: raw['upcoming'] == true,
+          color: color,
+          textColor: textColor,
+        ),
+      'workout_remaining' => WorkoutRemainingBlock(
+          upcoming: raw['upcoming'] == true,
+          color: color,
+          textColor: textColor,
+        ),
       'workout_status' => WorkoutStatusBlock(
           mode: _modeOf(raw['mode'], WorkoutStatusMode.values),
+          upcoming: raw['upcoming'] == true,
           color: color,
           textColor: textColor,
         ),
@@ -1771,32 +1780,49 @@ enum TrainingBudgetMode with BlockMode {
 
 /// Le nom du tronçon d'entraînement en cours, avec son icône.
 ///
-/// Rien à régler au-delà de couleur/texte — le contenu est entièrement dérivé
-/// du programme actif (`RideRecorder.activeWorkout`/`workoutElapsed`,
+/// Rien à régler au-delà de couleur/texte/[upcoming] — le contenu est
+/// entièrement dérivé du programme actif
+/// (`RideRecorder.activeWorkout`/`workoutElapsed`,
 /// `TrainingProgram.milestoneAt`), même famille que [NavStateBlock]/
 /// [SleepBlock] : un seul mode implicite, pas de catalogue à choisir dedans.
 class WorkoutSegmentBlock extends DashboardBlock {
-  const WorkoutSegmentBlock({super.color, super.textColor});
+  const WorkoutSegmentBlock({this.upcoming = false, super.color, super.textColor});
+
+  /// Montre le tronçon qui suivra celui en cours (`TrainingProgram.
+  /// nextMilestoneAt`) plutôt que le tronçon en cours — un aperçu, posable à
+  /// côté du composant qui montre le tronçon en cours plutôt qu'à sa place.
+  final bool upcoming;
 
   @override
   bool operator ==(Object other) =>
-      other is WorkoutSegmentBlock && other.color == color && other.textColor == textColor;
+      other is WorkoutSegmentBlock &&
+      other.upcoming == upcoming &&
+      other.color == color &&
+      other.textColor == textColor;
 
   @override
-  int get hashCode => Object.hash(color, textColor);
+  int get hashCode => Object.hash(upcoming, color, textColor);
 }
 
 /// Le temps restant avant le prochain jalon du programme d'entraînement actif
 /// (`TrainingProgram.remainingAt`) — même famille que [WorkoutSegmentBlock].
 class WorkoutRemainingBlock extends DashboardBlock {
-  const WorkoutRemainingBlock({super.color, super.textColor});
+  const WorkoutRemainingBlock({this.upcoming = false, super.color, super.textColor});
+
+  /// La durée du tronçon qui suivra celui en cours
+  /// (`TrainingProgram.nextSegmentDurationAt`) plutôt qu'un compte à rebours
+  /// vers son départ — ce tronçon n'a pas commencé, rien n'y décompte encore.
+  final bool upcoming;
 
   @override
   bool operator ==(Object other) =>
-      other is WorkoutRemainingBlock && other.color == color && other.textColor == textColor;
+      other is WorkoutRemainingBlock &&
+      other.upcoming == upcoming &&
+      other.color == color &&
+      other.textColor == textColor;
 
   @override
-  int get hashCode => Object.hash(color, textColor);
+  int get hashCode => Object.hash(upcoming, color, textColor);
 }
 
 /// [WorkoutSegmentBlock] et [WorkoutRemainingBlock] fondus dans une seule
@@ -1804,19 +1830,24 @@ class WorkoutRemainingBlock extends DashboardBlock {
 /// la place que d'une case mais veut les deux informations plutôt que
 /// choisir entre elles. Même source, même famille.
 class WorkoutStatusBlock extends DashboardBlock {
-  const WorkoutStatusBlock({required this.mode, super.color, super.textColor});
+  const WorkoutStatusBlock({required this.mode, this.upcoming = false, super.color, super.textColor});
 
   final WorkoutStatusMode mode;
+
+  /// Même sens que [WorkoutSegmentBlock.upcoming]/[WorkoutRemainingBlock.upcoming],
+  /// appliqué aux deux informations à la fois.
+  final bool upcoming;
 
   @override
   bool operator ==(Object other) =>
       other is WorkoutStatusBlock &&
       other.mode == mode &&
+      other.upcoming == upcoming &&
       other.color == color &&
       other.textColor == textColor;
 
   @override
-  int get hashCode => Object.hash(mode, color, textColor);
+  int get hashCode => Object.hash(mode, upcoming, color, textColor);
 }
 
 enum WorkoutStatusMode with BlockMode {

@@ -406,17 +406,20 @@ class DashboardPage extends StatelessWidget {
           ),
         final WorkoutSegmentBlock segment => WorkoutSegmentCard(
             recorder: sources.recorder,
+            upcoming: segment.upcoming,
             color: segment.color,
             textColor: segment.textColor,
           ),
         final WorkoutRemainingBlock remaining => WorkoutRemainingCard(
             recorder: sources.recorder,
+            upcoming: remaining.upcoming,
             color: remaining.color,
             textColor: remaining.textColor,
           ),
         final WorkoutStatusBlock status => WorkoutStatusCard(
             recorder: sources.recorder,
             mode: status.mode,
+            upcoming: status.upcoming,
             color: status.color,
             textColor: status.textColor,
           ),

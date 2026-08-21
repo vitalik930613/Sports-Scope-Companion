@@ -391,17 +391,20 @@ class _LapListBodyState extends State<LapListBody> {
       // tour affiché, `widget.sources.recorder` (pas `lap`).
       final WorkoutSegmentBlock segment => WorkoutSegmentCard(
           recorder: widget.sources.recorder,
+          upcoming: segment.upcoming,
           color: segment.color,
           textColor: segment.textColor,
         ),
       final WorkoutRemainingBlock remaining => WorkoutRemainingCard(
           recorder: widget.sources.recorder,
+          upcoming: remaining.upcoming,
           color: remaining.color,
           textColor: remaining.textColor,
         ),
       final WorkoutStatusBlock status => WorkoutStatusCard(
           recorder: widget.sources.recorder,
           mode: status.mode,
+          upcoming: status.upcoming,
           color: status.color,
           textColor: status.textColor,
         ),

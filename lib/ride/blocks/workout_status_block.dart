@@ -31,12 +31,20 @@ class WorkoutStatusCard extends StatelessWidget {
     super.key,
     required this.recorder,
     required this.mode,
+    this.upcoming = false,
     this.color,
     this.textColor,
   });
 
   final RideRecorder recorder;
   final WorkoutStatusMode mode;
+
+  /// Montre le tronçon qui suivra celui en cours et sa durée
+  /// ([TrainingProgram.nextMilestoneAt]/[TrainingProgram.nextSegmentDurationAt])
+  /// plutôt que le tronçon en cours et son temps restant — même sens que
+  /// [WorkoutSegmentCard.upcoming]/[WorkoutRemainingCard.upcoming], appliqué
+  /// aux deux informations à la fois.
+  final bool upcoming;
   final Color? color;
   final Color? textColor;
 
@@ -51,8 +59,12 @@ class WorkoutStatusCard extends StatelessWidget {
         builder: (context, _) {
           final program = recorder.activeWorkout;
           final elapsed = recorder.workoutElapsed;
-          final milestone = program != null && elapsed != null ? program.milestoneAt(elapsed) : null;
-          final remaining = program != null && elapsed != null ? program.remainingAt(elapsed) : null;
+          final milestone = program != null && elapsed != null
+              ? (upcoming ? program.nextMilestoneAt(elapsed) : program.milestoneAt(elapsed))
+              : null;
+          final remaining = program != null && elapsed != null
+              ? (upcoming ? program.nextSegmentDurationAt(elapsed) : program.remainingAt(elapsed))
+              : null;
 
           final background = color ?? milestone?.color;
           final ink = textColor ??
@@ -62,8 +74,17 @@ class WorkoutStatusCard extends StatelessWidget {
 
           final name = milestone?.segmentName;
           final segmentLabel = (name == null || name.isEmpty) ? '—' : name;
-          final remainingLabel =
-              program == null ? '—' : (remaining == null ? _finished : formatDuration(remaining));
+          // `upcoming` n'a pas de « Terminé » : ce tronçon n'a pas commencé,
+          // rien à annoncer de fini — juste un tiret quand sa durée n'est pas
+          // connue (dernier de la timeline, programme absent).
+          final String remainingLabel;
+          if (program == null) {
+            remainingLabel = '—';
+          } else if (remaining == null) {
+            remainingLabel = upcoming ? '—' : _finished;
+          } else {
+            remainingLabel = formatDuration(remaining);
+          }
           final icon = workoutMilestoneIconFor(milestone?.icon);
 
           return BlockSurface(

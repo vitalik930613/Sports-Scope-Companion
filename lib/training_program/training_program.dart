@@ -216,6 +216,23 @@ class TrainingProgram {
     return null;
   }
 
+  /// La durée du tronçon qui suivra celui en cours — l'intervalle entre le
+  /// jalon de [nextMilestoneAt] et celui d'après, pas un compte à rebours
+  /// vers son départ (ça, c'est [remainingAt]). `null` si ce tronçon n'a pas
+  /// encore commencé (dernier jalon dépassé) ou s'il n'a pas de fin connue
+  /// (c'est le dernier de la timeline, ouvert jusqu'à la fin du programme) —
+  /// dans les deux cas rien à annoncer plutôt qu'une durée devinée. Sert à
+  /// [WorkoutRemainingCard]/[WorkoutStatusCard] en aperçu (`upcoming`).
+  Duration? nextSegmentDurationAt(Duration elapsed) {
+    for (var i = 0; i < milestones.length; i++) {
+      if (milestones[i].offsetSeconds > elapsed.inSeconds) {
+        if (i + 1 >= milestones.length) return null;
+        return Duration(seconds: milestones[i + 1].offsetSeconds - milestones[i].offsetSeconds);
+      }
+    }
+    return null;
+  }
+
   /// Décode `{ training_program: {...} }` ou l'objet programme directement.
   /// Défensif comme `RidePreset.parse` : jamais d'exception, `null` si le
   /// document est inexploitable (jalons manquants, mal triés, sans jalon à 0)

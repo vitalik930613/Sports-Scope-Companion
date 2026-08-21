@@ -17,9 +17,14 @@ import 'block_card.dart';
 /// jalon dépassé, le compte à rebours sinon ([formatDuration] : `mm:ss`,
 /// `h:mm:ss` au-delà d'une heure).
 class WorkoutRemainingCard extends StatelessWidget {
-  const WorkoutRemainingCard({super.key, required this.recorder, this.color, this.textColor});
+  const WorkoutRemainingCard({super.key, required this.recorder, this.upcoming = false, this.color, this.textColor});
 
   final RideRecorder recorder;
+
+  /// Montre la durée du tronçon qui suivra celui en cours
+  /// ([TrainingProgram.nextSegmentDurationAt]) plutôt qu'un compte à rebours
+  /// vers son départ — ce tronçon n'a pas encore commencé, rien n'y décompte.
+  final bool upcoming;
 
   /// Fond/texte réglés dans l'éditeur — voir [DashboardBlock.color]/
   /// [DashboardBlock.textColor]. À défaut, les couleurs du tronçon en cours
@@ -30,6 +35,7 @@ class WorkoutRemainingCard extends StatelessWidget {
   final Color? textColor;
 
   static const _title = 'Restant';
+  static const _upcomingTitle = 'Durée à venir';
   static const _naturalWidth = 180.0;
   static const _figureSize = 34.0;
 
@@ -42,8 +48,12 @@ class WorkoutRemainingCard extends StatelessWidget {
         builder: (context, _) {
           final program = recorder.activeWorkout;
           final elapsed = recorder.workoutElapsed;
-          final milestone = program != null && elapsed != null ? program.milestoneAt(elapsed) : null;
-          final remaining = program != null && elapsed != null ? program.remainingAt(elapsed) : null;
+          final milestone = program != null && elapsed != null
+              ? (upcoming ? program.nextMilestoneAt(elapsed) : program.milestoneAt(elapsed))
+              : null;
+          final remaining = program != null && elapsed != null
+              ? (upcoming ? program.nextSegmentDurationAt(elapsed) : program.remainingAt(elapsed))
+              : null;
 
           final background = color ?? milestone?.color;
           final ink = textColor ??
@@ -51,7 +61,17 @@ class WorkoutRemainingCard extends StatelessWidget {
               (background == null ? Colors.white : foregroundOf(background));
           const metrics = BlockMetrics.natural;
 
-          final label = program == null ? '—' : (remaining == null ? _finished : formatDuration(remaining));
+          // `upcoming` n'a pas de « Terminé » : ce tronçon n'a pas commencé,
+          // il n'y a rien à annoncer de fini — juste un tiret quand sa durée
+          // n'est pas connue (dernier de la timeline, programme absent).
+          final String label;
+          if (program == null) {
+            label = '—';
+          } else if (remaining == null) {
+            label = upcoming ? '—' : _finished;
+          } else {
+            label = formatDuration(remaining);
+          }
 
           return BlockSurface(
             background: background,
@@ -62,7 +82,7 @@ class WorkoutRemainingCard extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    _title.toUpperCase(),
+                    (upcoming ? _upcomingTitle : _title).toUpperCase(),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: ink.withValues(alpha: 0.7), fontSize: metrics.titleSize),
