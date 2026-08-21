@@ -1307,20 +1307,21 @@ class ClimbSettings {
   }
 }
 
-/// Les deux seuls repères visuels d'un programme d'entraînement en dehors
-/// des blocs qu'on peut poser sur une page (`workout_segment`/
-/// `workout_remaining`) et des sons (`WorkoutCuePlayer`) : la pastille du
-/// tronçon en cours, épinglée en haut d'écran quelle que soit la page, et le
-/// popup qui paraît 2-3 s au centre à chaque changement de tronçon — voir
-/// `WorkoutBadge`/`WorkoutChangePopup` (`lib/ride/widgets/`).
+/// Les seuls repères d'un programme d'entraînement en dehors des blocs qu'on
+/// peut poser sur une page (`workout_segment`/`workout_remaining`) : la
+/// pastille du tronçon en cours, épinglée en haut d'écran quelle que soit la
+/// page, le popup qui paraît 2-3 s au centre à chaque changement de tronçon —
+/// voir `WorkoutBadge`/`WorkoutChangePopup` (`lib/ride/widgets/`) — et les
+/// tonalités de jalon (`WorkoutCuePlayer`).
 ///
-/// « Absent vaut activé » pour les deux, même logique que [ClimbSettings.sounds].
+/// « Absent vaut activé » pour les trois, même logique que [ClimbSettings.sounds].
 @immutable
 class WorkoutSettings {
-  const WorkoutSettings({this.badge = true, this.popup = true});
+  const WorkoutSettings({this.badge = true, this.popup = true, this.sounds = true});
 
   final bool badge;
   final bool popup;
+  final bool sounds;
 
   static WorkoutSettings parse(Object? raw) {
     if (raw is! Map) return const WorkoutSettings();
@@ -1329,6 +1330,7 @@ class WorkoutSettings {
     return WorkoutSettings(
       badge: raw['badge'] is bool ? raw['badge'] as bool : fallback.badge,
       popup: raw['popup'] is bool ? raw['popup'] as bool : fallback.popup,
+      sounds: raw['sounds'] is bool ? raw['sounds'] as bool : fallback.sounds,
     );
   }
 }

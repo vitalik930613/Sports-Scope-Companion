@@ -688,10 +688,12 @@ class _RideShellPageState extends State<RideShellPage>
     if (_preset.radar.sounds && _preset.sensors.radar) {
       unawaited(_radarSound.warmUp());
     }
-    // Chargé d'office, contrairement au radar/à la batterie : un programme
-    // peut être choisi à tout moment de la sortie (menu ⋮), pas seulement au
-    // départ — pas de réglage de profil à consulter avant de précharger.
-    unawaited(_workoutCue.warmUp());
+    // Contrairement au radar/à la batterie, aucune éligibilité à vérifier au-
+    // delà du réglage de profil lui-même : un programme peut être choisi à
+    // tout moment de la sortie (menu ⋮), pas seulement au départ.
+    if (_preset.workout.sounds) {
+      unawaited(_workoutCue.warmUp());
+    }
     // Un col n'existe que sur une carte (voir `NavState.climb`) : sans elle,
     // le front ne se produira jamais et il n'y a rien à charger d'avance.
     if (_preset.climb.sounds && _preset.hasMap) {
@@ -937,7 +939,7 @@ class _RideShellPageState extends State<RideShellPage>
     // Lu avant le franchissement lui-même : c'est ce qui fait démarrer le
     // son en avance sur l'offset qu'il annonce.
     final cue = _workoutCuePolicy?.read(elapsed);
-    if (cue?.sound != null) _workoutCue.play(cue!.sound!);
+    if (_preset.workout.sounds && cue?.sound != null) _workoutCue.play(cue!.sound!);
 
     final milestone = _workoutPolicy?.read(elapsed);
     if (milestone == null) return;
