@@ -1986,6 +1986,13 @@ class _RideShellPageState extends State<RideShellPage>
                 top: 0,
                 bottom: bandHeight,
                 child: DashboardPage(
+                  // Identité de la page, pas de sa position : `openedPage`
+                  // change d'un tap à l'autre sans jamais démonter ce nœud
+                  // (seul `Positioned` porte une clé fixe, 'menu') — sans
+                  // cette clé-ci, Flutter réutilisait l'Element d'une page à
+                  // l'autre et une page de tours héritait du `_selectedIndex`
+                  // laissé par la précédente.
+                  key: ObjectKey(openedPage),
                   page: openedPage,
                   sources: _sources,
                   radar: _preset.sensors.radar ? _radar : null,
@@ -2347,6 +2354,13 @@ class _RideShellPageState extends State<RideShellPage>
     if (page is MapPageSpec) return const SizedBox.shrink();
 
     return DashboardPage(
+      // Identité de la page, pas de son index : `_ridePages` peut se décaler
+      // (page masquée à la main, page conditionnelle insérée/retirée en fin
+      // de liste — voir `_ridePages`), et sans cette clé Flutter réutilisait
+      // l'Element de l'index sorti et rentré pour une page différente. Une
+      // page de tours héritait alors du `_selectedIndex` d'une autre page de
+      // tours (ou de tours de col) qui avait occupé le même index avant elle.
+      key: ObjectKey(page),
       page: page,
       sources: _sources,
       radar: _preset.sensors.radar ? _radar : null,
