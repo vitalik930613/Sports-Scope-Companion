@@ -137,6 +137,11 @@ sealed class DashboardBlock {
       'clock' => ClockBlock.parse(raw),
       'workout_segment' => WorkoutSegmentBlock(color: color, textColor: textColor),
       'workout_remaining' => WorkoutRemainingBlock(color: color, textColor: textColor),
+      'workout_status' => WorkoutStatusBlock(
+          mode: _modeOf(raw['mode'], WorkoutStatusMode.values),
+          color: color,
+          textColor: textColor,
+        ),
       'sleep' => SleepBlock(
           mode: _modeOf(raw['mode'], SleepMode.values),
           color: color,
@@ -1792,6 +1797,41 @@ class WorkoutRemainingBlock extends DashboardBlock {
 
   @override
   int get hashCode => Object.hash(color, textColor);
+}
+
+/// [WorkoutSegmentBlock] et [WorkoutRemainingBlock] fondus dans une seule
+/// carte — le tronçon en cours *et* le temps restant, pour la page qui n'a
+/// la place que d'une case mais veut les deux informations plutôt que
+/// choisir entre elles. Même source, même famille.
+class WorkoutStatusBlock extends DashboardBlock {
+  const WorkoutStatusBlock({required this.mode, super.color, super.textColor});
+
+  final WorkoutStatusMode mode;
+
+  @override
+  bool operator ==(Object other) =>
+      other is WorkoutStatusBlock &&
+      other.mode == mode &&
+      other.color == color &&
+      other.textColor == textColor;
+
+  @override
+  int get hashCode => Object.hash(mode, color, textColor);
+}
+
+enum WorkoutStatusMode with BlockMode {
+  /// Le tronçon puis le temps restant, sur deux lignes — assez de place pour
+  /// que chacun garde son propre titre discret.
+  full('full'),
+
+  /// Icône, nom du tronçon et temps restant, tout sur une seule ligne — même
+  /// contenu, en une case plus basse.
+  line('line');
+
+  const WorkoutStatusMode(this.key);
+
+  @override
+  final String key;
 }
 
 /// La liste des cols du tracé, avec un repère « en cours / prochain ».

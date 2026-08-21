@@ -14,6 +14,7 @@ import '../blocks/metric_view.dart';
 import '../blocks/power_curve_block.dart';
 import '../blocks/workout_remaining_block.dart';
 import '../blocks/workout_segment_block.dart';
+import '../blocks/workout_status_block.dart';
 import '../blocks/zones_block.dart';
 import '../climb_profile.dart' show climbLapSeries;
 import '../route_climbs.dart';
@@ -397,6 +398,12 @@ class _LapListBodyState extends State<LapListBody> {
           recorder: widget.sources.recorder,
           color: remaining.color,
           textColor: remaining.textColor,
+        ),
+      final WorkoutStatusBlock status => WorkoutStatusCard(
+          recorder: widget.sources.recorder,
+          mode: status.mode,
+          color: status.color,
+          textColor: status.textColor,
         ),
       _ => const SizedBox.shrink(),
     };

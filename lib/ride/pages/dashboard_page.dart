@@ -32,6 +32,7 @@ import '../blocks/sleep_block.dart';
 import '../blocks/training_budget_block.dart';
 import '../blocks/workout_remaining_block.dart';
 import '../blocks/workout_segment_block.dart';
+import '../blocks/workout_status_block.dart';
 import '../blocks/zones_block.dart';
 import '../climb_profile.dart';
 import '../nav_state.dart';
@@ -412,6 +413,12 @@ class DashboardPage extends StatelessWidget {
             recorder: sources.recorder,
             color: remaining.color,
             textColor: remaining.textColor,
+          ),
+        final WorkoutStatusBlock status => WorkoutStatusCard(
+            recorder: sources.recorder,
+            mode: status.mode,
+            color: status.color,
+            textColor: status.textColor,
           ),
         final ClimbListBlock climbs => ClimbListCard(
             routeClimbs: sources.routeClimbs,

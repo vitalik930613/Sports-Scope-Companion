@@ -11,6 +11,7 @@ import '../blocks/sleep_block.dart';
 import '../radar_severity.dart';
 import 'band_metric_tile.dart';
 import 'swipe_zone.dart';
+import 'workout_band_tile.dart';
 
 /// Le bandeau du bas : les valeurs instantanées de la sortie.
 ///
@@ -158,6 +159,7 @@ class _RideBottomBandState extends State<RideBottomBand> {
       BandActionSlot(:final action) => _action(action),
       BandBellSlot(:final sound) => _bell(sound),
       BandRadarSlot(:final mode) => _radar(mode),
+      BandWorkoutSlot(:final mode) => _workout(mode, index),
       BandMarkLapSlot(:final series, :final label) => _markLap(series, label),
     };
   }
@@ -252,6 +254,14 @@ class _RideBottomBandState extends State<RideBottomBand> {
       child: tile,
     );
   }
+
+  // Même alternance que [_metric] : deux cases voisines ne se confondent pas
+  // en une seule masse quand le tronçon ne porte pas de couleur propre.
+  Widget _workout(BandWorkoutMode mode, int index) => WorkoutBandTile(
+        recorder: widget.recorder,
+        mode: mode,
+        altBackground: _alternateBackgrounds[index % 2],
+      );
 
   static bool _isPower(MetricId metric) =>
       metric == MetricId.power || metric == MetricId.powerZone;

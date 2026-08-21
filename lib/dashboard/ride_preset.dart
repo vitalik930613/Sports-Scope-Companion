@@ -860,6 +860,9 @@ sealed class BandSlot {
     if (raw is String && raw.startsWith('radar_')) {
       return BandRadarSlot(_radarModeOf(raw.substring('radar_'.length)));
     }
+    if (raw is String && raw.startsWith('workout_')) {
+      return BandWorkoutSlot(_workoutModeOf(raw.substring('workout_'.length)));
+    }
     final metric = MetricId.fromKey(raw);
     return metric == null ? null : BandMetricSlot(metric);
   }
@@ -884,6 +887,16 @@ RadarMode _radarModeOf(String key) {
     if (mode.key == key) return mode;
   }
   return RadarMode.distance;
+}
+
+/// Le mode nommé, ou [BandWorkoutMode.segment] — le mode par défaut, pour une
+/// case de tronçon d'entraînement que cette version de l'appli ne connaît pas
+/// encore. Même repli qu'un mode de radar de bande ([_radarModeOf]).
+BandWorkoutMode _workoutModeOf(String key) {
+  for (final mode in BandWorkoutMode.values) {
+    if (mode.key == key) return mode;
+  }
+  return BandWorkoutMode.segment;
 }
 
 /// Un rappel périodique : boire, manger, entamer une intervalle — tout ce
@@ -969,6 +982,48 @@ class BandActionSlot extends BandSlot {
 class BandRadarSlot extends BandSlot {
   const BandRadarSlot(this.mode);
   final RadarMode mode;
+}
+
+/// Les quatre habillages qu'une case de bandeau/encoche peut donner au
+/// tronçon d'entraînement en cours — voir `WorkoutBandTile`
+/// (`ride/widgets/workout_band_tile.dart`) pour le rendu réel. Un `enum` à
+/// part de [RadarMode]/[BellSound] plutôt qu'un mode de composant de page
+/// ([BlockMode]) : contrairement à eux, ces quatre habillages n'existent que
+/// pour une case de bandeau — [WorkoutSegmentBlock]/[WorkoutRemainingBlock]
+/// (les composants de page équivalents) n'ont aucun mode à choisir.
+enum BandWorkoutMode {
+  /// Le nom du tronçon, avec son icône — même contenu que
+  /// [WorkoutSegmentBlock].
+  segment('segment'),
+
+  /// Le temps restant avant le prochain jalon, avec l'icône de la sonnette
+  /// à sable — même contenu que [WorkoutRemainingBlock].
+  remaining('remaining'),
+
+  /// Le tronçon et le temps restant fondus en une icône et un chiffre — pour
+  /// la case qui n'a la place que pour un seul texte mais peut encore
+  /// montrer les deux informations d'un coup d'œil.
+  combo('combo'),
+
+  /// Icône, nom du tronçon et temps restant, tout sur une seule ligne — même
+  /// contenu que [combo] et [segment] réunis, pour la case qui a la place
+  /// des trois.
+  line('line');
+
+  const BandWorkoutMode(this.key);
+  final String key;
+}
+
+/// Le tronçon d'entraînement en cours, en case de bandeau ou d'encoche — voir
+/// [BandWorkoutMode] pour les quatre habillages possibles et
+/// `WorkoutBandTile` pour le rendu réel. Préfixée `workout_` comme
+/// [BandRadarSlot] est préfixée `radar_` : une clé à part de `METRICS` et
+/// `BAND_ACTIONS` dans le même menu déroulant — voir `BAND_WORKOUT` côté
+/// site.
+@immutable
+class BandWorkoutSlot extends BandSlot {
+  const BandWorkoutSlot(this.mode);
+  final BandWorkoutMode mode;
 }
 
 /// La sonnette, en case de bandeau ou d'encoche — voir [BellControl] pour le

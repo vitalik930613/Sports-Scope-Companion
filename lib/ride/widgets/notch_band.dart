@@ -14,6 +14,7 @@ import '../blocks/sleep_block.dart';
 import '../radar_severity.dart';
 import 'band_metric_tile.dart';
 import 'swipe_zone.dart';
+import 'workout_band_tile.dart';
 
 /// La bande de l'encoche : jusqu'à une mesure de chaque côté de la caméra
 /// selfie, sur l'ancien emplacement de `RadarDistanceBadges` (retiré).
@@ -152,6 +153,7 @@ class _NotchBandState extends State<NotchBand> {
       BandActionSlot(:final action) => _action(action),
       BandBellSlot(:final sound) => BellControl(mode: BellMode.compact, sound: sound),
       BandRadarSlot(:final mode) => _radar(mode),
+      BandWorkoutSlot(:final mode) => _workout(mode),
       BandMarkLapSlot(:final series, :final label) => _markLap(series, label),
     };
   }
@@ -224,4 +226,10 @@ class _NotchBandState extends State<NotchBand> {
   Widget _action(BandAction action) => switch (action) {
         BandAction.sleep => SleepControl(onSleep: widget.onSleep, mode: SleepMode.compact),
       };
+
+  // Pas de `FittedBox` externe ici, à l'inverse de [_metric] :
+  // [WorkoutBandTile] se met déjà à l'échelle elle-même (voir sa note de
+  // classe) — un `FittedBox` de plus l'envelopperait pour rien.
+  Widget _workout(BandWorkoutMode mode) =>
+      WorkoutBandTile(recorder: widget.recorder, mode: mode, labelFirst: true);
 }
