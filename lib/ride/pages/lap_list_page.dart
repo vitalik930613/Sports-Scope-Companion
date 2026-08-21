@@ -344,6 +344,7 @@ class _LapListBodyState extends State<LapListBody> {
       final LapSummaryBlock summary => LapSummaryCard(
           lap: lap,
           riderProfile: widget.sources.riderProfile,
+          recorder: widget.sources.recorder,
           mode: summary.mode,
           color: summary.color,
           textColor: summary.textColor,

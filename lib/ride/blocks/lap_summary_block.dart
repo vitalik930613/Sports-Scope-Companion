@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../account/rider_profile_store.dart';
 import '../../dashboard/dashboard_block.dart';
 import '../../recording/ride_lap.dart';
+import '../../recording/ride_recorder.dart';
 import '../../training/ride_load.dart';
 import '../../ui/formats.dart';
 import 'block_card.dart';
@@ -23,6 +24,7 @@ class LapSummaryCard extends StatelessWidget {
     super.key,
     required this.lap,
     required this.riderProfile,
+    this.recorder,
     this.mode = LapSummaryMode.cards,
     this.color,
     this.textColor,
@@ -31,6 +33,11 @@ class LapSummaryCard extends StatelessWidget {
   final RideLap? lap;
   final RiderProfileStore riderProfile;
   final LapSummaryMode mode;
+
+  /// La sortie en direct : `null` pour un tour clos (post-ride,
+  /// `ride_detail_page.dart`), sans quoi le tick de [RideRecorder] est
+  /// nécessaire pour suivre `lap.stats` pendant que le tour tourne encore.
+  final RideRecorder? recorder;
 
   /// Fond/texte réglés dans l'éditeur — voir [DashboardBlock.color]/
   /// [DashboardBlock.textColor].
@@ -52,7 +59,9 @@ class LapSummaryCard extends StatelessWidget {
     }
 
     return ListenableBuilder(
-      listenable: riderProfile,
+      listenable: recorder == null
+          ? riderProfile
+          : Listenable.merge([recorder!, riderProfile]),
       builder: (context, _) {
         final tss = rideTss(lap.stats, riderProfile.profile)?.tss;
         final rows = [
