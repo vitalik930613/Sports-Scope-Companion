@@ -1,14 +1,16 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart' show Color;
 
-/// Les six sons qu'un jalon peut jouer — catalogue fermé, miroir exact de
-/// `TrainingProgram::SOUNDS` côté Rails et des fichiers `assets/sounds/*.wav`
-/// déjà embarqués pour le radar, les cols et les klaxons. Aucun nouveau
-/// fichier audio : un programme d'entraînement ne fait que réutiliser ceux
-/// que l'appli sait déjà jouer.
+/// Les huit sons qu'un jalon peut jouer — catalogue fermé, miroir exact de
+/// `TrainingProgram::SOUNDS` côté Rails. La plupart sont ceux déjà embarqués
+/// pour le radar, les cols et les klaxons ; `end2`/`end3` n'existent que pour
+/// un programme d'entraînement (variantes de fin de tronçon), mais suivent le
+/// même catalogue fermé plutôt qu'une liste à part.
 enum WorkoutSound {
   start('start'),
   end('end'),
+  end2('end2'),
+  end3('end3'),
   bell('bell'),
   horn('horn'),
   horn2('horn2'),
