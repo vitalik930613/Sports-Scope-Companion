@@ -159,7 +159,7 @@ class _RideBottomBandState extends State<RideBottomBand> {
       BandActionSlot(:final action) => _action(action),
       BandBellSlot(:final sound) => _bell(sound),
       BandRadarSlot(:final mode) => _radar(mode),
-      BandWorkoutSlot(:final mode) => _workout(mode, index),
+      BandWorkoutSlot(:final mode, :final upcoming) => _workout(mode, upcoming, index),
       BandMarkLapSlot(:final series, :final label) => _markLap(series, label),
     };
   }
@@ -257,9 +257,10 @@ class _RideBottomBandState extends State<RideBottomBand> {
 
   // Même alternance que [_metric] : deux cases voisines ne se confondent pas
   // en une seule masse quand le tronçon ne porte pas de couleur propre.
-  Widget _workout(BandWorkoutMode mode, int index) => WorkoutBandTile(
+  Widget _workout(BandWorkoutMode mode, bool upcoming, int index) => WorkoutBandTile(
         recorder: widget.recorder,
         mode: mode,
+        upcoming: upcoming,
         altBackground: _alternateBackgrounds[index % 2],
       );
 

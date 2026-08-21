@@ -153,7 +153,7 @@ class _NotchBandState extends State<NotchBand> {
       BandActionSlot(:final action) => _action(action),
       BandBellSlot(:final sound) => BellControl(mode: BellMode.compact, sound: sound),
       BandRadarSlot(:final mode) => _radar(mode),
-      BandWorkoutSlot(:final mode) => _workout(mode),
+      BandWorkoutSlot(:final mode, :final upcoming) => _workout(mode, upcoming),
       BandMarkLapSlot(:final series, :final label) => _markLap(series, label),
     };
   }
@@ -230,5 +230,6 @@ class _NotchBandState extends State<NotchBand> {
   // Pas de `FittedBox` externe ici, à l'inverse de [_metric] :
   // [WorkoutBandTile] se met déjà à l'échelle elle-même (voir sa note de
   // classe) — un `FittedBox` de plus l'envelopperait pour rien.
-  Widget _workout(BandWorkoutMode mode) => WorkoutBandTile(recorder: widget.recorder, mode: mode);
+  Widget _workout(BandWorkoutMode mode, bool upcoming) =>
+      WorkoutBandTile(recorder: widget.recorder, mode: mode, upcoming: upcoming);
 }

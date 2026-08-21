@@ -863,6 +863,13 @@ sealed class BandSlot {
     if (raw is String && raw.startsWith('radar_')) {
       return BandRadarSlot(_radarModeOf(raw.substring('radar_'.length)));
     }
+    // `workout_next_` avant `workout_` : le préfixe le plus long d'abord,
+    // sans quoi `workout_next_segment` serait pris pour un mode `workout_`
+    // inconnu (`next_segment`) et retomberait sur `BandWorkoutMode.segment`
+    // en cours plutôt qu'en aperçu.
+    if (raw is String && raw.startsWith('workout_next_')) {
+      return BandWorkoutSlot(_workoutModeOf(raw.substring('workout_next_'.length)), upcoming: true);
+    }
     if (raw is String && raw.startsWith('workout_')) {
       return BandWorkoutSlot(_workoutModeOf(raw.substring('workout_'.length)));
     }
@@ -987,11 +994,11 @@ class BandRadarSlot extends BandSlot {
   final RadarMode mode;
 }
 
-/// Les quatre habillages qu'une case de bandeau/encoche peut donner au
+/// Les cinq habillages qu'une case de bandeau/encoche peut donner au
 /// tronçon d'entraînement en cours — voir `WorkoutBandTile`
 /// (`ride/widgets/workout_band_tile.dart`) pour le rendu réel. Un `enum` à
 /// part de [RadarMode]/[BellSound] plutôt qu'un mode de composant de page
-/// ([BlockMode]) : contrairement à eux, ces quatre habillages n'existent que
+/// ([BlockMode]) : contrairement à eux, ces cinq habillages n'existent que
 /// pour une case de bandeau — [WorkoutSegmentBlock]/[WorkoutRemainingBlock]
 /// (les composants de page équivalents) n'ont aucun mode à choisir.
 enum BandWorkoutMode {
@@ -999,8 +1006,8 @@ enum BandWorkoutMode {
   /// [WorkoutSegmentBlock].
   segment('segment'),
 
-  /// Le temps restant avant le prochain jalon, avec l'icône de la sonnette
-  /// à sable — même contenu que [WorkoutRemainingBlock].
+  /// Le temps restant avant le prochain jalon, avec l'icône du tronçon —
+  /// même contenu que [WorkoutRemainingBlock].
   remaining('remaining'),
 
   /// Le tronçon et le temps restant fondus en une icône et un chiffre — pour
@@ -1011,22 +1018,34 @@ enum BandWorkoutMode {
   /// Icône, nom du tronçon et temps restant, tout sur une seule ligne — même
   /// contenu que [combo] et [segment] réunis, pour la case qui a la place
   /// des trois.
-  line('line');
+  line('line'),
+
+  /// L'icône du tronçon seule, sans aucun texte — pour la case qui n'a la
+  /// place que pour un symbole.
+  icon('icon');
 
   const BandWorkoutMode(this.key);
   final String key;
 }
 
 /// Le tronçon d'entraînement en cours, en case de bandeau ou d'encoche — voir
-/// [BandWorkoutMode] pour les quatre habillages possibles et
+/// [BandWorkoutMode] pour les cinq habillages possibles et
 /// `WorkoutBandTile` pour le rendu réel. Préfixée `workout_` comme
 /// [BandRadarSlot] est préfixée `radar_` : une clé à part de `METRICS` et
 /// `BAND_ACTIONS` dans le même menu déroulant — voir `BAND_WORKOUT` côté
 /// site.
 @immutable
 class BandWorkoutSlot extends BandSlot {
-  const BandWorkoutSlot(this.mode);
+  const BandWorkoutSlot(this.mode, {this.upcoming = false});
   final BandWorkoutMode mode;
+
+  /// Les cinq habillages, mais pour le tronçon qui suivra celui en cours —
+  /// même bascule que `upcoming` sur les composants de page équivalents
+  /// ([WorkoutSegmentBlock]/[WorkoutRemainingBlock]), mais dupliquée en
+  /// jetons `workout_next_*` plutôt que portée par la case : une case de
+  /// bandeau/encoche est une chaîne nue, sans place pour un réglage — voir
+  /// `BAND_WORKOUT_NEXT` côté site.
+  final bool upcoming;
 }
 
 /// La sonnette, en case de bandeau ou d'encoche — voir [BellControl] pour le

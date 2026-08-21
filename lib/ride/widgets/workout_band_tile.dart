@@ -15,11 +15,11 @@ import '../../ui/zone_colors.dart';
 /// reprend le fond de zone (ici la couleur du tronçon) et l'alternance
 /// noir/anthracite en repli.
 ///
-/// Quatre habillages ([BandWorkoutMode]) : le nom du tronçon, le compte à
-/// rebours, les deux fondus en une icône et un chiffre, ou les trois — icône,
-/// nom et chiffre — sur une seule ligne. Pas de libellé séparé (« Tronçon »,
-/// « Restant ») : la case est trop étroite pour se le permettre en plus de
-/// l'icône, qui porte déjà le sens.
+/// Cinq habillages ([BandWorkoutMode]) : le nom du tronçon, le compte à
+/// rebours, les deux fondus en une icône et un chiffre, les trois — icône,
+/// nom et chiffre — sur une seule ligne, ou l'icône seule. Pas de libellé
+/// séparé (« Tronçon », « Restant ») : la case est trop étroite pour se le
+/// permettre en plus de l'icône, qui porte déjà le sens.
 ///
 /// **Jamais de [Flexible]/[Expanded].** `NotchBand` pose sa case dans un
 /// `FittedBox` qui mesure son enfant sans aucune contrainte (voir
@@ -35,11 +35,18 @@ class WorkoutBandTile extends StatelessWidget {
     super.key,
     required this.recorder,
     required this.mode,
+    this.upcoming = false,
     this.altBackground,
   });
 
   final RideRecorder recorder;
   final BandWorkoutMode mode;
+
+  /// Montre le tronçon qui suivra celui en cours
+  /// ([TrainingProgram.nextMilestoneAt]/[TrainingProgram.nextSegmentDurationAt])
+  /// plutôt que le tronçon en cours — même bascule que sur
+  /// [WorkoutSegmentCard]/[WorkoutRemainingCard], voir [BandWorkoutSlot.upcoming].
+  final bool upcoming;
 
   /// Le noir ou l'anthracite de l'alternance, quand le tronçon ne porte pas
   /// de couleur propre — voir [BandMetricTile.altBackground].
@@ -53,8 +60,12 @@ class WorkoutBandTile extends StatelessWidget {
         builder: (context, _) {
           final program = recorder.activeWorkout;
           final elapsed = recorder.workoutElapsed;
-          final milestone = program != null && elapsed != null ? program.milestoneAt(elapsed) : null;
-          final remaining = program != null && elapsed != null ? program.remainingAt(elapsed) : null;
+          final milestone = program != null && elapsed != null
+              ? (upcoming ? program.nextMilestoneAt(elapsed) : program.milestoneAt(elapsed))
+              : null;
+          final remaining = program != null && elapsed != null
+              ? (upcoming ? program.nextSegmentDurationAt(elapsed) : program.remainingAt(elapsed))
+              : null;
 
           final zoneColor = milestone?.color;
           final foreground =
@@ -64,14 +75,19 @@ class WorkoutBandTile extends StatelessWidget {
 
           final segmentName = milestone?.segmentName;
           final segmentLabel = (segmentName == null || segmentName.isEmpty) ? '—' : segmentName;
-          final remainingLabel =
-              program == null ? '—' : (remaining == null ? _finished : formatDuration(remaining));
+          // `upcoming` n'a pas de « Terminé » : ce tronçon n'a pas commencé,
+          // il n'y a rien à annoncer de fini — juste un tiret quand sa durée
+          // n'est pas connue (dernier de la timeline, programme absent).
+          final remainingLabel = program == null
+              ? '—'
+              : (remaining == null ? (upcoming ? '—' : _finished) : formatDuration(remaining));
 
           final content = switch (mode) {
             BandWorkoutMode.combo => _combo(icon, remainingLabel, foreground),
             BandWorkoutMode.line => _line(icon, segmentLabel, remainingLabel, foreground),
             BandWorkoutMode.segment => _iconValue(icon, segmentLabel, foreground),
             BandWorkoutMode.remaining => _iconValue(icon, remainingLabel, foreground),
+            BandWorkoutMode.icon => _iconOnly(icon, foreground),
           };
 
           final surface = zoneColor ?? altBackground;
@@ -124,9 +140,8 @@ class WorkoutBandTile extends StatelessWidget {
       );
 
   /// [BandWorkoutMode.segment]/[BandWorkoutMode.remaining] : l'icône et la
-  /// valeur seules, sans libellé — l'icône (celle du tronçon, ou le
-  /// chronomètre pour le compte à rebours) porte déjà la distinction entre
-  /// les deux.
+  /// valeur seules, sans libellé — l'icône du tronçon (la même dans les deux
+  /// modes) porte déjà la distinction entre les deux.
   Widget _iconValue(FaIconData icon, String value, Color foreground) => Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4),
         child: _fit([
@@ -138,6 +153,13 @@ class WorkoutBandTile extends StatelessWidget {
             style: TextStyle(color: foreground, fontSize: 20, fontWeight: FontWeight.w500),
           ),
         ]),
+      );
+
+  /// [BandWorkoutMode.icon] : l'icône du tronçon seule, sans aucun texte —
+  /// pour la case qui n'a la place que pour un symbole.
+  Widget _iconOnly(FaIconData icon, Color foreground) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: _fit([FaIcon(icon, size: 22, color: foreground.withValues(alpha: 0.85))]),
       );
 
   /// Une ligne à taille naturelle (`mainAxisSize: min`, jamais de
