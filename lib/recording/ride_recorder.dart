@@ -493,9 +493,13 @@ class RideRecorder extends ChangeNotifier {
       return;
     }
 
+    // Même logique que le saut de récepteur ci-dessus : un point imprécis ne
+    // devient pas `_lastFix`, sous peine de faire sauter vitesse, position et
+    // pente affichées sur une mesure qu'on sait mauvaise — mieux vaut garder
+    // le dernier point fiable (et le laisser périmer via `fixTtl`) qu'afficher
+    // un chiffre aberrant.
     final accuracy = fix.accuracyM;
     if (accuracy != null && accuracy > _maxAccuracyM) {
-      _lastFix = fix;
       return;
     }
 
