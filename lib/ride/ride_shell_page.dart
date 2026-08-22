@@ -390,17 +390,30 @@ class _RideShellPageState extends State<RideShellPage>
   /// [_ridePages] se garde de l'ajouter deux fois.
   Set<RidePageSpec> _manuallyShown = const {};
 
+  /// Les pages conditionnelles **actives** rangées à la main malgré leur
+  /// condition — depuis leur propre menu ⋮, exactement comme
+  /// [_manuallyHidden], mais il fallait un ensemble à part : une page dont la
+  /// condition tient n'est jamais dans [_baseRidePages], donc y entrer ne
+  /// suffirait pas à la retirer du défilement, [_activeConditional] la
+  /// remettant aussitôt. Purgée dès que la condition cesse de tenir (voir
+  /// [_updateConditionalPages]) — masquer un col en cours ne doit pas
+  /// escamoter le suivant, sans quoi le geste se lirait « plus jamais cette
+  /// page » alors que le cycliste n'a voulu dire que « pas celui-ci ».
+  Set<RidePageSpec> _manuallyHiddenConditional = const {};
+
   /// Le défilement du moment : les pages toujours-défilantes non masquées à la
-  /// main, puis les pages conditionnelles actives, **toujours en fin de
-  /// liste**. Cet ordre garde la carte et les pages qui la précèdent à un
-  /// index stable tant que rien n'est masqué — [_mapPage] se recalcule quand
-  /// même à chaque accès, parce qu'une page masquée avant elle décale bel et
-  /// bien tout ce qui suit.
+  /// main, puis les pages conditionnelles actives et non masquées à la main,
+  /// **toujours en fin de liste**. Cet ordre garde la carte et les pages qui
+  /// la précèdent à un index stable tant que rien n'est masqué — [_mapPage] se
+  /// recalcule quand même à chaque accès, parce qu'une page masquée avant elle
+  /// décale bel et bien tout ce qui suit.
   List<RidePageSpec> get _ridePages => [
         for (final page in _baseRidePages)
           if (!_manuallyHidden.contains(page)) page,
         for (final page in _conditionalPages)
-          if (_activeConditional.contains(page)) page,
+          if (_activeConditional.contains(page) &&
+              !_manuallyHiddenConditional.contains(page))
+            page,
         for (final page in _baseMenuPages)
           if (_manuallyShown.contains(page) &&
               !(_conditionalPages.contains(page) && _activeConditional.contains(page)))
@@ -408,13 +421,16 @@ class _RideShellPageState extends State<RideShellPage>
       ];
 
   /// Les pages rangées derrière le menu du moment : celles masquées à la main,
-  /// les pages sans condition et non rejointes à la main, et les pages
-  /// conditionnelles **inactives** — une page active est dans [_ridePages],
-  /// pas ici, elle n'a donc pas besoin d'être allée chercher.
+  /// les pages sans condition et non rejointes à la main, les pages
+  /// conditionnelles **inactives**, et les pages conditionnelles actives mais
+  /// masquées à la main — une page active et non masquée est dans
+  /// [_ridePages], pas ici, elle n'a donc pas besoin d'être allée chercher.
   List<RidePageSpec> get _menuPages => [
         for (final page in _baseMenuPages)
           if (!_manuallyShown.contains(page) &&
-              (!_conditionalPages.contains(page) || !_activeConditional.contains(page)))
+              (!_conditionalPages.contains(page) ||
+                  !_activeConditional.contains(page) ||
+                  _manuallyHiddenConditional.contains(page)))
             page,
         for (final page in _baseRidePages)
           if (_manuallyHidden.contains(page)) page,
@@ -1077,7 +1093,16 @@ class _RideShellPageState extends State<RideShellPage>
       }
     }
 
-    setState(() => _activeConditional = next);
+    setState(() {
+      _activeConditional = next;
+      // Une page dont la condition vient de retomber n'a plus de raison de
+      // rester dans cet ensemble : la laisser trainer la marquerait « masquée
+      // à la main » pour la prochaine fois que la condition se vérifiera, ce
+      // que le geste qui l'a masquée ne voulait pas dire.
+      if (_manuallyHiddenConditional.isNotEmpty) {
+        _manuallyHiddenConditional = _manuallyHiddenConditional.intersection(next);
+      }
+    });
 
     // Une alerte en cours possède l'écran (voir [_decideReturn], appelé juste
     // avant sur ce même tic, qui vient de fixer [_lastAlert]) : forcer
@@ -1128,10 +1153,12 @@ class _RideShellPageState extends State<RideShellPage>
   /// de la sortie, exactement comme si le site l'y avait mise, mais sans
   /// toucher au profil ni à rien qui survive au prochain lancement.
   ///
-  /// [page] peut venir d'une des deux origines — un page toujours-défilante
-  /// qu'on range, ou une page du menu rejointe à la main qu'on relâche — d'où
-  /// le test sur [_baseMenuPages] : c'est l'origine qui dit quel ensemble
-  /// corriger, [_ridePages] ne connaît que le résultat des deux.
+  /// [page] peut venir de trois origines — une page toujours-défilante qu'on
+  /// range, une page conditionnelle **active** qu'on range malgré sa condition
+  /// (voir [_manuallyHiddenConditional]), ou une page du menu rejointe à la
+  /// main qu'on relâche — d'où le test sur [_conditionalPages]/
+  /// [_activeConditional] puis [_baseMenuPages] : c'est l'origine qui dit quel
+  /// ensemble corriger, [_ridePages] ne connaît que le résultat des trois.
   ///
   /// Refusé quand [page] est la dernière page hors carte du défilement — même
   /// garde que `RidePreset._promotedPage` côté profil : une sortie ne doit
@@ -1143,7 +1170,9 @@ class _RideShellPageState extends State<RideShellPage>
     final currentSpec = _pageCount > 0 ? _ridePages[_page] : null;
 
     setState(() {
-      if (_baseMenuPages.contains(page)) {
+      if (_conditionalPages.contains(page) && _activeConditional.contains(page)) {
+        _manuallyHiddenConditional = {..._manuallyHiddenConditional, page};
+      } else if (_baseMenuPages.contains(page)) {
         _manuallyShown = {..._manuallyShown}..remove(page);
       } else {
         _manuallyHidden = {..._manuallyHidden, page};
@@ -1162,13 +1191,17 @@ class _RideShellPageState extends State<RideShellPage>
   /// `DashboardPage.onShowPage`. Rejoint aussitôt le défilement sur [page],
   /// plutôt que de la laisser réapparaître dans un coin qu'on ne regarde pas :
   /// c'est justement pour la regarder qu'on vient de l'aller chercher. Même
-  /// origine à deux ensembles que [_hidePage] : une page rangée par le site
-  /// rejoint [_manuallyShown], une page masquée à la main ressort de
-  /// [_manuallyHidden].
+  /// origine à trois ensembles que [_hidePage] : une page conditionnelle
+  /// masquée à la main ressort de [_manuallyHiddenConditional] (sa condition
+  /// tient toujours, elle reprend donc sa place tout de suite), une page
+  /// rangée par le site rejoint [_manuallyShown], une page masquée à la main
+  /// ressort de [_manuallyHidden].
   void _showPage(RidePageSpec page) {
     _setMenuPage(null);
     setState(() {
-      if (_baseMenuPages.contains(page)) {
+      if (_manuallyHiddenConditional.contains(page)) {
+        _manuallyHiddenConditional = {..._manuallyHiddenConditional}..remove(page);
+      } else if (_baseMenuPages.contains(page)) {
         _manuallyShown = {..._manuallyShown, page};
       } else {
         _manuallyHidden = {..._manuallyHidden}..remove(page);
