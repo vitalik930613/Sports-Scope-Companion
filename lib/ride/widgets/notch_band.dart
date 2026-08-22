@@ -5,13 +5,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../dashboard/dashboard_block.dart'
-    show BellMode, LeaveRideMode, RadarMode, SleepMode, ToggleWorkoutMode;
+    show BellMode, LeaveRideMode, RadarMode, RouteMode, SleepMode, ToggleWorkoutMode;
 import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
 import '../../recording/ride_recorder.dart';
 import '../blocks/bell_block.dart';
 import '../blocks/leave_ride_block.dart';
 import '../blocks/radar_block.dart';
+import '../blocks/route_block.dart';
 import '../blocks/sleep_block.dart';
 import '../blocks/toggle_workout_block.dart';
 import '../radar_severity.dart';
@@ -45,6 +46,8 @@ class NotchBand extends StatefulWidget {
     this.onSleep,
     this.onChooseWorkout,
     this.onLeaveRide,
+    this.onChooseRoute,
+    this.onClearRoute,
   });
 
   /// Les jeux de la bande, dans l'ordre. Vide (le cas par défaut) laisse la
@@ -75,6 +78,12 @@ class NotchBand extends StatefulWidget {
   /// [LeaveRideControl]. Toujours utilisable, contrairement à [onSleep] :
   /// rentrer a un sens avec ou sans carte.
   final VoidCallback? onLeaveRide;
+
+  /// Changer ou retirer l'itinéraire suivi, sur un tap d'un côté réglé sur
+  /// `route` — voir [RouteControl]. Nuls dans un profil sans carte, même
+  /// garde que la commande de la grille.
+  final VoidCallback? onChooseRoute;
+  final VoidCallback? onClearRoute;
 
   /// Plancher pour les écrans sans encoche : sans lui, la valeur se collerait
   /// au bord. Un peu plus haut que l'ancienne bande `RadarDistanceBadges`
@@ -248,6 +257,12 @@ class _NotchBandState extends State<NotchBand> {
           ),
         BandAction.leaveRide =>
           LeaveRideControl(onLeaveRide: widget.onLeaveRide, mode: LeaveRideMode.compact),
+        BandAction.route => RouteControl(
+            onChooseRoute: widget.onChooseRoute,
+            onClearRoute: widget.onClearRoute,
+            nav: widget.sources.nav,
+            mode: RouteMode.compact,
+          ),
       };
 
   // Pas de `FittedBox` externe ici, à l'inverse de [_metric] :

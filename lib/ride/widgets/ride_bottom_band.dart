@@ -2,13 +2,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../dashboard/dashboard_block.dart'
-    show BellMode, BellSound, LeaveRideMode, RadarMode, SleepMode, ToggleWorkoutMode;
+    show BellMode, BellSound, LeaveRideMode, RadarMode, RouteMode, SleepMode, ToggleWorkoutMode;
 import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
 import '../../recording/ride_recorder.dart';
 import '../blocks/bell_block.dart';
 import '../blocks/leave_ride_block.dart';
 import '../blocks/radar_block.dart';
+import '../blocks/route_block.dart';
 import '../blocks/sleep_block.dart';
 import '../blocks/toggle_workout_block.dart';
 import '../radar_severity.dart';
@@ -54,6 +55,8 @@ class RideBottomBand extends StatefulWidget {
     this.onSleep,
     this.onChooseWorkout,
     this.onLeaveRide,
+    this.onChooseRoute,
+    this.onClearRoute,
   });
 
   /// Les jeux de valeurs du profil, dans l'ordre. Au moins un.
@@ -97,6 +100,12 @@ class RideBottomBand extends StatefulWidget {
   /// [LeaveRideControl]. Toujours utilisable, contrairement à [onSleep] :
   /// rentrer a un sens avec ou sans carte.
   final VoidCallback? onLeaveRide;
+
+  /// Changer ou retirer l'itinéraire suivi, sur un tap de la case `route` —
+  /// voir [RouteControl]. Nuls dans un profil sans carte, même garde que la
+  /// commande de la grille (`DashboardPage.onChooseRoute`/`onClearRoute`).
+  final VoidCallback? onChooseRoute;
+  final VoidCallback? onClearRoute;
 
   /// Hauteur du contenu, hors zone système. Le bandeau s'étire ensuite de
   /// [MediaQueryData.viewPadding] vers le bas pour que ses valeurs ne passent
@@ -241,6 +250,15 @@ class _RideBottomBandState extends State<RideBottomBand> {
         BandAction.leaveRide => Padding(
             padding: const EdgeInsets.fromLTRB(2, 3, 2, 3),
             child: LeaveRideControl(onLeaveRide: widget.onLeaveRide, mode: LeaveRideMode.compact),
+          ),
+        BandAction.route => Padding(
+            padding: const EdgeInsets.fromLTRB(2, 3, 2, 3),
+            child: RouteControl(
+              onChooseRoute: widget.onChooseRoute,
+              onClearRoute: widget.onClearRoute,
+              nav: widget.sources.nav,
+              mode: RouteMode.compact,
+            ),
           ),
       };
 

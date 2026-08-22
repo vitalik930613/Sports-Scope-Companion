@@ -2078,6 +2078,11 @@ class _RideShellPageState extends State<RideShellPage>
                 // onLeaveRide` plus bas) : rentrer a un sens avec ou sans
                 // carte.
                 onLeaveRide: _leaveRide,
+                // Sans carte, il n'y a aucune page à qui adresser la demande
+                // — même garde que `DashboardPage.onChooseRoute`/
+                // `onClearRoute` plus bas.
+                onChooseRoute: _preset.hasMap ? _chooseRoute : null,
+                onClearRoute: _preset.hasMap ? _clearRoute : null,
               ),
             ),
             // Le numéro de la page, juste au-dessus du bandeau et le temps de le
@@ -2131,6 +2136,8 @@ class _RideShellPageState extends State<RideShellPage>
                 onSleep: _preset.hasMap ? _sleep : null,
                 onChooseWorkout: _chooseWorkout,
                 onLeaveRide: _leaveRide,
+                onChooseRoute: _preset.hasMap ? _chooseRoute : null,
+                onClearRoute: _preset.hasMap ? _clearRoute : null,
               ),
             ),
             // La pastille du tronçon en cours d'un programme d'entraînement :

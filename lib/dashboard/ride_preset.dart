@@ -916,6 +916,7 @@ sealed class BandSlot {
     if (raw == 'sleep') return const BandActionSlot(BandAction.sleep);
     if (raw == 'toggle_workout') return const BandActionSlot(BandAction.toggleWorkout);
     if (raw == 'leave_ride') return const BandActionSlot(BandAction.leaveRide);
+    if (raw == 'route') return const BandActionSlot(BandAction.route);
     if (raw is String && raw.startsWith('bell_')) {
       return BandBellSlot(_bellSoundOf(raw.substring('bell_'.length)));
     }
@@ -1045,7 +1046,11 @@ class BandMetricSlot extends BandSlot {
 /// une page, ici en case de bandeau/encoche. Le menu ⋮ reste de toute façon
 /// toujours le chemin garanti pour sortir, cette case n'en est qu'un
 /// raccourci de plus.
-enum BandAction { sleep, toggleWorkout, leaveRide }
+///
+/// `route` change ou retire l'itinéraire suivi — même bouton combiné que
+/// [RouteBlock] posé sur une page (voir [RouteControl]), ici en case de
+/// bandeau/encoche.
+enum BandAction { sleep, toggleWorkout, leaveRide, route }
 
 @immutable
 class BandActionSlot extends BandSlot {
