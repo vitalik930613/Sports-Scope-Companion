@@ -2074,6 +2074,10 @@ class _RideShellPageState extends State<RideShellPage>
                 // `DashboardPage.onStartWorkout` plus bas : un programme se
                 // démarre aussi bien sur home-trainer.
                 onChooseWorkout: _chooseWorkout,
+                // Toujours branché, comme dans le menu ⋮ (`DashboardPage.
+                // onLeaveRide` plus bas) : rentrer a un sens avec ou sans
+                // carte.
+                onLeaveRide: _leaveRide,
               ),
             ),
             // Le numéro de la page, juste au-dessus du bandeau et le temps de le
@@ -2126,6 +2130,7 @@ class _RideShellPageState extends State<RideShellPage>
                 radar: _preset.sensors.radar ? _radar : null,
                 onSleep: _preset.hasMap ? _sleep : null,
                 onChooseWorkout: _chooseWorkout,
+                onLeaveRide: _leaveRide,
               ),
             ),
             // La pastille du tronçon en cours d'un programme d'entraînement :

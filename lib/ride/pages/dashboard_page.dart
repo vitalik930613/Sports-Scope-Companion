@@ -28,6 +28,7 @@ import '../blocks/radar_block.dart';
 import '../blocks/recording_block.dart';
 import '../blocks/route_block.dart';
 import '../blocks/bell_block.dart';
+import '../blocks/leave_ride_block.dart';
 import '../blocks/sleep_block.dart';
 import '../blocks/toggle_workout_block.dart';
 import '../blocks/training_budget_block.dart';
@@ -487,6 +488,12 @@ class DashboardPage extends StatelessWidget {
             color: sleep.color,
             textColor: sleep.textColor,
           ),
+        final LeaveRideBlock leaveRide => LeaveRideControl(
+            onLeaveRide: onLeaveRide,
+            mode: leaveRide.mode,
+            color: leaveRide.color,
+            textColor: leaveRide.textColor,
+          ),
         final BellBlock bell => BellControl(
             mode: bell.mode,
             sound: bell.sound,
@@ -540,6 +547,16 @@ class DashboardPage extends StatelessWidget {
         // bouton fermer plutôt que dedans : remettre dans le défilement une
         // page qu'on n'a rangée qu'à la main, puisque c'est justement pour la
         // regarder qu'on vient de l'ouvrir depuis là.
+        // Réglé sur la page (`Page.leave_button`, `Page.leaveButton`) et pas
+        // par la coquille comme le reste de ce header : c'est un raccourci de
+        // plus vers « Revenir à l'accueil », jamais un remplacement — le menu
+        // ⋮ le propose de toute façon toujours, qu'il soit là ou non.
+        if (onLeaveRide case final leave? when page.leaveButton)
+          IconButton(
+            onPressed: leave,
+            icon: const Icon(Icons.home_outlined, color: Colors.white70),
+            tooltip: 'Revenir à l\'accueil',
+          ),
         if (onClose case final close?) ...[
           if (onShowPage case final show?)
             IconButton(

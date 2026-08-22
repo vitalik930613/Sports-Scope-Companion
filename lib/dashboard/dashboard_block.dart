@@ -161,6 +161,11 @@ sealed class DashboardBlock {
           color: color,
           textColor: textColor,
         ),
+      'leave_ride' => LeaveRideBlock(
+          mode: _modeOf(raw['mode'], LeaveRideMode.values),
+          color: color,
+          textColor: textColor,
+        ),
       'bell' => BellBlock(
           mode: _modeOf(raw['mode'], BellMode.values),
           sound: _modeOf(raw['sound'], BellSound.values),
@@ -1371,6 +1376,46 @@ enum SleepMode with BlockMode {
   compact('compact');
 
   const SleepMode(this.key);
+
+  @override
+  final String key;
+}
+
+/// Quitte la sortie et retrouve l'accueil — même geste que « Revenir à
+/// l'accueil » dans le menu ⋮ (`DashboardPage._menuFor`), posé directement sur
+/// une page plutôt que rangé dedans.
+///
+/// Le menu ⋮ n'en est pas moins toujours là : c'est lui le seul chemin garanti
+/// pour sortir d'une sortie (voir la note de classe de `DashboardPage`), ce
+/// bouton n'en est qu'un raccourci de plus, jamais un remplacement.
+class LeaveRideBlock extends DashboardBlock {
+  const LeaveRideBlock({
+    this.mode = LeaveRideMode.full,
+    super.color,
+    super.textColor,
+  });
+
+  final LeaveRideMode mode;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LeaveRideBlock &&
+      other.mode == mode &&
+      other.color == color &&
+      other.textColor == textColor;
+
+  @override
+  int get hashCode => Object.hash(mode, color, textColor);
+}
+
+enum LeaveRideMode with BlockMode {
+  /// Le bouton large, à portée de pouce sur une route bosselée.
+  full('full'),
+
+  /// L'icône seule, pour une cellule de grille.
+  compact('compact');
+
+  const LeaveRideMode(this.key);
 
   @override
   final String key;

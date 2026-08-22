@@ -4,11 +4,13 @@ import 'dart:ui' show DisplayFeature, DisplayFeatureType;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../../dashboard/dashboard_block.dart' show BellMode, RadarMode, SleepMode, ToggleWorkoutMode;
+import '../../dashboard/dashboard_block.dart'
+    show BellMode, LeaveRideMode, RadarMode, SleepMode, ToggleWorkoutMode;
 import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
 import '../../recording/ride_recorder.dart';
 import '../blocks/bell_block.dart';
+import '../blocks/leave_ride_block.dart';
 import '../blocks/radar_block.dart';
 import '../blocks/sleep_block.dart';
 import '../blocks/toggle_workout_block.dart';
@@ -42,6 +44,7 @@ class NotchBand extends StatefulWidget {
     this.radar,
     this.onSleep,
     this.onChooseWorkout,
+    this.onLeaveRide,
   });
 
   /// Les jeux de la bande, dans l'ordre. Vide (le cas par défaut) laisse la
@@ -67,6 +70,11 @@ class NotchBand extends StatefulWidget {
   /// utilisable, contrairement à [onSleep] : un programme se démarre aussi
   /// bien sur home-trainer, sans carte.
   final VoidCallback? onChooseWorkout;
+
+  /// Quitter la sortie, sur un tap d'un côté réglé sur `leave_ride` — voir
+  /// [LeaveRideControl]. Toujours utilisable, contrairement à [onSleep] :
+  /// rentrer a un sens avec ou sans carte.
+  final VoidCallback? onLeaveRide;
 
   /// Plancher pour les écrans sans encoche : sans lui, la valeur se collerait
   /// au bord. Un peu plus haut que l'ancienne bande `RadarDistanceBadges`
@@ -238,6 +246,8 @@ class _NotchBandState extends State<NotchBand> {
             onChooseWorkout: widget.onChooseWorkout,
             mode: ToggleWorkoutMode.compact,
           ),
+        BandAction.leaveRide =>
+          LeaveRideControl(onLeaveRide: widget.onLeaveRide, mode: LeaveRideMode.compact),
       };
 
   // Pas de `FittedBox` externe ici, à l'inverse de [_metric] :

@@ -1,11 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../../dashboard/dashboard_block.dart' show BellMode, BellSound, RadarMode, SleepMode, ToggleWorkoutMode;
+import '../../dashboard/dashboard_block.dart'
+    show BellMode, BellSound, LeaveRideMode, RadarMode, SleepMode, ToggleWorkoutMode;
 import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
 import '../../recording/ride_recorder.dart';
 import '../blocks/bell_block.dart';
+import '../blocks/leave_ride_block.dart';
 import '../blocks/radar_block.dart';
 import '../blocks/sleep_block.dart';
 import '../blocks/toggle_workout_block.dart';
@@ -51,6 +53,7 @@ class RideBottomBand extends StatefulWidget {
     this.onCalibratePower,
     this.onSleep,
     this.onChooseWorkout,
+    this.onLeaveRide,
   });
 
   /// Les jeux de valeurs du profil, dans l'ordre. Au moins un.
@@ -89,6 +92,11 @@ class RideBottomBand extends StatefulWidget {
   /// contrairement à [onSleep] : un programme se démarre aussi bien sur
   /// home-trainer, sans carte.
   final VoidCallback? onChooseWorkout;
+
+  /// Quitter la sortie, sur un tap de la case `leave_ride` — voir
+  /// [LeaveRideControl]. Toujours utilisable, contrairement à [onSleep] :
+  /// rentrer a un sens avec ou sans carte.
+  final VoidCallback? onLeaveRide;
 
   /// Hauteur du contenu, hors zone système. Le bandeau s'étire ensuite de
   /// [MediaQueryData.viewPadding] vers le bas pour que ses valeurs ne passent
@@ -229,6 +237,10 @@ class _RideBottomBandState extends State<RideBottomBand> {
               onChooseWorkout: widget.onChooseWorkout,
               mode: ToggleWorkoutMode.compact,
             ),
+          ),
+        BandAction.leaveRide => Padding(
+            padding: const EdgeInsets.fromLTRB(2, 3, 2, 3),
+            child: LeaveRideControl(onLeaveRide: widget.onLeaveRide, mode: LeaveRideMode.compact),
           ),
       };
 

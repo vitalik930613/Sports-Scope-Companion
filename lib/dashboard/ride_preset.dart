@@ -352,6 +352,7 @@ sealed class RidePageSpec {
     this.menuAutoOpen = false,
     this.icon,
     this.key,
+    this.leaveButton = false,
   });
 
   final String title;
@@ -400,6 +401,13 @@ sealed class RidePageSpec {
   /// [menuCondition] est `null`.
   final bool menuAutoOpen;
 
+  /// Un bouton « Revenir à l'accueil » dans l'en-tête de cette page, à côté
+  /// du menu ⋮ — voir [LeaveRideBlock] pour le même geste posé comme
+  /// composant. **Faux par défaut** : le menu ⋮ reste de toute façon toujours
+  /// le chemin garanti pour sortir (voir `DashboardPage._menuFor`), ce
+  /// booléen n'en ajoute qu'un raccourci de plus.
+  final bool leaveButton;
+
   static RidePageSpec? parse(Object? raw) {
     if (raw is! Map) return null;
     final title = raw['title'] is String ? raw['title'] as String : null;
@@ -414,6 +422,7 @@ sealed class RidePageSpec {
     final key = raw['key'] is String && (raw['key'] as String).isNotEmpty
         ? raw['key'] as String
         : null;
+    final leaveButton = raw['leave_button'] == true;
 
     return switch (raw['kind']) {
       // Jamais derrière le menu, et pas par oubli : la carte est le WebView
@@ -430,6 +439,7 @@ sealed class RidePageSpec {
           menuAutoOpen: menuAutoOpen,
           icon: icon,
           key: key,
+          leaveButton: leaveButton,
         ),
       'list' => ListPageSpec.parse(
           raw,
@@ -440,6 +450,7 @@ sealed class RidePageSpec {
           menuAutoOpen: menuAutoOpen,
           icon: icon,
           key: key,
+          leaveButton: leaveButton,
         ),
       'laps' => LapListPageSpec.parse(
           raw,
@@ -450,6 +461,7 @@ sealed class RidePageSpec {
           menuAutoOpen: menuAutoOpen,
           icon: icon,
           key: key,
+          leaveButton: leaveButton,
         ),
       _ => null,
     };
@@ -520,6 +532,7 @@ class GridPageSpec extends RidePageSpec {
     super.menuAutoOpen,
     super.icon,
     super.key,
+    super.leaveButton,
   });
 
   final int rows;
@@ -546,6 +559,7 @@ class GridPageSpec extends RidePageSpec {
     bool menuAutoOpen = false,
     FaIconData? icon,
     String? key,
+    bool leaveButton = false,
   }) {
     final rows = _gridSide(raw['rows']);
     final cols = _gridSide(raw['cols']);
@@ -568,6 +582,7 @@ class GridPageSpec extends RidePageSpec {
       menuAutoOpen: menuAutoOpen,
       icon: icon,
       key: key,
+      leaveButton: leaveButton,
     );
   }
 }
@@ -652,6 +667,7 @@ class ListPageSpec extends RidePageSpec {
     super.menuAutoOpen,
     super.icon,
     super.key,
+    super.leaveButton,
   });
 
   final List<ListBlockPlacement> blocks;
@@ -674,6 +690,7 @@ class ListPageSpec extends RidePageSpec {
     bool menuAutoOpen = false,
     FaIconData? icon,
     String? key,
+    bool leaveButton = false,
   }) {
     final cols = raw['cols'] is num
         ? (raw['cols'] as num).toInt().clamp(1, maxCols)
@@ -693,6 +710,7 @@ class ListPageSpec extends RidePageSpec {
       menuAutoOpen: menuAutoOpen,
       icon: icon,
       key: key,
+      leaveButton: leaveButton,
     );
   }
 }
@@ -761,6 +779,7 @@ class LapListPageSpec extends RidePageSpec {
     super.menuAutoOpen,
     super.icon,
     super.key,
+    super.leaveButton,
   });
 
   final String series;
@@ -779,6 +798,7 @@ class LapListPageSpec extends RidePageSpec {
     bool menuAutoOpen = false,
     FaIconData? icon,
     String? key,
+    bool leaveButton = false,
   }) {
     final layout = LapPageLayout.parse(raw);
     // Une page de tours sans le moindre composant n'a rien à montrer une fois
@@ -794,6 +814,7 @@ class LapListPageSpec extends RidePageSpec {
       menuAutoOpen: menuAutoOpen,
       icon: icon,
       key: key,
+      leaveButton: leaveButton,
     );
   }
 }
@@ -894,6 +915,7 @@ sealed class BandSlot {
     }
     if (raw == 'sleep') return const BandActionSlot(BandAction.sleep);
     if (raw == 'toggle_workout') return const BandActionSlot(BandAction.toggleWorkout);
+    if (raw == 'leave_ride') return const BandActionSlot(BandAction.leaveRide);
     if (raw is String && raw.startsWith('bell_')) {
       return BandBellSlot(_bellSoundOf(raw.substring('bell_'.length)));
     }
@@ -1018,7 +1040,12 @@ class BandMetricSlot extends BandSlot {
 /// (`'toggle_workout'`, voir [BandSlot.parse]), contrairement aux cinq
 /// habillages de [BandWorkoutMode] : ce n'est pas un habillage du tronçon en
 /// cours, c'est un bouton — même nature que `sleep`.
-enum BandAction { sleep, toggleWorkout }
+///
+/// `leaveRide` quitte la sortie — même bouton que [LeaveRideBlock] posé sur
+/// une page, ici en case de bandeau/encoche. Le menu ⋮ reste de toute façon
+/// toujours le chemin garanti pour sortir, cette case n'en est qu'un
+/// raccourci de plus.
+enum BandAction { sleep, toggleWorkout, leaveRide }
 
 @immutable
 class BandActionSlot extends BandSlot {
