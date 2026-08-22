@@ -453,7 +453,10 @@ enum PageMenuCondition {
   descending,
 
   /// Sur un col, ou à son approche (`NavState.climb`, `RouteClimbs`).
-  nearCol;
+  nearCol,
+
+  /// Un entraînement est suivi (`RideRecorder.activeWorkout`).
+  workoutActive;
 
   /// `null` pour une valeur absente ou inconnue de cette version de l'appli —
   /// la page reste alors purement statique, jamais perdue.
@@ -461,6 +464,7 @@ enum PageMenuCondition {
         'route_active' => routeActive,
         'descending' => descending,
         'near_col' => nearCol,
+        'workout_active' => workoutActive,
         _ => null,
       };
 }
