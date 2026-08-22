@@ -122,5 +122,6 @@ class GeolocatorGpsSource implements GpsSource {
             ? position.heading
             : null,
         accuracyM: position.accuracy > 0 ? position.accuracy : null,
+        isMocked: position.isMocked,
       );
 }

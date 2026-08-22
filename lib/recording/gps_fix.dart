@@ -16,6 +16,7 @@ class GpsFix {
     this.speedMps,
     this.headingDeg,
     this.accuracyM,
+    this.isMocked = false,
   });
 
   final DateTime at;
@@ -42,6 +43,14 @@ class GpsFix {
   /// Rayon d'incertitude horizontale en mètres, à 68 %. C'est lui qui décide si
   /// un déplacement compte dans la distance parcourue ou si c'est du bruit.
   final double? accuracyM;
+
+  /// Vrai quand Android signale ce point comme injecté par une position
+  /// fictive (`Location.isFromMockProvider`, cf. gpx-mock-player, dépôt
+  /// voisin). Le Fused Location Provider ne mocke que le fournisseur GPS —
+  /// le réseau continue de rapporter la vraie position du téléphone, et un
+  /// point non mocké au milieu d'une série mockée est ce relais réseau qui
+  /// reprend la main, pas un capteur plus fiable.
+  final bool isMocked;
 
   /// Rayon terrestre moyen (IUGG), en mètres.
   static const _earthRadiusM = 6371008.8;

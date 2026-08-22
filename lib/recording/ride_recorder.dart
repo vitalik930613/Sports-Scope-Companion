@@ -127,6 +127,11 @@ class RideRecorder extends ChangeNotifier {
   GpsFix? _lastFix;
   GpsFix? _referenceFix;
 
+  /// Vu un point mocké (gpx-mock-player) sur cette sortie : le réseau, lui,
+  /// ne se mocke pas et continue de rapporter la vraie position du
+  /// téléphone. Voir [handleFix].
+  bool _sawMockFix = false;
+
   int? _heartRate;
   DateTime? _heartRateAt;
   int? _power;
@@ -290,6 +295,7 @@ class RideRecorder extends ChangeNotifier {
     powerTrack.reset();
     _lastFix = null;
     _referenceFix = null;
+    _sawMockFix = false;
     _lastMetaSave = DateTime.now();
 
     // Un tour 0 par série dès le départ, jamais au premier tour marqué : sinon
@@ -450,6 +456,18 @@ class RideRecorder extends ChangeNotifier {
   /// passé entre deux secondes.
   @visibleForTesting
   void handleFix(GpsFix fix) {
+    // Le Fused Location Provider ne mocke que le fournisseur GPS
+    // (gpx-mock-player, dépôt voisin) : le réseau continue de rapporter la
+    // vraie position, kilomètres plus loin sur une sortie de test. Dès qu'un
+    // point mocké est vu, un point qui ne l'est pas n'est donc pas une source
+    // plus fiable qui reprend la main, c'est ce relais réseau — même logique
+    // que le baromètre qui ne rend jamais la main au GPS une fois vu.
+    if (fix.isMocked) {
+      _sawMockFix = true;
+    } else if (_sawMockFix) {
+      return;
+    }
+
     // Cale l'altitude barométrique absolue sur le premier point assez précis.
     // Sans effet passé le premier calage réussi : recaler en route fabriquerait
     // du dénivelé (cf. BarometricAltimeter.calibrateWith).
