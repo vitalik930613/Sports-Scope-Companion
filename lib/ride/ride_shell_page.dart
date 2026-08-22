@@ -1053,7 +1053,7 @@ class _RideShellPageState extends State<RideShellPage>
 
     final next = <RidePageSpec>{
       for (final page in _conditionalPages)
-        if (_conditionMet(page.menuCondition!)) page,
+        if (_conditionMet(page)) page,
     };
     final unchanged = next.length == _activeConditional.length &&
         next.every(_activeConditional.contains);
@@ -1191,11 +1191,13 @@ class _RideShellPageState extends State<RideShellPage>
     return remaining.any((p) => p is! MapPageSpec);
   }
 
-  bool _conditionMet(PageMenuCondition condition) => switch (condition) {
+  bool _conditionMet(RidePageSpec page) => switch (page.menuCondition!) {
         PageMenuCondition.routeActive => _nav.value?.onRoute == true,
         PageMenuCondition.descending => _updateDescending(),
         PageMenuCondition.nearCol => _nearCol(),
         PageMenuCondition.workoutActive => widget.recorder.activeWorkout != null,
+        PageMenuCondition.lapNamed => page.menuConditionLapName != null &&
+            widget.recorder.lapStarted.value?.label == page.menuConditionLapName,
       };
 
   /// Entrée sous −3 %, sortie au-dessus de −1 % : la bande morte évite un

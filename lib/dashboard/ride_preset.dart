@@ -348,6 +348,7 @@ sealed class RidePageSpec {
     required this.title,
     this.menu = false,
     this.menuCondition,
+    this.menuConditionLapName,
     this.menuAutoOpen = false,
     this.icon,
     this.key,
@@ -387,6 +388,13 @@ sealed class RidePageSpec {
   /// contrat) laisse la page purement statique, comme avant ce réglage.
   final PageMenuCondition? menuCondition;
 
+  /// Seulement pour [PageMenuCondition.lapNamed] : le nom comparé au dernier
+  /// tour ouvert (`RideRecorder.lapStarted`), toutes séries confondues.
+  /// `null` sur toute autre condition, et sur `lapNamed` lui-même quand
+  /// l'éditeur n'a rien tapé — l'assainisseur retombe alors sur « pas de
+  /// condition », voir `CompanionSettings#sanitize_menu_condition` côté site.
+  final String? menuConditionLapName;
+
   /// Bascule automatiquement dessus quand [menuCondition] devient vraie,
   /// plutôt que de seulement la faire rejoindre le défilement. Sans effet si
   /// [menuCondition] est `null`.
@@ -397,6 +405,10 @@ sealed class RidePageSpec {
     final title = raw['title'] is String ? raw['title'] as String : null;
     final menu = raw['menu'] == true;
     final menuCondition = PageMenuCondition.parse(raw['menu_condition']);
+    final menuConditionLapName = raw['menu_condition_lap_name'] is String &&
+            (raw['menu_condition_lap_name'] as String).trim().isNotEmpty
+        ? (raw['menu_condition_lap_name'] as String).trim()
+        : null;
     final menuAutoOpen = raw['menu_auto_open'] == true;
     final icon = companionIconFor(raw['icon'] is String ? raw['icon'] as String : null);
     final key = raw['key'] is String && (raw['key'] as String).isNotEmpty
@@ -414,6 +426,7 @@ sealed class RidePageSpec {
           title: title,
           menu: menu,
           menuCondition: menuCondition,
+          menuConditionLapName: menuConditionLapName,
           menuAutoOpen: menuAutoOpen,
           icon: icon,
           key: key,
@@ -423,6 +436,7 @@ sealed class RidePageSpec {
           title: title,
           menu: menu,
           menuCondition: menuCondition,
+          menuConditionLapName: menuConditionLapName,
           menuAutoOpen: menuAutoOpen,
           icon: icon,
           key: key,
@@ -432,6 +446,7 @@ sealed class RidePageSpec {
           title: title,
           menu: menu,
           menuCondition: menuCondition,
+          menuConditionLapName: menuConditionLapName,
           menuAutoOpen: menuAutoOpen,
           icon: icon,
           key: key,
@@ -456,7 +471,14 @@ enum PageMenuCondition {
   nearCol,
 
   /// Un entraînement est suivi (`RideRecorder.activeWorkout`).
-  workoutActive;
+  workoutActive,
+
+  /// Le dernier tour ouvert, toutes séries confondues, porte le nom choisi
+  /// dans l'éditeur (`RidePageSpec.menuConditionLapName`) —
+  /// `RideRecorder.lapStarted`. Contrairement aux trois autres, celle-ci
+  /// porte un réglage : sans nom, l'assainisseur du site retombe sur « pas
+  /// de condition » plutôt que de laisser passer une comparaison à vide.
+  lapNamed;
 
   /// `null` pour une valeur absente ou inconnue de cette version de l'appli —
   /// la page reste alors purement statique, jamais perdue.
@@ -465,6 +487,7 @@ enum PageMenuCondition {
         'descending' => descending,
         'near_col' => nearCol,
         'workout_active' => workoutActive,
+        'lap_named' => lapNamed,
         _ => null,
       };
 }
@@ -493,6 +516,7 @@ class GridPageSpec extends RidePageSpec {
     this.dividers = const [],
     super.menu,
     super.menuCondition,
+    super.menuConditionLapName,
     super.menuAutoOpen,
     super.icon,
     super.key,
@@ -518,6 +542,7 @@ class GridPageSpec extends RidePageSpec {
     String? title,
     bool menu = false,
     PageMenuCondition? menuCondition,
+    String? menuConditionLapName,
     bool menuAutoOpen = false,
     FaIconData? icon,
     String? key,
@@ -539,6 +564,7 @@ class GridPageSpec extends RidePageSpec {
       dividers: _gridDividers(raw['dividers'], rows: rows, cols: cols),
       menu: menu,
       menuCondition: menuCondition,
+      menuConditionLapName: menuConditionLapName,
       menuAutoOpen: menuAutoOpen,
       icon: icon,
       key: key,
@@ -622,6 +648,7 @@ class ListPageSpec extends RidePageSpec {
     this.cols = 1,
     super.menu,
     super.menuCondition,
+    super.menuConditionLapName,
     super.menuAutoOpen,
     super.icon,
     super.key,
@@ -643,6 +670,7 @@ class ListPageSpec extends RidePageSpec {
     String? title,
     bool menu = false,
     PageMenuCondition? menuCondition,
+    String? menuConditionLapName,
     bool menuAutoOpen = false,
     FaIconData? icon,
     String? key,
@@ -661,6 +689,7 @@ class ListPageSpec extends RidePageSpec {
       cols: cols,
       menu: menu,
       menuCondition: menuCondition,
+      menuConditionLapName: menuConditionLapName,
       menuAutoOpen: menuAutoOpen,
       icon: icon,
       key: key,
@@ -728,6 +757,7 @@ class LapListPageSpec extends RidePageSpec {
     required this.layout,
     super.menu,
     super.menuCondition,
+    super.menuConditionLapName,
     super.menuAutoOpen,
     super.icon,
     super.key,
@@ -745,6 +775,7 @@ class LapListPageSpec extends RidePageSpec {
     String? title,
     bool menu = false,
     PageMenuCondition? menuCondition,
+    String? menuConditionLapName,
     bool menuAutoOpen = false,
     FaIconData? icon,
     String? key,
@@ -759,6 +790,7 @@ class LapListPageSpec extends RidePageSpec {
       layout: layout,
       menu: menu,
       menuCondition: menuCondition,
+      menuConditionLapName: menuConditionLapName,
       menuAutoOpen: menuAutoOpen,
       icon: icon,
       key: key,
