@@ -917,6 +917,7 @@ sealed class BandSlot {
     if (raw == 'toggle_workout') return const BandActionSlot(BandAction.toggleWorkout);
     if (raw == 'leave_ride') return const BandActionSlot(BandAction.leaveRide);
     if (raw == 'route') return const BandActionSlot(BandAction.route);
+    if (raw == 'toggle_pause') return const BandActionSlot(BandAction.togglePause);
     if (raw is String && raw.startsWith('bell_')) {
       return BandBellSlot(_bellSoundOf(raw.substring('bell_'.length)));
     }
@@ -1050,7 +1051,14 @@ class BandMetricSlot extends BandSlot {
 /// `route` change ou retire l'itinéraire suivi — même bouton combiné que
 /// [RouteBlock] posé sur une page (voir [RouteControl]), ici en case de
 /// bandeau/encoche.
-enum BandAction { sleep, toggleWorkout, leaveRide, route }
+///
+/// `togglePause` suspend ou reprend l'enregistrement — même bouton combiné
+/// que [ToggleWorkoutControl] pour l'entraînement (voir [TogglePauseControl],
+/// `ride/blocks/toggle_pause_block.dart`), l'état du `RideRecorder` décidant
+/// seul lequel des deux gestes il pose. Pas de bouton d'arrêt à côté : une
+/// case de bandeau/encoche n'est pas l'endroit pour clore la sortie, on
+/// termine au retour depuis l'écran des capteurs.
+enum BandAction { sleep, toggleWorkout, leaveRide, route, togglePause }
 
 @immutable
 class BandActionSlot extends BandSlot {
@@ -1597,6 +1605,7 @@ sealed class ButtonAction {
       'sleep' => const EnterSleepAction(),
       'wake' => const ExitSleepAction(),
       'toggle_sleep' => const ToggleSleepAction(),
+      'toggle_pause' => const TogglePauseAction(),
       _ => null,
     };
   }
@@ -1643,6 +1652,15 @@ class ExitSleepAction extends ButtonAction {
 /// aucune donnée, juste l'intention.
 class ToggleSleepAction extends ButtonAction {
   const ToggleSleepAction();
+}
+
+/// Suspend ou reprend l'enregistrement — un seul bouton pour les deux sens,
+/// même raison que [ToggleSleepAction] : c'est `RideRecorder.state` qui
+/// tranche au moment du geste (`RideShellPage._performButtonAction`), pas
+/// cette classe. Rien hors enregistrement (`RecorderState.idle`) : démarrer
+/// n'est pas un geste de route, il se fait depuis l'écran des capteurs.
+class TogglePauseAction extends ButtonAction {
+  const TogglePauseAction();
 }
 
 /// Anticipation : ne se résout que si une page du profil porte ce

@@ -1664,6 +1664,17 @@ class _RideShellPageState extends State<RideShellPage>
         }
       case GoToPageAction(:final pageKey):
         _goToPageByKey(pageKey);
+      case TogglePauseAction():
+        // Même garde que `StartLapAction` : hors enregistrement, rien à
+        // suspendre ou reprendre.
+        switch (widget.recorder.state) {
+          case RecorderState.recording:
+            widget.recorder.pause();
+          case RecorderState.paused:
+            widget.recorder.resume();
+          case RecorderState.idle:
+            break;
+        }
     }
   }
 

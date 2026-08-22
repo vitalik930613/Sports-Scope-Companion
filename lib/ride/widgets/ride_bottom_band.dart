@@ -11,6 +11,7 @@ import '../blocks/leave_ride_block.dart';
 import '../blocks/radar_block.dart';
 import '../blocks/route_block.dart';
 import '../blocks/sleep_block.dart';
+import '../blocks/toggle_pause_block.dart';
 import '../blocks/toggle_workout_block.dart';
 import '../radar_severity.dart';
 import 'band_metric_tile.dart';
@@ -259,6 +260,10 @@ class _RideBottomBandState extends State<RideBottomBand> {
               nav: widget.sources.nav,
               mode: RouteMode.compact,
             ),
+          ),
+        BandAction.togglePause => Padding(
+            padding: const EdgeInsets.fromLTRB(2, 3, 2, 3),
+            child: TogglePauseControl(recorder: widget.recorder, compact: true),
           ),
       };
 

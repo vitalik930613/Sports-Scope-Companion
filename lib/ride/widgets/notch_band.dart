@@ -14,6 +14,7 @@ import '../blocks/leave_ride_block.dart';
 import '../blocks/radar_block.dart';
 import '../blocks/route_block.dart';
 import '../blocks/sleep_block.dart';
+import '../blocks/toggle_pause_block.dart';
 import '../blocks/toggle_workout_block.dart';
 import '../radar_severity.dart';
 import 'band_metric_tile.dart';
@@ -263,6 +264,7 @@ class _NotchBandState extends State<NotchBand> {
             nav: widget.sources.nav,
             mode: RouteMode.compact,
           ),
+        BandAction.togglePause => TogglePauseControl(recorder: widget.recorder, compact: true),
       };
 
   // Pas de `FittedBox` externe ici, à l'inverse de [_metric] :
