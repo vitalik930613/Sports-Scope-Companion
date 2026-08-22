@@ -47,7 +47,8 @@ class ToggleWorkoutControl extends StatelessWidget {
       listenable: recorder,
       builder: (context, _) => recorder.activeWorkout != null
           ? DashboardActionButton(
-              icon: Icons.layers_clear,
+              icon: Icons.fitness_center,
+              barred: true,
               label: 'Retirer l\'entraînement',
               compact: compact,
               onPressed: recorder.stopWorkout,

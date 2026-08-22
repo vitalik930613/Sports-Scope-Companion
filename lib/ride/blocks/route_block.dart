@@ -61,7 +61,8 @@ class RouteControl extends StatelessWidget {
       valueListenable: navListenable,
       builder: (context, state, _) => state?.onRoute == true
           ? DashboardActionButton(
-              icon: Icons.layers_clear,
+              icon: Icons.route,
+              barred: true,
               label: 'Retirer l\'itinéraire',
               compact: compact,
               onPressed: onClearRoute,

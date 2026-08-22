@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../ui/barred_icon.dart';
 import 'block_card.dart';
 
 /// Un bouton d'action générique du tableau de bord : un geste qui agit sur la
@@ -15,6 +16,7 @@ class DashboardActionButton extends StatelessWidget {
     required this.label,
     required this.compact,
     required this.onPressed,
+    this.barred = false,
     this.color,
     this.textColor,
   });
@@ -23,6 +25,10 @@ class DashboardActionButton extends StatelessWidget {
   final String label;
   final bool compact;
   final VoidCallback? onPressed;
+
+  /// [icon] barré en diagonale (voir [BarredIcon]) — le geste qui défait ce
+  /// que [icon] propose, sans lui chercher un glyphe sans rapport.
+  final bool barred;
 
   /// Fond réglé dans l'éditeur — voir [DashboardBlock.color]. `null` : le
   /// gris des cartes en compact, le vert-bleu du thème en plein.
@@ -38,6 +44,9 @@ class DashboardActionButton extends StatelessWidget {
   /// case réelle.
   static const _fullWidth = 200.0;
 
+  Widget _icon({Color? color}) =>
+      barred ? BarredIcon(icon, color: color) : Icon(icon, color: color);
+
   @override
   Widget build(BuildContext context) {
     if (compact) {
@@ -50,8 +59,7 @@ class DashboardActionButton extends StatelessWidget {
             onTap: onPressed,
             borderRadius: BorderRadius.circular(12),
             child: Center(
-              child: Icon(
-                icon,
+              child: _icon(
                 color: onPressed == null ? Colors.white24 : (textColor ?? Colors.white70),
               ),
             ),
@@ -75,7 +83,7 @@ class DashboardActionButton extends StatelessWidget {
             foregroundColor: textColor,
           ),
           onPressed: onPressed,
-          icon: Icon(icon),
+          icon: _icon(),
           label: Text(label, style: const TextStyle(fontSize: 16)),
         ),
       ),

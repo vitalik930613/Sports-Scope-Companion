@@ -6,6 +6,7 @@ import '../../dashboard/dashboard_block.dart';
 import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
 import '../../training_program/training_program.dart';
+import '../../ui/barred_icon.dart';
 import '../battery_status.dart';
 import '../blocks/altitude_profile_block.dart';
 import '../blocks/averages_block.dart';
@@ -677,7 +678,7 @@ class DashboardPage extends StatelessWidget {
               value: clear,
               child: const ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.layers_clear),
+                leading: BarredIcon(Icons.route),
                 title: Text('Retirer l\'itinéraire'),
               ),
             ),
@@ -729,7 +730,7 @@ class DashboardPage extends StatelessWidget {
               value: stop,
               child: const ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.layers_clear),
+                leading: BarredIcon(Icons.timer_outlined),
                 title: Text('Arrêter l\'entraînement'),
               ),
             ),

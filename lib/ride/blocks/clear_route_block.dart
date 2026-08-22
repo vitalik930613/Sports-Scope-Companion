@@ -44,7 +44,8 @@ class ClearRouteControl extends StatelessWidget {
     final navListenable = nav;
     if (navListenable == null) {
       return DashboardActionButton(
-        icon: Icons.layers_clear,
+        icon: Icons.route,
+        barred: true,
         label: 'Retirer l\'itinéraire',
         compact: compact,
         onPressed: null,
@@ -56,7 +57,8 @@ class ClearRouteControl extends StatelessWidget {
     return ValueListenableBuilder<NavState?>(
       valueListenable: navListenable,
       builder: (context, state, _) => DashboardActionButton(
-        icon: Icons.layers_clear,
+        icon: Icons.route,
+        barred: true,
         label: 'Retirer l\'itinéraire',
         compact: compact,
         onPressed: state?.onRoute == true ? onClearRoute : null,
