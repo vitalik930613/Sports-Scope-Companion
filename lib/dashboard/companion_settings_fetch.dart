@@ -27,7 +27,12 @@ import 'companion_settings_store.dart';
 /// WebView de navigation (`pushTrainingBudget`, l'autre voie qui alimente
 /// [TrainingBudgetStore]). Absent ou mal formé, il ne touche pas au cache : même
 /// garde-fou que pour les profils, déjà assuré par `TrainingBudgetStore.record`.
-Future<void> refreshCompanionSettings(
+///
+/// Rend le statut de la requête : c'est ce qui permet à un appelant (le lien
+/// entrant « Naviguer dans l'application ») de savoir si le lancement à froid
+/// a bien vu une session, plutôt que de refaire aveuglément une requête à
+/// chaque lien alors que le document du jour est déjà là.
+Future<SettingsFetchStatus> refreshCompanionSettings(
   CompanionSettingsStore store, {
   TrainingBudgetStore? trainingBudget,
   CompanionSettingsFetch fetch = const CompanionSettingsFetch(),
@@ -37,13 +42,16 @@ Future<void> refreshCompanionSettings(
   // site le sait, et annonce alors un téléphone ordinaire plutôt que de
   // prétendre connaître celui-ci.
   final result = await fetch.run(grid: store.grid);
-  if (result.status != SettingsFetchStatus.ok) return;
+  if (result.status != SettingsFetchStatus.ok) return result.status;
   await store.record(result.document);
 
-  if (trainingBudget == null) return;
-  final document = result.document;
-  final raw = document is Map ? document['training_budget'] : null;
-  await trainingBudget.record(TrainingBudget.fromJson(raw));
+  if (trainingBudget != null) {
+    final document = result.document;
+    final raw = document is Map ? document['training_budget'] : null;
+    await trainingBudget.record(TrainingBudget.fromJson(raw));
+  }
+
+  return result.status;
 }
 
 /// Comment s'est terminé un rafraîchissement des profils.

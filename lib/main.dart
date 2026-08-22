@@ -22,6 +22,7 @@ import 'devices/known_devices_store.dart';
 import 'devices/sensor_status_strip.dart';
 import 'devices/sensors_page.dart';
 import 'drivetrain.dart';
+import 'navigation/handoff_exchange.dart';
 import 'navigation/navigation_picker_sheet.dart';
 import 'navigation/navigation_target.dart';
 import 'navigation/route_catalog_fetch.dart';
@@ -177,6 +178,18 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
   /// aller-retour.
   final _updates = UpdateChecker();
 
+  /// Le statut du dernier rafraîchissement des profils de sortie.
+  ///
+  /// Sur une install fraîche, le lancement à froid interroge le site **avant**
+  /// qu'un lien entrant n'ait eu la chance de poser sa session (le
+  /// `handoffToken` ne s'échange contre un cookie que dans le WebView de
+  /// navigation, une fois la sortie ouverte) : ce premier appel répond alors
+  /// `signedOut`, et le document reste vide pour toute la sortie qui suit.
+  /// Garder ce statut permet à [_openLink] de savoir, au retour de cette
+  /// sortie, qu'il vaut la peine de rattraper le document — plutôt que de
+  /// refaire la requête à chaque lien alors qu'elle a déjà réussi.
+  SettingsFetchStatus? _settingsStatus;
+
   @override
   void initState() {
     super.initState();
@@ -188,8 +201,8 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
     unawaited(_refreshSettings());
   }
 
-  /// Les profils de sortie, **une fois par lancement** — comme le contrôle de
-  /// version, et pas comme le catalogue d'itinéraires.
+  /// Les profils de sortie, **une fois par lancement** en temps normal — comme
+  /// le contrôle de version, et pas comme le catalogue d'itinéraires.
   ///
   /// Ces réglages changent au plus une fois par mois, alors que les itinéraires
   /// changent la veille d'une sortie : les accrocher au rafraîchissement du
@@ -199,11 +212,14 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
   /// Un échec est **muet**, même convention que le contrôle de version : hors
   /// ligne avant de partir est le cas banal, le cache fait autorité, et « les
   /// réglages n'ont pas pu être relus » n'est pas une information à poser sur
-  /// l'écran d'avant-départ.
-  Future<void> _refreshSettings() => refreshCompanionSettings(
-        widget.settings,
-        trainingBudget: widget.trainingBudget,
-      );
+  /// l'écran d'avant-départ. Le statut, lui, est gardé (voir [_settingsStatus])
+  /// — c'est [_openLink] qui décide s'il vaut la peine de réessayer.
+  Future<void> _refreshSettings() async {
+    _settingsStatus = await refreshCompanionSettings(
+      widget.settings,
+      trainingBudget: widget.trainingBudget,
+    );
+  }
 
   /// « Ouvrir dans l'appli » depuis le site, ou un lien d'itinéraire partagé.
   ///
@@ -219,11 +235,39 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
   }
 
   Future<void> _openLink(Uri uri) async {
-    final target = NavigationTarget.parse(uri);
+    var target = NavigationTarget.parse(uri);
     if (target == null) {
       debugPrint('[links] lien ignoré : $uri');
       return;
     }
+
+    // Un `handoffToken` dit que le site nous croit connectés — mais la session
+    // qu'il porte ne s'ouvre normalement que dans le WebView de navigation
+    // (`NavigationTarget.url`), une fois `RideShellPage` déjà monté. Si ce
+    // lancement n'a, lui, jamais vu de session valide (install fraîche, ou
+    // connexion faite entre-temps sur le site), `settings.select` ci-dessous
+    // choisirait le profil sur un document encore vide et la sortie
+    // démarrerait sur le profil de repli — précisément le bug rapporté.
+    //
+    // On échange donc le jeton nous-mêmes, ici, avant que quoi que ce soit ne
+    // s'ouvre : ça laisse le temps de rafraîchir les profils avec une session
+    // désormais valide, et de choisir le bon avant la première image de la
+    // carte. Jamais si `_settingsStatus` est déjà `ok` : la session existait
+    // alors avant ce lien, et le WebView de navigation fera l'échange lui-même
+    // comme d'habitude — pas de round-trip de plus sur l'usage quotidien.
+    if (target.handoffToken != null && _settingsStatus != SettingsFetchStatus.ok) {
+      final handoffToken = target.handoffToken!;
+      // Cet aller-retour peut prendre plusieurs secondes (deux WebViews hors
+      // écran, l'un après l'autre) : sans rien à l'écran, ça se lit comme une
+      // appli qui ne répond plus, alors qu'elle télécharge.
+      final exchanged = await _withConnectingDialog(() async {
+        final ok = await const HandoffExchange().run(handoffToken);
+        if (ok) await _refreshSettings();
+        return ok;
+      });
+      if (exchanged) target = target.withoutHandoffToken();
+    }
+
     await openNavigation(
       _navigatorKey.currentContext,
       target: target,
@@ -238,7 +282,54 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
       trainingPrograms: widget.trainingPrograms,
       settings: widget.settings,
       resume: _resume,
+      // Filet : si l'échange ci-dessus a échoué (hors ligne, jeton déjà
+      // périmé) ou n'a pas eu lieu, `target` garde son jeton et le WebView de
+      // navigation va tenter l'échange lui-même en roulant. S'il aboutit, la
+      // session n'existera qu'au retour de cette sortie — c'est là qu'il vaut
+      // la peine de rattraper les profils pour la prochaine fois.
+      onHandoffRideEnded: _refreshSettings,
     );
+  }
+
+  /// Une boîte non interactive, le temps d'une action réseau qu'on ne peut pas
+  /// éviter avant d'ouvrir la sortie (voir [_openLink]).
+  ///
+  /// `showDialog` insère sa route de façon synchrone — c'est ce qui permet de
+  /// la refermer par un simple `pop()` juste après [action], sans jamais avoir
+  /// laissé passer une image sans elle. Pas de bouton, pas de retour système
+  /// (`PopScope(canPop: false)`) : rien à faire d'autre qu'attendre, et il ne
+  /// faut pas qu'un appui malheureux abandonne l'échange en cours.
+  Future<T> _withConnectingDialog<T>(Future<T> Function() action) async {
+    final context = _navigatorKey.currentContext;
+    if (context == null || !context.mounted) return action();
+
+    unawaited(showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: 20),
+              Expanded(child: Text('Connexion à ton compte…')),
+            ],
+          ),
+        ),
+      ),
+    ));
+
+    try {
+      return await action();
+    } finally {
+      if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
+    }
   }
 
   @override
@@ -302,6 +393,21 @@ Future<void> openNavigation(
   required TrainingProgramCatalogStore trainingPrograms,
   required CompanionSettingsStore settings,
   required ValueNotifier<NavigationTarget?> resume,
+  /// Appelé au retour de la sortie, mais seulement si [target] porte encore un
+  /// [NavigationTarget.handoffToken] à ce moment-là.
+  ///
+  /// C'est un **filet**, pas le chemin normal : `_openLink` échange déjà le
+  /// jeton lui-même avant d'appeler cette fonction quand c'est nécessaire (voir
+  /// `HandoffExchange`), et retire alors [NavigationTarget.handoffToken] de
+  /// `target` — auquel cas ce callback ne sert plus à rien pour cette sortie.
+  /// S'il reste malgré tout un jeton ici (l'échange préalable a échoué : hors
+  /// ligne, jeton déjà périmé), c'est que le WebView de navigation a fait
+  /// l'échange lui-même en roulant ; si une session s'est ouverte comme ça,
+  /// c'est seulement à ce retour qu'elle a une chance d'avoir servi, d'où le
+  /// rattrapage ici plutôt qu'avant. `null` pour un appel qui ne vient pas d'un
+  /// lien entrant (feuille de départ, reprise) : là, la session — s'il y en a
+  /// une — était déjà connue avant d'ouvrir la sortie, rien à rattraper.
+  Future<void> Function()? onHandoffRideEnded,
 }) async {
   if (context == null || !context.mounted) return;
 
@@ -390,6 +496,11 @@ Future<void> openNavigation(
   // l'a laissée. C'est la contrepartie du départ sans confirmation — rentrer
   // ne coûte qu'un tap, repartir non plus.
   if (left != null) resume.value = left;
+
+  // La session que le jeton de ce lien a pu ouvrir n'existait pas encore
+  // avant la sortie (voir la doc de [onHandoffRideEnded]) : c'est seulement
+  // maintenant qu'elle a une chance d'avoir servi.
+  if (target.handoffToken != null) await onHandoffRideEnded?.call();
 }
 
 /// Propose de lancer l'enregistrement, juste avant de partir.

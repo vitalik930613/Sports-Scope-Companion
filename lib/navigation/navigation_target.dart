@@ -49,6 +49,23 @@ class NavigationTarget {
   /// (`SessionsController#handoff`).
   final String? handoffToken;
 
+  /// La même cible, jeton de passage retiré.
+  ///
+  /// À appeler après avoir échangé soi-même [handoffToken] contre une session
+  /// (voir `HandoffExchange`) : le jeton ne vaut qu'une fois, et laisser
+  /// [handoffToken] sur la cible ferait rejouer l'échange une seconde fois
+  /// dans le WebView de navigation, qui le trouverait déjà consommé et
+  /// retomberait en anonyme.
+  NavigationTarget withoutHandoffToken() => NavigationTarget(
+        shareToken: shareToken,
+        label: label,
+        resume: resume,
+        presetKey: presetKey,
+        autoRecord: autoRecord,
+        autoDownloadOffline: autoDownloadOffline,
+        workoutToken: workoutToken,
+      );
+
   /// Reprise du tracé mémorisé par la page, plutôt qu'un départ à neuf. N'a de
   /// sens que sans [shareToken] : demander un itinéraire précis, c'est déjà dire
   /// lequel on veut.
