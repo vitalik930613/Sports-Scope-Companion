@@ -12,14 +12,17 @@ import 'ride_detail_page.dart';
 import 'ride_recorder.dart';
 import 'ride_session.dart';
 import 'ride_store.dart';
+import 'ride_upload.dart';
 
 /// Les sorties enregistrées : ce qu'on a, et comment le sortir de l'appli.
 ///
-/// L'export produit un `.fit` puis passe la main au partage d'Android. C'est
-/// volontairement le chemin le plus bête : de là, le fichier part vers le PC,
-/// un mail ou un espace de stockage, et se dépose dans la page d'import de
-/// sports-scope. Un téléversement direct supposerait de tenir une session
-/// authentifiée hors du WebView, pour un gain nul sur la route.
+/// L'export produit un `.fit` puis passe la main au partage d'Android — le
+/// chemin le plus bête pour en faire quelque chose ailleurs (PC, mail, un
+/// autre site). L'envoi direct, lui, ne construit ni ne partage aucun
+/// fichier : il pousse la sortie vers `/api/imported_activities` par un
+/// WebView hors écran (`RideUploadFetch`), exactement comme la lecture du
+/// catalogue d'itinéraires — la session est le cookie du pot partagé des
+/// WebViews, jamais un jeton que l'appli devrait conserver de son côté.
 class RidesPage extends StatefulWidget {
   const RidesPage({
     super.key,
@@ -99,6 +102,37 @@ class _RidesPageState extends State<RidesPage> {
     }
   }
 
+  /// Envoie la sortie directement à sports-scope, sans passer par un fichier.
+  ///
+  /// Même sélecteur de sport que l'export : l'appli ne sait toujours pas ce
+  /// qu'on a roulé, seulement les capteurs et le GPS.
+  Future<void> _upload(RideSession session) async {
+    final sport = await _pickSport();
+    if (sport == null) return;
+
+    setState(() => _busyId = session.id);
+    try {
+      final points = await widget.store.points(session.id);
+      final payload =
+          buildRideUploadPayload(session: session, points: points, sport: sport);
+      final result = await const RideUploadFetch().run(payload);
+      switch (result.status) {
+        case RideUploadStatus.ok:
+          _toast('Sortie envoyée sur sports-scope.');
+        case RideUploadStatus.signedOut:
+          _toast('Connecte-toi sur sports-scope (onglet Compte) avant d\'envoyer.');
+        case RideUploadStatus.failed:
+          _toast('Envoi impossible${result.message != null ? ' : ${result.message}' : ', réessaie plus tard'}.');
+      }
+    } on EmptyRide {
+      _toast('Cette sortie n\'a aucun point enregistré.');
+    } catch (e) {
+      _toast('Envoi impossible : $e');
+    } finally {
+      if (mounted) setState(() => _busyId = null);
+    }
+  }
+
   /// Ce que la sortie était vraiment, pour le `.fit` — l'appli ne l'a jamais su
   /// pendant l'enregistrement (voir `FitSport`). `null` si l'utilisateur ferme
   /// la boîte sans choisir, ce qui annule l'export plutôt que de deviner.
@@ -107,9 +141,9 @@ class _RidesPageState extends State<RidesPage> {
         builder: (dialogContext) => SimpleDialog(
           title: const Text('Sport de cette sortie'),
           children: [
-            _sportOption(dialogContext, FitSport.cycling, Icons.directions_bike, 'Vélo'),
-            _sportOption(dialogContext, FitSport.mtb, Icons.terrain, 'VTT'),
-            _sportOption(dialogContext, FitSport.hiking, Icons.hiking, 'Randonnée'),
+            _sportOption(dialogContext, FitSport.cycling, Icons.directions_bike),
+            _sportOption(dialogContext, FitSport.mtb, Icons.terrain),
+            _sportOption(dialogContext, FitSport.hiking, Icons.hiking),
           ],
         ),
       );
@@ -118,7 +152,6 @@ class _RidesPageState extends State<RidesPage> {
     BuildContext dialogContext,
     FitSport sport,
     IconData icon,
-    String label,
   ) =>
       SimpleDialogOption(
         onPressed: () => Navigator.of(dialogContext).pop(sport),
@@ -126,7 +159,7 @@ class _RidesPageState extends State<RidesPage> {
           children: [
             Icon(icon),
             const SizedBox(width: 12),
-            Text(label),
+            Text(sport.label),
           ],
         ),
       );
@@ -299,11 +332,17 @@ class _RidesPageState extends State<RidesPage> {
           : PopupMenuButton<String>(
               enabled: !active,
               onSelected: (action) => switch (action) {
+                'upload' => _upload(session),
                 'export' => _export(session),
                 'delete' => _delete(session),
                 _ => null,
               },
               itemBuilder: (context) => [
+                PopupMenuItem(
+                  value: 'upload',
+                  enabled: session.pointCount > 0,
+                  child: const Text('Envoyer à sports-scope'),
+                ),
                 PopupMenuItem(
                   value: 'export',
                   enabled: session.pointCount > 0,

@@ -122,11 +122,11 @@ class FitWriter {
     // — lap : le format .fit ne porte qu'une seule séquence de tours par
     // session, pas plusieurs séries en parallèle comme l'appli en connaît
     // (`default`, `workout`, `cols`, une série personnalisée posée sur un
-    // bouton Di2…) — voir `_lapGroups`, qui fusionne leurs frontières. Une
-    // sortie où aucune série n'a jamais dépassé son tour 0 donne un seul
-    // groupe couvrant toute la sortie : exactement le comportement d'avant
-    // les tours manuels.
-    final lapGroups = _lapGroups(points);
+    // bouton Di2…) — voir `lapGroupsOf` (`track_point.dart`), qui fusionne
+    // leurs frontières. Une sortie où aucune série n'a jamais dépassé son
+    // tour 0 donne un seul groupe couvrant toute la sortie : exactement le
+    // comportement d'avant les tours manuels.
+    final lapGroups = lapGroupsOf(points);
     // Le temps chronométré compte une seconde par point capturé, donc aussi les
     // feux rouges : sans `total_moving_time` à côté, un lecteur prend le premier
     // pour le second et en tire une vitesse moyenne fausse. Cf. `RideStats`.
@@ -399,44 +399,6 @@ class FitWriter {
       mps == null ? null : (mps * 1000).round().clamp(0, 0xFFFE).toInt();
 
   static int _milliseconds(Duration duration) => duration.inMilliseconds;
-
-  /// Découpe les points par tour, sur **toutes** les séries qui ont servi
-  /// pendant la sortie — pas seulement `'default'`. `TrackPoint.laps` porte
-  /// l'index courant de chaque série qui a été utilisée au moins une fois
-  /// (`workout`, `cols`, une série personnalisée posée sur un bouton Di2 ou
-  /// une case de bandeau, voir sa doc) ; un `.fit` n'a qu'une seule séquence
-  /// de tours à offrir, donc un nouveau tour s'ouvre ici dès qu'*une* des
-  /// séries change d'index — ce qui revient à fusionner leurs frontières en
-  /// une seule chronologie plutôt que de n'en garder qu'une et perdre les
-  /// autres.
-  ///
-  /// Une sortie qui n'a touché qu'à une seule série retombe exactement sur
-  /// son découpage à elle, comme avant. Le nom du tronçon d'un tour
-  /// `workout` (`RideLap.label`) et l'identifiant d'un col (`RideLap.
-  /// climbId`) ne sont en revanche pas persistés dans le JSONL (voir
-  /// `lapSeriesHistoryOf`) : cette fonction ne peut donc reprendre que les
-  /// frontières, jamais leur nom.
-  static List<List<TrackPoint>> _lapGroups(List<TrackPoint> points) {
-    final seriesKeys = <String>{};
-    for (final point in points) {
-      seriesKeys.addAll(point.laps.keys);
-    }
-    final orderedKeys = seriesKeys.toList()..sort();
-
-    final groups = <List<TrackPoint>>[];
-    List<TrackPoint>? current;
-    String? currentKey;
-    for (final point in points) {
-      final key = orderedKeys.map((series) => point.laps[series] ?? 0).join(',');
-      if (current == null || key != currentKey) {
-        current = [];
-        groups.add(current);
-        currentKey = key;
-      }
-      current.add(point);
-    }
-    return groups;
-  }
 }
 
 /// Une sortie sans le moindre point ne fait pas un `.fit`.
@@ -467,6 +429,15 @@ enum FitSport {
 
   final int sport;
   final int subSport;
+
+  /// Nom affiché au cycliste — même trois options que la boîte « Sport de
+  /// cette sortie » (`RidesPage._pickSport`), tenues ici pour ne pas les
+  /// répéter à chaque appelant.
+  String get label => switch (this) {
+        FitSport.cycling => 'Vélo',
+        FitSport.mtb => 'VTT',
+        FitSport.hiking => 'Randonnée',
+      };
 }
 
 /// Types de base du format, avec leur code, leur taille et leur valeur

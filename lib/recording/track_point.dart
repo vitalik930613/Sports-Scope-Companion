@@ -163,3 +163,42 @@ class TrackPoint {
     7: 10000000,
   };
 }
+
+/// Découpe des points par tour, sur **toutes** les séries qui ont servi
+/// pendant la sortie — pas seulement `'default'`. `TrackPoint.laps` porte
+/// l'index courant de chaque série qui a été utilisée au moins une fois
+/// (`workout`, `cols`, une série personnalisée posée sur un bouton Di2 ou une
+/// case de bandeau, voir sa doc) ; un tour s'ouvre ici dès qu'*une* des séries
+/// change d'index, ce qui revient à fusionner leurs frontières en une seule
+/// chronologie plutôt que de n'en garder qu'une et perdre les autres.
+///
+/// Une sortie qui n'a touché qu'à une seule série retombe exactement sur son
+/// découpage à elle, comme avant. Le nom du tronçon d'un tour `workout`
+/// (`RideLap.label`) et l'identifiant d'un col (`RideLap.climbId`) ne sont en
+/// revanche pas persistés dans le JSONL : cette fonction ne peut donc reprendre
+/// que les frontières, jamais leur nom.
+///
+/// Partagée entre `FitWriter` (le `.fit` n'a qu'une seule séquence de tours à
+/// offrir) et l'envoi direct sur sports-scope (`ride_upload.dart`), qui a
+/// besoin des mêmes bornes en indices de flux plutôt qu'en messages `.fit`.
+List<List<TrackPoint>> lapGroupsOf(List<TrackPoint> points) {
+  final seriesKeys = <String>{};
+  for (final point in points) {
+    seriesKeys.addAll(point.laps.keys);
+  }
+  final orderedKeys = seriesKeys.toList()..sort();
+
+  final groups = <List<TrackPoint>>[];
+  List<TrackPoint>? current;
+  String? currentKey;
+  for (final point in points) {
+    final key = orderedKeys.map((series) => point.laps[series] ?? 0).join(',');
+    if (current == null || key != currentKey) {
+      current = [];
+      groups.add(current);
+      currentKey = key;
+    }
+    current.add(point);
+  }
+  return groups;
+}
