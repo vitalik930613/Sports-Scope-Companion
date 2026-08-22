@@ -26,11 +26,11 @@ import 'block_card.dart';
 /// continue).
 ///
 /// Se pose aussi bien sur une page de mesures ordinaire que sur une page
-/// Tours (`LapListPage._block`) : la tendance porte sur le temps écoulé de
-/// la sortie entière, jamais sur le tour affiché — contrairement à
-/// [ZonesCard]/[AveragesCard], qui ont une variante « Lap » parce que leurs
-/// mesures sont des cumuls depuis un instant précis, une courbe dans le temps
-/// n'a pas de repli équivalent « depuis ce tour ».
+/// Tours (`LapListPage._block`) : sur la sortie entière par défaut, ou sur le
+/// tour affiché quand [trackOverride] est réglé — voir `LapMetricTrendBlock`
+/// et `RideLap.heartRateTrack`/`powerTrack` (`recording/ride_lap.dart`), même
+/// principe que [ZonesCard.statsOverride]/[AveragesCard.statsOverride] pour
+/// leurs variantes « Lap ».
 class MetricTrendCard extends StatelessWidget {
   const MetricTrendCard({
     super.key,
@@ -38,6 +38,7 @@ class MetricTrendCard extends StatelessWidget {
     required this.recorder,
     required this.riderProfile,
     this.windowS,
+    this.trackOverride,
     this.color,
     this.textColor,
   });
@@ -48,8 +49,15 @@ class MetricTrendCard extends StatelessWidget {
 
   /// `null` : toute la sortie ([RideMetricTrack.points], rééchantillonnée).
   /// Sinon, les `windowS` dernières secondes enregistrées
-  /// ([RideMetricTrack.recent]), à pleine résolution.
+  /// ([RideMetricTrack.recent]), à pleine résolution. Sans effet quand
+  /// [trackOverride] est réglé — le tour ouvert tient déjà lieu de fenêtre.
   final int? windowS;
+
+  /// Cible une autre piste que celle de la sortie entière — celle d'un tour,
+  /// par exemple (`RideLap.heartRateTrack`/`powerTrack`). `recorder` reste
+  /// nécessaire même alors : c'est encore lui qui dit si la sortie est
+  /// active, même raison que [ZonesCard.statsOverride].
+  final RideMetricTrack? trackOverride;
 
   final Color? color;
   final Color? textColor;
@@ -79,9 +87,10 @@ class MetricTrendCard extends StatelessWidget {
       );
     }
 
-    final track = hr ? recorder.heartRateTrack : recorder.powerTrack;
+    final trackOverride = this.trackOverride;
+    final track = trackOverride ?? (hr ? recorder.heartRateTrack : recorder.powerTrack);
     final windowS = this.windowS;
-    final points = windowS == null ? track.points : track.recent(windowS);
+    final points = trackOverride != null || windowS == null ? track.points : track.recent(windowS);
 
     // Moins de deux points : trop tôt pour un tracé (sortie qui vient de
     // démarrer), fenêtre récente encore vide (capteur qui vient de

@@ -550,6 +550,11 @@ class RideRecorder extends ChangeNotifier {
     for (final laps in _series.values) {
       final lap = laps.last;
       lap.stats.add(point);
+      // `pointCount` avant incrément : la seconde écoulée depuis l'ouverture
+      // du tour, même convention que `_recordedSeconds` pour la sortie
+      // entière — voir la doc de `RideLap.heartRateTrack`/`powerTrack`.
+      lap.heartRateTrack.add(lap.pointCount, point.heartRate);
+      lap.powerTrack.add(lap.pointCount, point.power);
       lap.pointCount++;
     }
 

@@ -139,6 +139,7 @@ sealed class DashboardBlock {
       'climb_profile' => ClimbProfileBlock(color: color, textColor: textColor),
       'altitude_profile' => AltitudeProfileBlock.parse(raw),
       'metric_trend' => MetricTrendBlock.parse(raw),
+      'lap_metric_trend' => LapMetricTrendBlock.parse(raw),
       'clock' => ClockBlock.parse(raw),
       'workout_segment' => WorkoutSegmentBlock(
           upcoming: raw['upcoming'] == true,
@@ -2066,11 +2067,9 @@ class AltitudeProfileBlock extends DashboardBlock {
 /// (`ride/blocks/metric_trend_block.dart`) pour le rendu : l'aire sous la
 /// courbe est peinte aux couleurs de zone du cycliste.
 ///
-/// Se pose comme [PowerCurveBlock] : pas de variante « Lap » séparée, la même
-/// carte se dessine sur une page de mesures ordinaire ou sur une page Tours
-/// (`LapListPage._block`), toujours sur la sortie entière — un tour n'a pas
-/// de tendance propre à distinguer de celle de la sortie, sa notion de temps
-/// n'étant pas un cumul comme une moyenne ou un temps par zone.
+/// Se pose sur une page de mesures ordinaire ou sur une page Tours
+/// (`LapListPage._block`), toujours sur la sortie entière — voir
+/// [LapMetricTrendBlock] pour la variante bornée au tour affiché.
 class MetricTrendBlock extends DashboardBlock {
   const MetricTrendBlock({
     required this.source,
@@ -2108,6 +2107,40 @@ class MetricTrendBlock extends DashboardBlock {
 
   @override
   int get hashCode => Object.hash(source, windowS, color, textColor);
+}
+
+/// La même tendance, mais bornée au tour sélectionné plutôt qu'à la sortie
+/// entière — même remarque que [LapZonesBlock] : une classe à part parce
+/// qu'elle n'a de sens que sur une page qui porte un tour sélectionné. Pas de
+/// [MetricTrendBlock.windowS] ici : le tour ouvert *est* la fenêtre, voir
+/// `RideLap.heartRateTrack`/`powerTrack` (`ride_lap.dart`).
+class LapMetricTrendBlock extends DashboardBlock {
+  const LapMetricTrendBlock({
+    required this.source,
+    super.color,
+    super.textColor,
+  });
+
+  final ZonesSource source;
+
+  static LapMetricTrendBlock parse(Map<dynamic, dynamic> raw) => LapMetricTrendBlock(
+        source: switch (raw['source']) {
+          'power' => ZonesSource.power,
+          _ => ZonesSource.hr,
+        },
+        color: DashboardBlock._colorOf(raw, 'color'),
+        textColor: DashboardBlock._colorOf(raw, 'text_color'),
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is LapMetricTrendBlock &&
+      other.source == source &&
+      other.color == color &&
+      other.textColor == textColor;
+
+  @override
+  int get hashCode => Object.hash(source, color, textColor);
 }
 
 /// Une cellule volontairement vide.

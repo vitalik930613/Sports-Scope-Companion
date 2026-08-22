@@ -296,6 +296,14 @@ class _LapListBodyState extends State<LapListBody> {
   /// fenêtre, ce tour compris, pas besoin d'une variante « Lap » séparée
   /// comme pour les zones ou les moyennes.
   ///
+  /// `LapMetricTrendBlock`, lui, est une variante « Lap » séparée de
+  /// `MetricTrendBlock` (comme les zones ou les moyennes, pas comme la courbe
+  /// de puissance juste au-dessus) : `RideMetricTrack` ne sait interroger
+  /// qu'une fenêtre glissante depuis maintenant, pas une fenêtre arbitraire
+  /// depuis le passé, donc pas de recalcul possible depuis la piste de la
+  /// sortie entière. `RideLap` porte pour ça sa propre piste par tour
+  /// (`heartRateTrack`/`powerTrack`), lue via `trackOverride`.
+  ///
   /// `MarkLapBlock` **fait exception** et se dessine comme partout ailleurs :
   /// c'est en consultant les tours qu'on a le plus de raisons d'en marquer un
   /// nouveau. Sa série (`markLap.series`) n'a par contre **aucun lien** avec
@@ -394,13 +402,25 @@ class _LapListBodyState extends State<LapListBody> {
           textColor: altitudeProfile.textColor,
         ),
       // La tendance de toute la sortie, jamais recadrée sur `lap` — même
-      // remarque que `AltitudeProfileBlock` juste au-dessus : une courbe dans
-      // le temps n'a pas de variante « depuis ce tour ».
+      // remarque que `AltitudeProfileBlock` juste au-dessus. `LapMetricTrendBlock`,
+      // juste en dessous, est son pendant recadré.
       final MetricTrendBlock trend => MetricTrendCard(
           source: trend.source,
           recorder: widget.sources.recorder,
           riderProfile: widget.sources.riderProfile,
           windowS: trend.windowS,
+          color: trend.color,
+          textColor: trend.textColor,
+        ),
+      // Bornée au tour affiché : `trackOverride` vise la piste du tour
+      // (`RideLap.heartRateTrack`/`powerTrack`) plutôt que celle de la sortie
+      // entière — même mécanique que `statsOverride: lap.stats` pour
+      // `ZonesCard`/`AveragesCard` ci-dessus.
+      final LapMetricTrendBlock trend => MetricTrendCard(
+          source: trend.source,
+          recorder: widget.sources.recorder,
+          riderProfile: widget.sources.riderProfile,
+          trackOverride: trend.source == ZonesSource.hr ? lap.heartRateTrack : lap.powerTrack,
           color: trend.color,
           textColor: trend.textColor,
         ),

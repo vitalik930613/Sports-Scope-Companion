@@ -1,3 +1,4 @@
+import 'ride_metric_track.dart';
 import 'ride_stats.dart';
 
 /// Un tour, du geste qui l'ouvre au suivant (ou à la fin de la sortie).
@@ -13,17 +14,30 @@ import 'ride_stats.dart';
 /// Sur un tour, ce serait donc la distance totale à la fin du tour, pas la
 /// distance parcourue *pendant* le tour. [distanceM] retranche le repère posé
 /// à l'ouverture pour rendre le vrai delta.
+///
+/// [heartRateTrack]/[powerTrack] portent la même idée pour
+/// `LapMetricTrendBlock` (`ride/blocks/metric_trend_block.dart`) : une piste à
+/// soi, remise à zéro à l'ouverture du tour, plutôt qu'un découpage a
+/// posteriori de celle de la sortie entière (`RideRecorder.heartRateTrack`) —
+/// qui n'a pas de repli « depuis cet instant », seulement « les X dernières
+/// secondes ». Alimentées avec la seconde *depuis l'ouverture du tour*
+/// ([pointCount] avant incrément), pas celle de la sortie : `RideMetricTrack`
+/// ne lit ses points que par position relative, l'origine ne compte pas.
 class RideLap {
   RideLap({
     required this.index,
     required this.startedAt,
     required this.startDistanceM,
     this.label,
-  }) : stats = RideStats();
+  })  : stats = RideStats(),
+        heartRateTrack = RideMetricTrack(),
+        powerTrack = RideMetricTrack();
 
   final int index;
   final DateTime startedAt;
   final RideStats stats;
+  final RideMetricTrack heartRateTrack;
+  final RideMetricTrack powerTrack;
 
   /// Distance cumulée depuis le départ de la sortie, au moment où ce tour
   /// s'ouvre — le repère que [distanceM] retranche.

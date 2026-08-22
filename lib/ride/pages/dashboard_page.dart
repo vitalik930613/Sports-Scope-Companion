@@ -341,7 +341,7 @@ class DashboardPage extends StatelessWidget {
             color: markLap.color,
             textColor: markLap.textColor,
           ),
-        // Ces quatre-là n'ont de sens que sur une LapListPageSpec, qui les
+        // Ces cinq-là n'ont de sens que sur une LapListPageSpec, qui les
         // rend elle-même avec le tour choisi (`LapListBody._block`) — ici, sur
         // une page ordinaire, il n'existe ni tour sélectionné à leur donner,
         // ni liste de tours à faire choisir. Posés par erreur hors d'une page
@@ -350,7 +350,8 @@ class DashboardPage extends StatelessWidget {
         LapZonesBlock() ||
         LapAveragesBlock() ||
         LapSummaryBlock() ||
-        LapSelectorBlock() =>
+        LapSelectorBlock() ||
+        LapMetricTrendBlock() =>
           const SizedBox.shrink(),
         final ChangeRouteBlock changeRoute => ChangeRouteControl(
             onChooseRoute: onChooseRoute,
