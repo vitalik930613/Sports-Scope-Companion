@@ -591,9 +591,11 @@ class MetricView extends StatelessWidget {
   /// ([_fullBar]) — fixe ([gaugeColor], repli [_defaultColor]) partout,
   /// automatique différemment selon [hasZone] : la couleur de la zone du
   /// moment (`zoneColorOf(reading.zoneKey)`, même repli fixe si la mesure
-  /// n'en a pas de courante) pour une jauge de zones, un dégradé bleu →
-  /// violet sur [fraction] sinon — une mesure sans zone (vitesse…) n'a pas de
-  /// teinte propre à s'y raccrocher. En tronçons, le dégradé porte sur
+  /// n'en a pas de courante) pour une jauge de zones, le dégradé
+  /// bleu-vert-jaune-orange-rouge-violet des zones sur [fraction] sinon — une
+  /// mesure sans zone (vitesse…) n'a pas de teinte propre à s'y raccrocher,
+  /// mais le même code de couleurs reste reconnaissable au premier coup
+  /// d'œil. En tronçons, le dégradé porte sur
   /// chaque palier selon sa position plutôt que sur une seule couleur
   /// commune : un ladder, comme la jauge de zones en est déjà un.
   Widget _resolvedFillBar(
@@ -624,16 +626,31 @@ class MetricView extends StatelessWidget {
     );
   }
 
-  /// Les deux bornes du dégradé — mêmes couleurs que
-  /// `GAUGE_AUTO_GRADIENT_FROM`/`GAUGE_AUTO_GRADIENT_TO` (`companionSettings.ts`).
-  static const _gaugeGradientFrom = Color(0xFF2196F3);
-  static const _gaugeGradientTo = Color(0xFF673AB7);
+  /// Les paliers du dégradé — repris de [zoneColors] (z1 à z6) plutôt que
+  /// d'une paire de bornes à soi : une jauge sans zone doit se lire d'un
+  /// coup d'œil avec le même code que les zones cardio/puissance, et un
+  /// simple bleu → violet se traversait par un mauve terne au milieu,
+  /// invisible au soleil. Mêmes couleurs que `GAUGE_AUTO_GRADIENT_STOPS`
+  /// (`companionSettings.ts`).
+  static final _gaugeGradientStops = [
+    zoneColors['z1']!,
+    zoneColors['z2']!,
+    zoneColors['z3']!,
+    zoneColors['z4']!,
+    zoneColors['z5']!,
+    zoneColors['z6']!,
+  ];
 
-  /// Interpolation linéaire entre les deux bornes du dégradé — [fraction]
-  /// bornée à 0–1 : au-delà, on sortirait du dégradé plutôt que de rester à
-  /// sa couleur terminale.
-  Color _gaugeGradientColor(double fraction) =>
-      Color.lerp(_gaugeGradientFrom, _gaugeGradientTo, fraction.clamp(0, 1))!;
+  /// Interpolation linéaire par tronçon entre les paliers de
+  /// [_gaugeGradientStops] — [fraction] bornée à 0–1 : au-delà, on sortirait
+  /// du dégradé plutôt que de rester à sa couleur terminale.
+  Color _gaugeGradientColor(double fraction) {
+    final stops = _gaugeGradientStops;
+    final segments = stops.length - 1;
+    final scaled = fraction.clamp(0.0, 1.0) * segments;
+    final index = scaled.floor().clamp(0, segments - 1);
+    return Color.lerp(stops[index], stops[index + 1], scaled - index)!;
+  }
 
   /// Les paliers communs aux trois natures de jauge — seuls leur nombre, leur
   /// éclairage et leur couleur changent d'un appelant à l'autre. La hauteur
