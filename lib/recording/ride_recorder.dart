@@ -99,11 +99,38 @@ class RideRecorder extends ChangeNotifier {
   /// Plancher de déplacement, contre la dérive du GPS à l'arrêt. En dessous, le
   /// point de référence n'est pas déplacé : une progression lente finit donc par
   /// être comptée, elle n'est pas perdue.
-  static const _minStepM = 1.0;
+  ///
+  /// 1 m était sous la précision réelle du GPS en usage : mesuré sur une
+  /// randonnée de 6 h 24 (23 000 points), la précision annoncée valait 7,3 m en
+  /// médiane. Tout bruit de position dans cette marge — donc déjà accepté par
+  /// [_maxAccuracyM] — dépassait 1 m et se comptait comme un pas, à l'arrêt
+  /// comme en marchant lentement. Sur cette même sortie, remonter le plancher à
+  /// 10 m ramène la distance de 16,2 km à 13,9 km — et l'essentiel de l'écart ne
+  /// venait pas des arrêts (dont la part *baisse* avec le plancher) mais du
+  /// bruit accumulé en marchant. 10 m reste sans effet sensible à vélo : à
+  /// 20 km/h, 5,5 m sont parcourus par seconde, le plancher est franchi en 1 à
+  /// 2 s de toute façon.
+  static const _minStepM = 10.0;
 
   /// Plafond de vitesse plausible (144 km/h). Au-delà c'est un saut de
   /// récepteur, pas un cycliste : on se recale sans compter la distance.
   static const _maxStepMps = 40.0;
+
+  /// Écart toléré entre la vitesse Doppler du récepteur et la vitesse
+  /// déduite de la position (le pas divisé par le temps écoulé, déjà calculé
+  /// pour [_maxStepMps]) avant de ne plus garder la première.
+  ///
+  /// Les deux mesurent la même chose par deux voies différentes, et un point
+  /// peut réussir le test de position — donc ne rien avoir d'un saut de
+  /// récepteur — tout en annonçant une vitesse instantanée sans rapport avec
+  /// le sol : mesuré sur une randonnée de 6 h 24, un point resté quasi
+  /// immobile 128 s (0,06 m/s de déplacement réel, un trou de signal avant
+  /// lui) a rapporté 7,3 m/s — 26 km/h en randonnée. Le récepteur qui
+  /// reverrouille son signal avant que sa solution de vitesse ne se
+  /// stabilise, pas une accélération. Une vraie relance, même à vélo lancé,
+  /// ne creuse pas un tel écart en une seconde : on garde la position du
+  /// point, seule sa vitesse annoncée est écartée.
+  static const _maxSpeedDivergenceMps = 5.0;
 
   RecorderState _state = RecorderState.idle;
   RideSession? _session;
@@ -521,7 +548,21 @@ class RideRecorder extends ChangeNotifier {
       return;
     }
 
-    _lastFix = fix;
+    // La position, elle, vient de passer les deux tests ci-dessus : on la
+    // garde même quand on écarte la vitesse Doppler — voir
+    // [_maxSpeedDivergenceMps].
+    final speedMps = fix.speedMps;
+    _lastFix = speedMps != null && speedMps - step / seconds > _maxSpeedDivergenceMps
+        ? GpsFix(
+            at: fix.at,
+            lat: fix.lat,
+            lng: fix.lng,
+            altitudeM: fix.altitudeM,
+            headingDeg: fix.headingDeg,
+            accuracyM: fix.accuracyM,
+            isMocked: fix.isMocked,
+          )
+        : fix;
     if (step < _minStepM) return;
 
     _distanceM += step;

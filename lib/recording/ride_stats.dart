@@ -26,6 +26,8 @@ class RideStats {
     this.gradeWindowM = defaultGradeWindowM,
     this.gpsGradeWindowM = defaultGpsGradeWindowM,
     this.gradeMaxAgeS = defaultGradeMaxAgeS,
+    this.baroSmoothingWindowS = defaultBaroSmoothingWindowS,
+    this.baroSpikeRejectionMps = defaultBaroSpikeRejectionMps,
   });
 
   /// Seuil de bruit du dénivelé : l'altitude GPS oscille de quelques mètres à
@@ -69,6 +71,47 @@ class RideStats {
   /// est passée de 923,8 m à 1039,2 m **en une seconde**. Franchir ce plafond
   /// recale la référence sans rien compter.
   static const defaultMaxVerticalSpeedMps = 5.0;
+
+  /// Fenêtre de moyenne glissante appliquée à l'altitude barométrique brute
+  /// avant qu'elle entre dans l'hystérésis du dénivelé, en secondes.
+  ///
+  /// [defaultBaroAltitudeNoiseM] suppose un baromètre qui « oscille de
+  /// quelques centimètres ». Mesuré sur une vraie randonnée (téléphone en
+  /// poche, 6 h 24, 23 000 points) : la variation médiane d'une seconde à
+  /// l'autre vaut déjà 0,55 m, l'écart-type ~2 m, et 3,5 % des échantillons
+  /// dépassent même [defaultMaxVerticalSpeedMps] pour un seul intervalle d'une
+  /// seconde. Sans lissage, ce bruit franchit le seuil dans les deux sens des
+  /// milliers de fois sur une longue sortie — le même mécanisme qui fait
+  /// « inventer des centaines de mètres » au GPS sur un plat, juste assez fin
+  /// pour rester sous les seuils habituels de relecture. Sur cette
+  /// randonnée-là, ça valait 6850 m de D+ pour un dénivelé réel d'environ
+  /// 800 m.
+  ///
+  /// Resserrer [defaultBaroAltitudeNoiseM] à la place ne marche pas : il
+  /// aurait fallu le monter à 4-5 m pour retomber sur un chiffre plausible,
+  /// soit plus grossier que le seuil GPS — la précision qui justifie
+  /// d'avoir un baromètre y passerait tout entière. 15 s de moyenne
+  /// absorbent l'essentiel du bruit mesuré tout en laissant une montée
+  /// soutenue de plusieurs dizaines de mètres se distinguer sans grand
+  /// retard.
+  static const defaultBaroSmoothingWindowS = 15.0;
+
+  /// Plafond, en m/s, au-delà duquel [_smoothedBaroAltitude] vide sa fenêtre
+  /// plutôt que d'y mêler l'échantillon — bien plus haut que
+  /// [defaultMaxVerticalSpeedMps].
+  ///
+  /// Les deux plafonds répondent à des questions différentes. Celui de
+  /// [_addAltitude] demande « ce point est-il du relief ou une discontinuité
+  /// d'altimètre ? » et doit rester fin (5 m/s) pour rejeter un vrai calage.
+  /// Celui-ci demande seulement « la fenêtre de lissage doit-elle repartir de
+  /// zéro ? », et un seuil aussi fin s'est révélé compter le bruit lui-même
+  /// comme un calage : sur la randonnée de [defaultBaroSmoothingWindowS],
+  /// 3,5 % des échantillons dépassaient déjà 5 m/s d'une seconde à l'autre,
+  /// vidant la fenêtre en permanence et empêchant tout lissage d'agir juste
+  /// là où il servirait le plus. Descendre ce seuil à 25 m/s au lieu de 5
+  /// ramène le D+ mesuré de 1767 m à 867 m sur la même sortie, sans rien
+  /// changer au calage de 100 m en 1 s que le module doit toujours détecter.
+  static const defaultBaroSpikeRejectionMps = 25.0;
 
   /// Intervalle au-delà duquel on ne crédite plus d'énergie, en secondes.
   ///
@@ -130,6 +173,8 @@ class RideStats {
   final double gradeWindowM;
   final double gpsGradeWindowM;
   final double gradeMaxAgeS;
+  final double baroSmoothingWindowS;
+  final double baroSpikeRejectionMps;
 
   /// Temps passé par palier de mesure : borne basse du palier → nombre de points.
   ///
@@ -263,6 +308,10 @@ class RideStats {
   // deux ne serait que du bruit, amplifié.
   final Queue<_GradeSample> _gradeWindow = Queue<_GradeSample>();
   bool _gradeFromBaro = false;
+
+  /// Échantillons bruts du baromètre des [baroSmoothingWindowS] dernières
+  /// secondes — voir [_smoothedBaroAltitude]. `(at, altitudeM)`.
+  final Queue<(DateTime, double)> _baroSmoothingWindow = Queue<(DateTime, double)>();
 
   // Puissance normalisée : moyenne glissante sur la fenêtre, puis racine
   // quatrième de la moyenne des puissances quatrièmes de cette moyenne.
@@ -450,7 +499,13 @@ class RideStats {
       maxAltitudeM =
           maxAltitudeM == null || altitude > maxAltitudeM! ? altitude : maxAltitudeM;
 
-      _addAltitude(altitude, point.at, moving);
+      // Le dénivelé se cumule sur l'altitude lissée (voir
+      // [_smoothedBaroAltitude]) — la pente et l'altitude affichées restent
+      // sur la mesure brute, dont le bruit ne s'accumule pas de la même façon
+      // d'une lecture à l'autre.
+      final forAscent =
+          hasBaroAltitude ? _smoothedBaroAltitude(altitude, point.at) : altitude;
+      _addAltitude(forAscent, point.at, moving);
       _addGrade(altitude, point.at, point.distanceM);
 
       final grade = gradePercent;
@@ -519,6 +574,38 @@ class RideStats {
       minSpeedMps =
           minSpeedMps == null || speed < minSpeedMps! ? speed : minSpeedMps;
     }
+  }
+
+  /// Moyenne glissante des [baroSmoothingWindowS] dernières secondes
+  /// d'altitude barométrique brute — voir [defaultBaroSmoothingWindowS] pour
+  /// le bruit mesuré qui la justifie.
+  ///
+  /// Un vrai calage d'altimètre — [baroSpikeRejectionMps], comparé au dernier
+  /// échantillon brut et non à la référence d'accumulation qui peut dater de
+  /// plusieurs secondes — vide la fenêtre au lieu d'y entrer : sans ça, la
+  /// moyenne étalerait le saut de 100 m d'un calage sur plusieurs points au
+  /// lieu de le laisser à [_addAltitude], qui sait déjà l'exclure proprement.
+  double _smoothedBaroAltitude(double rawAltitude, DateTime at) {
+    final window = _baroSmoothingWindow;
+    if (window.isNotEmpty) {
+      final (lastAt, lastAltitude) = window.last;
+      final since = at.difference(lastAt).inMilliseconds / 1000;
+      if (since > 0 && (rawAltitude - lastAltitude).abs() > baroSpikeRejectionMps * since) {
+        window.clear();
+      }
+    }
+
+    window.addLast((at, rawAltitude));
+    while (window.isNotEmpty &&
+        at.difference(window.first.$1).inMilliseconds / 1000 > baroSmoothingWindowS) {
+      window.removeFirst();
+    }
+
+    var sum = 0.0;
+    for (final (_, value) in window) {
+      sum += value;
+    }
+    return sum / window.length;
   }
 
   /// Le dénivelé d'un point, à partir de la référence courante.
@@ -693,6 +780,7 @@ class RideStats {
     powerHistogram.clear();
     _gradeWindow.clear();
     _gradeFromBaro = false;
+    _baroSmoothingWindow.clear();
   }
 
   static int _max(int? current, int value) =>

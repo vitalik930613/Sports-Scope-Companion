@@ -17,6 +17,8 @@ import 'ride_lap.dart';
 import 'ride_session.dart';
 import 'ride_stats.dart';
 import 'ride_store.dart';
+import 'ride_track_map.dart';
+import 'track_point.dart';
 
 /// Le détail d'une sortie déjà enregistrée : le bilan, le profil d'altitude,
 /// la répartition par zones et les tours — tel qu'on l'aurait vu en roulant,
@@ -49,6 +51,7 @@ class _RideDetailPageState extends State<RideDetailPage> {
   Map<String, List<RideLap>> _lapSeries = const {};
   List<ElevationProfilePoint> _elevationPoints = const [];
   List<double> _segmentGrades = const [];
+  List<TrackPoint> _points = const [];
 
   @override
   void initState() {
@@ -66,8 +69,16 @@ class _RideDetailPageState extends State<RideDetailPage> {
       _lapSeries = lapSeriesHistoryOf(points);
       _elevationPoints = elevation;
       _segmentGrades = localGradesOf(elevation);
+      _points = points;
     });
   }
+
+  /// Au moins deux positions : en dessous, il n'y a rien à tracer — même
+  /// convention que le profil d'altitude ([_elevationPoints]), qui s'efface
+  /// aussi plutôt que de montrer un graphique vide sur une sortie déjà
+  /// terminée.
+  bool get _hasTrack =>
+      _points.where((point) => point.hasPosition).length >= 2;
 
   @override
   Widget build(BuildContext context) {
@@ -82,6 +93,10 @@ class _RideDetailPageState extends State<RideDetailPage> {
               builder: (context, _) => ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  if (_hasTrack) ...[
+                    SizedBox(height: 220, child: RideTrackMap(points: _points)),
+                    const SizedBox(height: 16),
+                  ],
                   _overview(stats),
                   if (_elevationPoints.length >= 2) ...[
                     const SizedBox(height: 16),

@@ -4,7 +4,7 @@ publish_to: none
 # Le `+N` est le versionCode Android. Sans lui, Flutter retombe sur 1 : deux APK
 # différents porteraient le même numéro, et le second refuserait de s'installer
 # par-dessus le premier. À incrémenter à chaque fichier diffusé.
-version: 1.0.0+1
+version: 2.0.0+1
 
 environment:
   sdk: ">=3.12.0 <4.0.0"

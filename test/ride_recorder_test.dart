@@ -169,9 +169,12 @@ void main() {
     recorder.handleFix(fixAt(0, second: 0));
     // 500 m en une seconde : c'est un saut, pas un cycliste.
     recorder.handleFix(fixAt(500, second: 1));
-    recorder.handleFix(fixAt(510, second: 2));
+    // 15 m et non 10 : un pas pile au plancher [_minStepM] dépendrait de
+    // l'arrondi de la formule de distance plutôt que de démontrer qu'il
+    // compte.
+    recorder.handleFix(fixAt(515, second: 2));
 
-    expect(recorder.distanceM, closeTo(10, 0.5));
+    expect(recorder.distanceM, closeTo(15, 0.5));
   });
 
   test('la pause ne compte ni le temps ni la distance', () async {
@@ -190,12 +193,14 @@ void main() {
     expect(recorder.distanceM, closeTo(20, 0.5));
 
     // À la reprise, on repart du dernier point connu : les mille mètres
-    // parcourus en voiture pendant la pause ne s'ajoutent pas.
+    // parcourus en voiture pendant la pause ne s'ajoutent pas. 1015 et non
+    // 1010 pour la même raison que le test du saut de récepteur : rester
+    // loin du plancher [_minStepM], pas pile dessus.
     recorder.resume();
-    recorder.handleFix(fixAt(1010, second: 61));
+    recorder.handleFix(fixAt(1015, second: 61));
     recorder.tick();
 
-    expect(recorder.distanceM, closeTo(30, 0.5));
+    expect(recorder.distanceM, closeTo(35, 0.5));
     expect(recorder.pointCount, 2);
   });
 
