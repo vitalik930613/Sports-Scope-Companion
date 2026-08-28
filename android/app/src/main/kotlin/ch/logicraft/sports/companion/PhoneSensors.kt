@@ -110,15 +110,22 @@ class PhoneSensors(private val context: Context, private val messenger: BinaryMe
     /**
      * Cap du téléphone, déclinaison comprise, ramené dans [0, 360[.
      *
-     * `getOrientation` rend l'azimut du haut de l'appareil projeté à
-     * l'horizontale : posé ou incliné sur une potence, c'est la direction vers
-     * laquelle regarde le cycliste. Tant qu'on n'a pas de position, on rend le
-     * cap MAGNÉTIQUE plutôt que rien : quelques degrés d'erreur valent mieux
-     * qu'une flèche qui ne tourne pas.
+     * Modèle simple et unique : **le téléphone est une boussole tenue à plat**.
+     * `getOrientation` rend l'azimut du haut de l'appareil (axe +y) projeté à
+     * l'horizontale ; posé ou peu incliné sur une potence, c'est la direction
+     * vers laquelle regarde le cycliste. Tenu franchement redressé, la mesure
+     * perd son sens — on demande donc à l'utilisateur de le mettre à plat, comme
+     * une vraie boussole.
+     *
+     * Tant qu'on n'a pas de position, on rend le cap MAGNÉTIQUE plutôt que rien :
+     * quelques degrés d'erreur valent mieux qu'une flèche qui ne tourne pas.
      */
     private fun azimuthOf(event: SensorEvent): Double {
         val matrix = FloatArray(9)
-        SensorManager.getRotationMatrixFromVector(matrix, event.values)
+        // Certains capteurs rendent 5 composantes ; passer plus de 4 valeurs à
+        // getRotationMatrixFromVector plante sur d'anciens Samsung.
+        val rv = if (event.values.size > 4) event.values.copyOf(4) else event.values
+        SensorManager.getRotationMatrixFromVector(matrix, rv)
         val orientation = FloatArray(3)
         SensorManager.getOrientation(matrix, orientation)
         val magnetic = Math.toDegrees(orientation[0].toDouble())

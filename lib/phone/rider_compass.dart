@@ -69,13 +69,16 @@ class RiderCompass {
   /// à laquelle se comparer, on ne saurait pas qu'un support aimanté la fausse.
   void addFix(GpsFix? fix) {
     if (fix == null) return;
+    // La déclinaison magnétique ne dépend que de la position : on la redonne au
+    // natif dès qu'on a bougé assez pour qu'elle ait changé de façon mesurable,
+    // **avant** le garde sur la course. À pied (le cas du cap forcé) la course
+    // GPS manque presque toujours ; la laisser conditionner ce rafraîchissement
+    // ferait rester le cap en nord magnétique, faux d'un offset constant.
+    _refreshDeclination(fix);
     final course = fix.headingDeg;
     final speed = fix.speedMps;
     if (course == null || speed == null) return;
     _heading.addCourse(courseDeg: course, speedMps: speed);
-    // La déclinaison magnétique dépend de l'endroit : on la redonne au natif
-    // quand on a bougé assez pour qu'elle ait changé de façon mesurable.
-    _refreshDeclination(fix);
   }
 
   GpsFix? _declinationAt;

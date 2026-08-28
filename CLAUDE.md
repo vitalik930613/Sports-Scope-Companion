@@ -937,6 +937,24 @@ sans baromètre se comporte exactement comme avant.
   charge utile) et n'est publié **qu'à l'arrêt** : en roulant la page a sa propre
   course GPS, et deux sources feraient vibrer la flèche. Côté site, il est
   consommé par `updateBearing` (`RouteNavigation.vue`) — donc **les deux dépôts**.
+  La déclinaison magnétique (`PhoneSensors.setLocation`) est rafraîchie dès qu'un
+  point GPS existe, **sans attendre une course** : à pied elle manque presque
+  toujours, et sans ça le cap forcé resterait en nord magnétique. Le natif
+  (`PhoneSensors.azimuthOf`) suppose le **téléphone tenu à plat**, comme une
+  vraie boussole : l'azimut du haut de l'appareil. Redressé et incliné vers le
+  visage, la mesure n'a plus de sens (jusqu'à ~180° d'écart) — c'est une
+  consigne d'usage, pas un cas qu'on rattrape.
+- **Boussole verrouillée → carte et flèche orientées en direct.** Un tap sur la
+  pastille (`CompassBadge`) force la priorité à la boussole (`RiderCompass.forced`,
+  liseré blanc) — geste de rando sous couvert, où la course GPS ne distingue même
+  pas un arrêt. Tant que c'est forcé, `RideShellPage._compassTick` (200 ms, séparé
+  du tic 1 s qui garde `compass.addFix` à la cadence des fix) pousse le cap
+  corrigé à chaque tour ; côté site un `watch` sur `companionStore.headingForced` /
+  `headingDeg` applique le cap **sans attendre le prochain fix GPS** (sinon la
+  flèche se fige sous couvert). La flèche de position tourne toujours, la carte
+  seulement en mode suivi — carte déplacée à la main, seule la flèche s'oriente,
+  « Recentrer » réactive la rotation. `updateBearing` garde sa branche forcée
+  comme filet entre deux `watch`.
 
 ## Ajouter un capteur BLE
 

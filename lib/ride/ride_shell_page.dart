@@ -513,6 +513,15 @@ class _RideShellPageState extends State<RideShellPage>
   Timer? _buttonTick;
   final _buttonGestures = Di2ButtonGesturePolicy();
 
+  /// Tic dédié à la boussole, plus rapide que celui d'une seconde. Il rafraîchit
+  /// la pastille et, **quand le cap est forcé** (pastille verrouillée), pousse
+  /// le cap à la page : la carte du site doit alors tourner en direct sous le
+  /// doigt qui oriente le téléphone, pas par à-coups d'une seconde. Séparé de
+  /// `_tick` parce que `compass.addFix` doit rester à 1 Hz — l'appeler à 5 Hz
+  /// injecterait cinq fois le même fix dans le calibrage — et séparé de
+  /// `_buttonTick`, qui n'existe que si le profil garde les boutons Di2.
+  Timer? _compassTick;
+
   /// La sonnette/le klaxon déclenchés par un geste de bouton distant —
   /// indépendante de tout [BellControl] posé sur le tableau de bord, comme
   /// deux `BellControl` le seraient déjà entre eux.
@@ -759,7 +768,21 @@ class _RideShellPageState extends State<RideShellPage>
 
     // La boussole ne sert qu'avec une carte — c'est la page qui consomme le cap
     // — et ne mesure rien tant qu'on n'a pas comparé ses caps à la course GPS.
-    if (_preset.sensors.compass && _preset.hasMap) widget.compass?.start();
+    if (_preset.sensors.compass && _preset.hasMap) {
+      widget.compass?.start();
+      _compassTick = Timer.periodic(const Duration(milliseconds: 200), (_) {
+        final compass = widget.compass;
+        if (compass == null) return;
+        final heading = compass.correctedHeadingDeg;
+        _compassReading.value =
+            heading == null ? null : (heading, compass.isTrusted);
+        // Le pont ne se marque « sale » tout seul que sur une trame BLE : sans
+        // ce push, le cap forcé resterait figé sur la valeur du tap et la
+        // flèche de la carte ne suivrait pas la boussole qui continue de
+        // tourner.
+        if (compass.forced) _web?.bridge.pushNow();
+      });
+    }
 
     if (_preset.hasMap) {
       _web = NavigationWebController(
@@ -812,16 +835,10 @@ class _RideShellPageState extends State<RideShellPage>
       // `Di2ButtonGesturePolicy.resolve`.
       // Même source que le chien de garde (`recorder.lastFix`) et même
       // conséquence assumée : hors enregistrement la boussole n'a aucune course
-      // à laquelle se comparer, donc elle ne se validera pas.
+      // à laquelle se comparer, donc elle ne se validera pas. Reste à 1 Hz
+      // (cadence des fix GPS) : le rafraîchissement de la pastille et le push
+      // du cap forcé, eux, sont sur `_compassTick`, plus rapide.
       widget.compass?.addFix(widget.recorder.lastFix);
-      final heading = widget.compass?.correctedHeadingDeg;
-      _compassReading.value =
-          heading == null ? null : (heading, widget.compass!.isTrusted);
-      // Le pont ne se marque « sale » tout seul que sur une trame BLE
-      // (`SensorBridge._dirty`) : sans ça, le cap forcé ne partirait qu'une
-      // fois, au tap, et la flèche resterait figée sur cette valeur au lieu
-      // de suivre la boussole qui continue de tourner.
-      if (widget.compass?.forced ?? false) _web?.bridge.pushNow();
     });
   }
 
@@ -1886,6 +1903,7 @@ class _RideShellPageState extends State<RideShellPage>
     WidgetsBinding.instance.removeObserver(this);
     _tick?.cancel();
     _buttonTick?.cancel();
+    _compassTick?.cancel();
     unawaited(_remoteButtonSub?.cancel());
     _buttonBell.dispose();
     // Le magnétomètre s'éteint avec la sortie : c'est le seul capteur de ce
