@@ -48,6 +48,14 @@ class _RidesPageState extends State<RidesPage> {
   List<RideSession>? _sessions;
   String? _busyId;
 
+  /// Les ids cochés en mode sélection. Vide = pas en mode sélection : on entre
+  /// dans le mode en cochant (appui long sur une tuile), on en sort en
+  /// décochant le dernier. Pas de drapeau séparé — un mode sélection sans rien
+  /// de sélectionné n'a rien à offrir que la croix de sortie ne fasse déjà.
+  final Set<String> _selected = {};
+
+  bool get _selecting => _selected.isNotEmpty;
+
   @override
   void initState() {
     super.initState();
@@ -56,7 +64,63 @@ class _RidesPageState extends State<RidesPage> {
 
   Future<void> _reload() async {
     final sessions = await widget.store.list();
-    if (mounted) setState(() => _sessions = sessions);
+    if (!mounted) return;
+    setState(() {
+      _sessions = sessions;
+      // Une sortie supprimée ailleurs (ou celle qui vient de l'être) ne doit
+      // pas rester cochée : on réaligne la sélection sur ce qui existe encore.
+      final present = sessions.map((s) => s.id).toSet();
+      _selected.removeWhere((id) => !present.contains(id));
+    });
+  }
+
+  void _toggleSelected(RideSession session) {
+    setState(() {
+      if (!_selected.remove(session.id)) _selected.add(session.id);
+    });
+  }
+
+  void _clearSelection() => setState(_selected.clear);
+
+  Future<void> _deleteSelected() async {
+    final sessions = _sessions ?? const <RideSession>[];
+    final chosen = sessions
+        .where((s) => _selected.contains(s.id) && !_isActive(s))
+        .toList();
+    if (chosen.isEmpty) return;
+
+    final count = chosen.length;
+    final noun = count > 1 ? 'sorties' : 'sortie';
+    final verb = count > 1 ? 'seront perdues' : 'sera perdue';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(count > 1
+            ? 'Supprimer $count sorties ?'
+            : 'Supprimer la sortie ?'),
+        content: Text(
+          '$count $noun $verb. Pense à exporter celles qui comptent avant.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    for (final session in chosen) {
+      await widget.store.delete(session.id);
+    }
+    _clearSelection();
+    await _reload();
   }
 
   bool _isActive(RideSession session) =>
@@ -253,23 +317,54 @@ class _RidesPageState extends State<RidesPage> {
   Widget _screen(BuildContext context) {
     final sessions = _sessions;
 
+    // Le retour système sort d'abord du mode sélection, comme la croix de la
+    // barre : sinon un appui de trop referme l'écran en laissant croire qu'on
+    // a annulé la sélection.
+    return PopScope(
+      canPop: !_selecting,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _clearSelection();
+      },
+      child: _scaffold(context, sessions),
+    );
+  }
+
+  Widget _scaffold(BuildContext context, List<RideSession>? sessions) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Mes sorties'),
-        actions: [
-          IconButton(
-            onPressed:
-                _deletable(sessions ?? const []).isEmpty ? null : _deleteAll,
-            icon: const Icon(Icons.delete_sweep),
-            tooltip: 'Tout supprimer',
-          ),
-          IconButton(
-            onPressed: _reload,
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Rafraîchir',
-          ),
-        ],
-      ),
+      appBar: _selecting
+          ? AppBar(
+              leading: IconButton(
+                onPressed: _clearSelection,
+                icon: const Icon(Icons.close),
+                tooltip: 'Annuler la sélection',
+              ),
+              title: Text('${_selected.length} sélectionnée'
+                  '${_selected.length > 1 ? 's' : ''}'),
+              actions: [
+                IconButton(
+                  onPressed: _deleteSelected,
+                  icon: const Icon(Icons.delete),
+                  tooltip: 'Supprimer la sélection',
+                ),
+              ],
+            )
+          : AppBar(
+              title: const Text('Mes sorties'),
+              actions: [
+                IconButton(
+                  onPressed: _deletable(sessions ?? const []).isEmpty
+                      ? null
+                      : _deleteAll,
+                  icon: const Icon(Icons.delete_sweep),
+                  tooltip: 'Tout supprimer',
+                ),
+                IconButton(
+                  onPressed: _reload,
+                  icon: const Icon(Icons.refresh),
+                  tooltip: 'Rafraîchir',
+                ),
+              ],
+            ),
       body: switch (sessions) {
         null => const Center(child: CircularProgressIndicator()),
         [] => const Center(
@@ -297,13 +392,27 @@ class _RidesPageState extends State<RidesPage> {
   Widget _tile(RideSession session) {
     final active = _isActive(session);
     final busy = _busyId == session.id;
+    final selected = _selected.contains(session.id);
 
     return ListTile(
-      onTap: () => _openDetail(session),
-      leading: Icon(
-        active ? Icons.fiber_manual_record : Icons.route,
-        color: active ? Colors.red : null,
-      ),
+      selected: selected,
+      // En mode sélection, le tap coche/décoche au lieu d'ouvrir le détail —
+      // la sortie en cours reste inerte, elle ne se supprime pas.
+      onTap: _selecting
+          ? (active ? null : () => _toggleSelected(session))
+          : () => _openDetail(session),
+      // L'appui long entre en mode sélection, même geste que partout ailleurs
+      // sur Android. Jamais sur la sortie en cours.
+      onLongPress: active ? null : () => _toggleSelected(session),
+      leading: _selecting && !active
+          ? Checkbox(
+              value: selected,
+              onChanged: (_) => _toggleSelected(session),
+            )
+          : Icon(
+              active ? Icons.fiber_manual_record : Icons.route,
+              color: active ? Colors.red : null,
+            ),
       title: Text(formatDateTime(session.startedAt)),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -323,7 +432,11 @@ class _RidesPageState extends State<RidesPage> {
         ],
       ),
       isThreeLine: active || !session.isFinished,
-      trailing: busy
+      // En mode sélection, plus de menu par tuile : la seule action est la
+      // suppression groupée, dans la barre du haut.
+      trailing: _selecting
+          ? null
+          : busy
           ? const SizedBox(
               width: 24,
               height: 24,

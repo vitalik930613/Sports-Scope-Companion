@@ -14,6 +14,10 @@ import '../../ui/zone_colors.dart';
 /// du segment plutôt que sur sa dérivée : ici on colore *ce qu'on mesure*, pas
 /// *sa variation*.
 ///
+/// En surimpression : la valeur courante en haut à droite, sur un pavé de la
+/// couleur de sa zone (lire « où j'en suis » sans suivre la courbe), et le min
+/// et le max de la fenêtre collés à gauche, pour l'amplitude.
+///
 /// `points` doit être trié par [MetricTrackPoint.elapsedS] croissant et porter
 /// au moins deux points — voir `RideMetricTrack`, qui garantit déjà cet
 /// ordre. Ce widget ne filtre ni ne trie, il dessine ce qu'on lui donne.
@@ -131,6 +135,58 @@ class _MetricTrendPainter extends CustomPainter {
         ..strokeJoin = StrokeJoin.round
         ..strokeCap = StrokeCap.round,
     );
+
+    // Échelle de l'axe des valeurs : seulement le min et le max de la fenêtre,
+    // collés à gauche — assez pour donner l'amplitude (« ça oscille entre 210
+    // et 280 W ») sans la grille d'un vrai graphique, qui n'aurait pas sa
+    // place dans une case de tableau de bord. Halo sombre plutôt qu'un fond
+    // opaque : le libellé doit passer aussi bien sur un aplat clair (z3 jaune)
+    // que sombre (z1 bleu), même parade que le double tracé de la courbe.
+    const scaleStyle = TextStyle(
+      color: _label,
+      fontSize: 9,
+      shadows: [Shadow(color: Colors.black, blurRadius: 2)],
+    );
+    final maxPainter = TextPainter(
+      text: TextSpan(text: maxValue.round().toString(), style: scaleStyle),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    maxPainter.paint(canvas, const Offset(2, 1));
+    final minPainter = TextPainter(
+      text: TextSpan(text: minValue.round().toString(), style: scaleStyle),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    minPainter.paint(canvas, Offset(2, plotHeight - minPainter.height));
+
+    // La valeur courante, en haut à droite, sur un pavé de la couleur de sa
+    // zone : on doit pouvoir lire « où j'en suis » sans suivre la courbe
+    // jusqu'à son extrémité, et l'aplat situe l'effort avant même le chiffre —
+    // même table que l'aire et que le bandeau (`zone_colors.dart`).
+    final current = points.last.value;
+    final badgeColor = zoneColorOf(_zoneOf(zones, current)?.key) ?? _neutral;
+    final badgePainter = TextPainter(
+      text: TextSpan(
+        text: current.round().toString(),
+        style: TextStyle(
+          color: foregroundOf(badgeColor),
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    const badgePadH = 5.0, badgePadV = 2.0, badgeMargin = 4.0;
+    final badgeRect = Rect.fromLTWH(
+      math.max(0.0, size.width - badgeMargin - badgePainter.width - badgePadH * 2),
+      badgeMargin,
+      badgePainter.width + badgePadH * 2,
+      badgePainter.height + badgePadV * 2,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(badgeRect, const Radius.circular(4)),
+      Paint()..color = badgeColor,
+    );
+    badgePainter.paint(canvas, badgeRect.topLeft + const Offset(badgePadH, badgePadV));
 
     // Deux repères de temps seulement — début et « maintenant » — assez pour
     // situer la fenêtre (toute la sortie ou les dernières minutes) sans

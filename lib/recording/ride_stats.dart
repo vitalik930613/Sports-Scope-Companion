@@ -90,11 +90,21 @@ class RideStats {
   /// Resserrer [defaultBaroAltitudeNoiseM] à la place ne marche pas : il
   /// aurait fallu le monter à 4-5 m pour retomber sur un chiffre plausible,
   /// soit plus grossier que le seuil GPS — la précision qui justifie
-  /// d'avoir un baromètre y passerait tout entière. 15 s de moyenne
-  /// absorbent l'essentiel du bruit mesuré tout en laissant une montée
-  /// soutenue de plusieurs dizaines de mètres se distinguer sans grand
-  /// retard.
-  static const defaultBaroSmoothingWindowS = 15.0;
+  /// d'avoir un baromètre y passerait tout entière.
+  ///
+  /// 15 s ont d'abord suffi, mais seulement parce que `moving` se déduisait
+  /// alors du pas de distance : avec `RideRecorder._minStepM` à 10 m, une
+  /// randonnée à ~1,2 m/s ne voyait la distance avancer qu'un point sur huit,
+  /// et les sept autres, lus comme un arrêt, faisaient recaler la référence
+  /// du dénivelé (`_addAltitude`, `moving == false`) — un lissage supplémentaire
+  /// d'environ 350 m, involontaire. Depuis que `moving` vient de la vitesse
+  /// Doppler (elle seule survit au palier de 10 m à vélo), ce recalage a
+  /// disparu et 15 s laissaient ~1300 m de D+ sur la randonnée de 800 m.
+  /// 30 s absorbent ce bruit-là sans effet sensible ailleurs : le D+ n'est
+  /// qu'un cumul, un retard d'une demi-minute y est invisible, et ni la pente
+  /// ni l'altitude affichées ne passent par cette fenêtre (elles gardent la
+  /// mesure brute, cf. l'appel à [_smoothedBaroAltitude]).
+  static const defaultBaroSmoothingWindowS = 30.0;
 
   /// Plafond, en m/s, au-delà duquel [_smoothedBaroAltitude] vide sa fenêtre
   /// plutôt que d'y mêler l'échantillon — bien plus haut que
@@ -464,9 +474,24 @@ class RideStats {
         ? null
         : point.at.difference(previousAt).inMilliseconds / 1000;
     bool? moving;
-    if (seconds != null && seconds > 0 && previousDistanceM != null) {
-      moving = point.distanceM - previousDistanceM >= stationarySpeedMps * seconds;
-      if (moving) _movingMs += seconds * 1000;
+    if (seconds != null && seconds > 0) {
+      // La vitesse du point d'abord, le pas de distance seulement à défaut :
+      // depuis que l'enregistreur n'avance la distance que par bonds de 10 m
+      // (`RideRecorder._minStepM`), un point sur deux garde la distance du
+      // précédent quand on roule sous ~10 m/s — le pas y vaut 0 alors qu'on
+      // pédale à 25 km/h. Lu comme un arrêt, ça faisait recaler la référence
+      // du dénivelé sans rien compter un intervalle sur deux (`_addAltitude`,
+      // `moving == false`), et une montée lente n'était presque jamais créditée
+      // pendant qu'une descente rapide l'était : mesuré sur une sortie de
+      // 825 m de D+/D-, l'appli affichait 33 m de D+ et 380 m de D-.
+      final speed = speedOf(point);
+      if (speed != null) {
+        moving = speed >= stationarySpeedMps;
+      } else if (previousDistanceM != null) {
+        moving =
+            point.distanceM - previousDistanceM >= stationarySpeedMps * seconds;
+      }
+      if (moving == true) _movingMs += seconds * 1000;
     }
 
     distanceM = point.distanceM;

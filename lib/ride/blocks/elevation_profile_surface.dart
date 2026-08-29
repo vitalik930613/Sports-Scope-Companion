@@ -38,6 +38,7 @@ class ElevationProfileSurface extends StatelessWidget {
     required this.ratio,
     this.color,
     this.textColor,
+    this.dark = false,
   });
 
   final String title;
@@ -64,6 +65,12 @@ class ElevationProfileSurface extends StatelessWidget {
   /// du graphique ([gradeColorOf]) : c'est une donnée.
   final Color? color;
   final Color? textColor;
+
+  /// Allure « page de données » du graphique — fond noir, courbe blanche,
+  /// min/max/altitude en surimpression, comme `MetricTrendGraph`. Réservée au
+  /// profil de toute la sortie (`AltitudeProfileCard`) ; le col en cours garde
+  /// le fond clair qui le détache de la carte. Voir [ElevationProfileGraph.dark].
+  final bool dark;
 
   static const _naturalWidth = 220.0;
 
@@ -143,7 +150,12 @@ class ElevationProfileSurface extends StatelessWidget {
 
     final chart = ClipRRect(
       borderRadius: BorderRadius.circular(8),
-      child: ElevationProfileGraph(points: points, segmentGrades: segmentGrades, ratio: ratio),
+      child: ElevationProfileGraph(
+        points: points,
+        segmentGrades: segmentGrades,
+        ratio: ratio,
+        dark: dark,
+      ),
     );
 
     return Container(

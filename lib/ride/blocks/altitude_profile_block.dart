@@ -119,6 +119,7 @@ class AltitudeProfileCard extends StatelessWidget {
           points: profile.points,
           segmentGrades: profile.segmentGrades,
           ratio: ratio,
+          dark: true,
           color: color,
           textColor: textColor,
         );
@@ -134,6 +135,7 @@ class AltitudeProfileCard extends StatelessWidget {
         points: sliced.points,
         segmentGrades: sliced.grades,
         ratio: null,
+        dark: true,
         color: color,
         textColor: textColor,
       );
@@ -147,6 +149,7 @@ class AltitudeProfileCard extends StatelessWidget {
       points: profile.points,
       segmentGrades: profile.segmentGrades,
       ratio: ratio,
+      dark: true,
       color: color,
       textColor: textColor,
     );
@@ -209,6 +212,7 @@ class AltitudeProfileCard extends StatelessWidget {
       points: trackPoints,
       segmentGrades: localGradesOf(trackPoints),
       ratio: null,
+      dark: true,
       color: color,
       textColor: textColor,
     );

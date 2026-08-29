@@ -219,6 +219,12 @@ Les sorties sont dans **Mes sorties** (icône itinéraire, barre du haut) :
 `Exporter en .fit` construit le fichier et ouvre le partage d'Android. De là,
 le `.fit` se dépose dans la page d'import de sports-scope.
 
+Pour en supprimer plusieurs d'un coup : **appui long** sur une sortie pour
+entrer en mode sélection, puis on coche les autres et on touche la corbeille de
+la barre du haut. La croix (ou le retour système) sort du mode sans rien
+supprimer. La sortie en cours d'enregistrement ne peut pas être cochée. Le
+balai de la barre du haut, lui, supprime **toutes** les sorties terminées.
+
 ## Où sont les données
 
 Sur le téléphone, dans le dossier applicatif :
