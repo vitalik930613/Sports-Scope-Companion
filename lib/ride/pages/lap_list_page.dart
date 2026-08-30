@@ -10,6 +10,7 @@ import '../blocks/climb_profile_block.dart';
 import '../blocks/fueling_block.dart';
 import '../blocks/lap_delta_block.dart';
 import '../blocks/lap_summary_block.dart';
+import '../blocks/resupply_block.dart';
 import '../blocks/mark_lap_block.dart';
 import '../blocks/metric_trend_block.dart';
 import '../blocks/metric_view.dart';
@@ -468,6 +469,12 @@ class _LapListBodyState extends State<LapListBody> {
           intervalMin: fueling.intervalMin,
           color: fueling.color,
           textColor: fueling.textColor,
+        ),
+      final ResupplyBlock resupply => ResupplyCard(
+          resupply: widget.sources.resupply,
+          mode: resupply.mode,
+          color: resupply.color,
+          textColor: resupply.textColor,
         ),
       _ => const SizedBox.shrink(),
     };

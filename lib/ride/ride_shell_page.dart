@@ -51,6 +51,7 @@ import 'reminder_wake_policy.dart';
 import 'ride_pages.dart';
 import 'route_climbs.dart';
 import 'route_profile.dart';
+import 'route_resupply.dart';
 import 'screen_policy.dart';
 import 'turn_proximity.dart';
 import 'workout_cue_player.dart';
@@ -230,6 +231,11 @@ class _RideShellPageState extends State<RideShellPage>
   /// site). Lus par la feuille « POI à proximité » ; sans carte, personne ne
   /// les alimente ni ne les regarde.
   final _nearbyPois = NearbyPoisNotifier();
+
+  /// Les ravitaillements à venir sur le tracé, poussés par la page (message
+  /// `resupply`, voir route_resupply.dart). Lus par `ResupplyCard` ; sans
+  /// carte, personne ne les alimente.
+  final _resupply = RouteResupplyNotifier();
 
   /// Le filtre POI choisi en roulant depuis la feuille, à rejouer après un
   /// rechargement de page (la page repart alors des préférences du compte).
@@ -843,6 +849,7 @@ class _RideShellPageState extends State<RideShellPage>
       upcomingClimb: _preset.hasMap ? _upcomingClimb : null,
       climbProfile: _preset.hasMap ? _climbProfile : null,
       routeProfile: _preset.hasMap ? _routeProfile : null,
+      resupply: _preset.hasMap ? _resupply : null,
     );
 
     // Deux déclencheurs pour une seule décision : le pont pour les fronts, le
@@ -1923,6 +1930,8 @@ class _RideShellPageState extends State<RideShellPage>
         _routeProfile.accept(message);
       case 'pois':
         _nearbyPois.accept(message);
+      case 'resupply':
+        _resupply.accept(message);
       case 'offline':
         _offline.accept(message);
         _maybeAutoDownloadOffline();
@@ -2008,6 +2017,7 @@ class _RideShellPageState extends State<RideShellPage>
     _routeClimbs.dispose();
     _routeProfile.dispose();
     _nearbyPois.dispose();
+    _resupply.dispose();
     _climbExpanded.dispose();
     _offline.dispose();
     _pages.dispose();

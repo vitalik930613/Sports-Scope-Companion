@@ -13,6 +13,7 @@ import '../ride/climb_profile.dart';
 import '../ride/nav_state.dart';
 import '../ride/route_climbs.dart';
 import '../ride/route_profile.dart';
+import '../ride/route_resupply.dart';
 import '../training/ride_load.dart';
 import '../training/training_budget_store.dart';
 import '../training/wprime_balance.dart';
@@ -765,6 +766,7 @@ class MetricSources {
     this.upcomingClimb,
     this.climbProfile,
     this.routeProfile,
+    this.resupply,
     this.wPrime,
     this.lap,
   });
@@ -824,6 +826,11 @@ class MetricSources {
   /// s'afficher : il se rabat alors sur `recorder.elevationTrack`.
   final ValueListenable<RouteProfile?>? routeProfile;
 
+  /// Les ravitaillements à venir sur le tracé, poussés par la page (message
+  /// `resupply`). **Nul dans un profil sans carte**, même raison que
+  /// [routeClimbs] — voir `ResupplyBlock`.
+  final ValueListenable<RouteResupply>? resupply;
+
   /// Le W′ balance en direct, calculé sur le téléphone à partir du capteur de
   /// puissance et des seuils du site ([WPrimeBalance]). **Nul dans un profil
   /// sans capteur de puissance déclaré** ; son *contenu* peut aussi manquer
@@ -852,6 +859,7 @@ class MetricSources {
         upcomingClimb: upcomingClimb,
         climbProfile: climbProfile,
         routeProfile: routeProfile,
+        resupply: resupply,
         wPrime: wPrime,
         lap: lap,
       );

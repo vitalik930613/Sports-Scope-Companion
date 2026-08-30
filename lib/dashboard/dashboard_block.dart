@@ -123,6 +123,11 @@ sealed class DashboardBlock {
       'weather_compact' => WeatherCompactBlock(color: color, textColor: textColor),
       'wind' => WindBlock(color: color, textColor: textColor),
       'lap_delta' => LapDeltaBlock(color: color, textColor: textColor),
+      'resupply' => ResupplyBlock(
+          mode: _modeOf(raw['mode'], ResupplyMode.values),
+          color: color,
+          textColor: textColor,
+        ),
       'fueling' => FuelingBlock.parse(raw),
       'training_budget' => TrainingBudgetBlock(
           mode: _modeOf(raw['mode'], TrainingBudgetMode.values),
@@ -1796,6 +1801,46 @@ class LapDeltaBlock extends DashboardBlock {
 
   @override
   int get hashCode => Object.hash(color, textColor);
+}
+
+/// La liste des ravitaillements à venir **sur le tracé** (eau, ravito,
+/// boulangerie), avec leur distance le long du parcours.
+///
+/// Vient de la page comme [ClimbListBlock] — la projection des POI sur la
+/// polyligne se fait côté site (`buildCompanionResupply`) — donc absent sans
+/// carte dans le profil. Distinct de la feuille « POI à proximité » de
+/// l'appli : celle-ci ne montre que ce qui est *devant, sur le chemin*.
+class ResupplyBlock extends DashboardBlock {
+  const ResupplyBlock({
+    this.mode = ResupplyMode.list,
+    super.color,
+    super.textColor,
+  });
+
+  final ResupplyMode mode;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ResupplyBlock &&
+      other.mode == mode &&
+      other.color == color &&
+      other.textColor == textColor;
+
+  @override
+  int get hashCode => Object.hash(mode, color, textColor);
+}
+
+enum ResupplyMode with BlockMode {
+  /// La liste des prochains ravitos, une ligne chacun — mode par défaut.
+  list('list'),
+
+  /// Le prochain seulement, sur une ligne. Pour la case de grille étroite.
+  compact('compact');
+
+  const ResupplyMode(this.key);
+
+  @override
+  final String key;
 }
 
 /// Un minuteur de ravitaillement : le compte à rebours avant la prochaine

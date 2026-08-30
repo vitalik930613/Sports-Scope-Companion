@@ -28,6 +28,7 @@ import '../blocks/weather_forecast_block.dart';
 import '../blocks/wind_block.dart';
 import '../blocks/lap_delta_block.dart';
 import '../blocks/fueling_block.dart';
+import '../blocks/resupply_block.dart';
 import '../blocks/radar_block.dart';
 import '../blocks/recording_block.dart';
 import '../blocks/route_block.dart';
@@ -444,6 +445,12 @@ class DashboardPage extends StatelessWidget {
             intervalMin: fueling.intervalMin,
             color: fueling.color,
             textColor: fueling.textColor,
+          ),
+        final ResupplyBlock resupply => ResupplyCard(
+            resupply: sources.resupply,
+            mode: resupply.mode,
+            color: resupply.color,
+            textColor: resupply.textColor,
           ),
         final TrainingBudgetBlock budget => TrainingBudgetCard(
             budgets: sources.trainingBudget,
