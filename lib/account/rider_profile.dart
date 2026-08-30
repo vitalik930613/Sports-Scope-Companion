@@ -44,6 +44,8 @@ class RiderProfile {
     this.ftpWatts,
     this.ftpSource,
     this.wPerKg,
+    this.criticalPowerW,
+    this.wPrimeJ,
     this.lthr,
     this.lthrSource,
     this.weightKg,
@@ -58,6 +60,14 @@ class RiderProfile {
   /// `manual` (test officiel saisi) ou `auto` (estimée depuis les sorties).
   final String? ftpSource;
   final double? wPerKg;
+
+  /// Puissance critique (W) et capacité de travail anaérobie W′ (J), issues de
+  /// l'ajustement du modèle CP sur la courbe puissance-durée côté site — pour
+  /// le W′ balance affiché en roulant ([WPrimeBalance]). `null` quand la
+  /// courbe est trop pauvre pour l'ajustement : l'appli retombe alors sur la
+  /// FTP comme CP et une W′ par défaut.
+  final int? criticalPowerW;
+  final int? wPrimeJ;
 
   /// Seuil cardiaque (bpm) tel que le site l'utilise lui-même.
   final int? lthr;
@@ -91,6 +101,8 @@ class RiderProfile {
 
   Map<String, dynamic> toJson() => {
         'ftp': {'watts': ftpWatts, 'source': ftpSource, 'w_per_kg': wPerKg},
+        'cp': criticalPowerW,
+        'w_prime': wPrimeJ,
         'lthr': lthr,
         'lthr_source': lthrSource,
         'weight_kg': weightKg,
@@ -114,6 +126,8 @@ class RiderProfile {
       wPerKg: ftp is Map && ftp['w_per_kg'] is num
           ? (ftp['w_per_kg'] as num).toDouble()
           : null,
+      criticalPowerW: raw['cp'] is num ? (raw['cp'] as num).toInt() : null,
+      wPrimeJ: raw['w_prime'] is num ? (raw['w_prime'] as num).toInt() : null,
       lthr: raw['lthr'] is num ? (raw['lthr'] as num).toInt() : null,
       lthrSource: raw['lthr_source'] is String ? raw['lthr_source'] as String : null,
       weightKg:

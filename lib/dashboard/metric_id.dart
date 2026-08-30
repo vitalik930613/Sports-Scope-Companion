@@ -15,6 +15,7 @@ import '../ride/route_climbs.dart';
 import '../ride/route_profile.dart';
 import '../training/ride_load.dart';
 import '../training/training_budget_store.dart';
+import '../training/wprime_balance.dart';
 import '../ui/formats.dart';
 import '../ui/grade_colors.dart';
 import 'dashboard_block.dart' show DurationFormat;
@@ -81,7 +82,8 @@ enum MetricId {
   daylightRemaining('daylight_remaining', 'Lumière du jour restante', '', Icons.wb_twilight),
   efficiencyFactor('efficiency_factor', 'Facteur d\'efficacité', '', Icons.insights),
   variabilityIndex('variability_index', 'Indice de variabilité', '', Icons.show_chart),
-  aerobicDecoupling('decoupling', 'Découplage aérobie', '%', Icons.timeline);
+  aerobicDecoupling('decoupling', 'Découplage aérobie', '%', Icons.timeline),
+  wprimeBalance('wprime_balance', 'Réserve W′', 'kJ', Icons.battery_charging_full);
 
   const MetricId(this.key, this.name, this.unit, this.icon);
 
@@ -165,8 +167,18 @@ enum MetricId {
       MetricId.grade => _bounds(stats.minGrade, stats.maxGrade),
       MetricId.distance => _routeDistanceRange(sources),
       MetricId.duration => _routeDurationRange(sources),
+      // 0 → W′₀ : la jauge se vide dans les efforts au-dessus de la CP et se
+      // recharge en dessous. Plage fixe (pas « observée ») — le maximum, c'est
+      // la réserve pleine, connue d'avance.
+      MetricId.wprimeBalance => _wprimeRange(sources),
       _ => null,
     };
+  }
+
+  static (double, double)? _wprimeRange(MetricSources sources) {
+    final full = sources.wPrime?.wPrimeJ;
+    if (full == null || full <= 0) return null;
+    return (0, full / 1000);
   }
 
   static (double, double)? _bounds(double? min, double? max) =>
@@ -220,6 +232,12 @@ enum MetricId {
       // Le TSS suit la même cascade que le budget de charge (cf. `rideTss`) :
       // il lui faut donc les seuils en plus de l'agrégat de l'enregistreur.
       MetricId.tss => [sources.recorder, sources.riderProfile],
+      // Le W′ balance suit son propre modèle (capteur de puissance + seuils) —
+      // `riderProfile` en plus pour la plage de la jauge, qui dépend de W′₀.
+      MetricId.wprimeBalance => [
+          if (sources.wPrime != null) sources.wPrime!,
+          sources.riderProfile,
+        ],
       MetricId.cadence => [sources.hub.latestCadence],
       MetricId.powerBalance => [sources.hub.latestPowerBalance],
       MetricId.gears ||
@@ -470,6 +488,7 @@ enum MetricId {
       MetricId.efficiencyFactor => _efficiencyFactorReading(stats),
       MetricId.variabilityIndex => _variabilityIndexReading(stats),
       MetricId.aerobicDecoupling => _decouplingReading(stats),
+      MetricId.wprimeBalance => _wprimeReading(sources),
     };
   }
 
@@ -652,6 +671,16 @@ enum MetricId {
     return MetricReading('$sign${_decimal(value)}', numericValue: value);
   }
 
+  /// La réserve W′ restante, en kilojoules. `null` sans capteur de puissance
+  /// déclaré, ou tant que la CP n'est pas connue — jamais une réserve devinée
+  /// sur un seuil par défaut.
+  static MetricReading _wprimeReading(MetricSources sources) {
+    final balanceJ = sources.wPrime?.balanceJ;
+    if (balanceJ == null) return const MetricReading(null);
+    final kj = balanceJ / 1000;
+    return MetricReading(_decimal(kj), numericValue: kj);
+  }
+
   /// Le braquet en positions — `2 × 7` — et non en dents.
   ///
   /// Les dents demandent de savoir ce qu'il y a sur le vélo ([Drivetrain]), ce
@@ -736,6 +765,7 @@ class MetricSources {
     this.upcomingClimb,
     this.climbProfile,
     this.routeProfile,
+    this.wPrime,
     this.lap,
   });
 
@@ -794,6 +824,13 @@ class MetricSources {
   /// s'afficher : il se rabat alors sur `recorder.elevationTrack`.
   final ValueListenable<RouteProfile?>? routeProfile;
 
+  /// Le W′ balance en direct, calculé sur le téléphone à partir du capteur de
+  /// puissance et des seuils du site ([WPrimeBalance]). **Nul dans un profil
+  /// sans capteur de puissance déclaré** ; son *contenu* peut aussi manquer
+  /// (pas de CP connue), et [MetricId.read] le dit alors — jamais une réserve
+  /// devinée. Ride-wide, jamais recadré sur un tour (comme [nav]).
+  final WPrimeBalance? wPrime;
+
   /// Le tour affiché par une page Tours ([LapListPageSpec]), `null` partout
   /// ailleurs. Quand il est posé, [MetricId.read]/[MetricId.liveRangeOf]
   /// lisent leurs mesures cumulées sur **ce tour** plutôt que sur la sortie
@@ -815,6 +852,7 @@ class MetricSources {
         upcomingClimb: upcomingClimb,
         climbProfile: climbProfile,
         routeProfile: routeProfile,
+        wPrime: wPrime,
         lap: lap,
       );
 }

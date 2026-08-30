@@ -7,6 +7,7 @@ import '../account/rider_profile.dart';
 import '../account/rider_profile_store.dart';
 import '../training/training_budget.dart';
 import '../training/training_budget_store.dart';
+import '../training/wprime_balance.dart';
 import '../account/site_session.dart';
 import '../ble/samples.dart';
 import '../ble/sensor_hub.dart';
@@ -675,6 +676,12 @@ class _RideShellPageState extends State<RideShellPage>
 
   late final MetricSources _sources;
 
+  /// Le W′ balance de la sortie — un modèle à état, alimenté par le capteur de
+  /// puissance et les seuils du site. Créé ici et non dans [MetricSources]
+  /// (qui est `@immutable`), passé dedans. Seulement si le profil déclare un
+  /// capteur de puissance : sinon [WPrimeBalance] n'aurait jamais rien à lire.
+  WPrimeBalance? _wPrime;
+
   /// Construit une fois : un changement de page ne doit pas reconstruire l'arbre
   /// du WebView.
   Widget? _webView;
@@ -814,11 +821,19 @@ class _RideShellPageState extends State<RideShellPage>
       unawaited(_loadNativeTurnAlerts(widget.target));
     }
 
+    if (_preset.sensors.power) {
+      _wPrime = WPrimeBalance(
+        hub: widget.hub,
+        riderProfile: widget.riderProfile,
+      );
+    }
+
     _sources = MetricSources(
       hub: widget.hub,
       recorder: widget.recorder,
       riderProfile: widget.riderProfile,
       trainingBudget: widget.trainingBudget,
+      wPrime: _wPrime,
       drivetrain: widget.recorder.drivetrain,
       // Sans carte, aucune page ne publiera d'état : les mesures qui en
       // dépendent s'abstiennent au lieu d'attendre pour toujours.
@@ -1985,6 +2000,7 @@ class _RideShellPageState extends State<RideShellPage>
       overlays: SystemUiOverlay.values,
     );
     _web?.dispose();
+    _wPrime?.dispose();
     _nav.dispose();
     _climbProfile.dispose();
     _stableClimb.dispose();
