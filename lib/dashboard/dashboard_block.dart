@@ -1485,8 +1485,11 @@ enum BellSound with BlockMode {
   /// `BellPlayer` (`ride/blocks/bell_player.dart`), calé dessus.
   booster('booster'),
 
-  /// Une variante du klaxon (~4,8 s, sous le même minuteur).
-  horn2('horn2');
+  /// Trois autres variantes du klaxon (toutes sous 3 s, sous le même
+  /// minuteur).
+  horn2('horn2'),
+  horn3('horn3'),
+  horn4('horn4');
 
   const BellSound(this.key);
 
