@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../dashboard/companion_settings_store.dart';
+import '../dashboard/preset_picker.dart';
 import '../ui/formats.dart';
 import 'nav_session.dart';
 import 'navigation_target.dart';
@@ -28,9 +29,12 @@ class NavigationPickerSheet extends StatefulWidget {
 
   final RouteCatalogStore catalog;
 
-  /// Les profils de sortie, pour savoir si le profil actuel a une carte — un
-  /// profil de home-trainer réduit la feuille au seul départ. Le choix du
-  /// profil lui-même se fait depuis l'accueil, pas ici.
+  /// Les profils de sortie. Sert à deux choses : savoir si le profil actuel a
+  /// une carte — un profil de home-trainer réduit la feuille au seul départ —
+  /// et **rappeler en tête quel profil va partir**, avec de quoi en changer si
+  /// ce n'est pas le bon vélo. Le geste reste possible depuis l'accueil, mais
+  /// c'est ici qu'on s'en souvient : au moment où l'on lance la navigation, pas
+  /// deux écrans plus tôt.
   ///
   /// Facultatif : nul dans les tests.
   final CompanionSettingsStore? settings;
@@ -82,6 +86,31 @@ class _NavigationPickerSheetState extends State<NavigationPickerSheet> {
 
   void _pick(NavigationTarget target) => Navigator.of(context).pop(target);
 
+  /// Changer de profil sans quitter le sélecteur : la feuille de choix se pose
+  /// par-dessus celle-ci, et au retour on se reconstruit — un profil sans carte
+  /// choisi ici replie aussitôt la feuille sur le seul départ, un profil avec
+  /// carte la rouvre en grand.
+  Future<void> _changePreset() async {
+    await choosePreset(context, widget.settings!);
+    if (mounted) setState(() {});
+  }
+
+  /// Le profil qui va partir, en tête de la feuille. Un tap ouvre la feuille de
+  /// choix. Ne paraît **que s'il y a plus d'un profil** : à une seule entrée,
+  /// il n'y a rien à confirmer ni à changer, et la ligne ne serait que du bruit
+  /// sur l'écran d'avant-départ — même seuil que le bouton d'accueil.
+  Widget _presetTile() {
+    final preset = widget.settings!.preset;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: presetLeading(preset),
+      title: Text(preset.name),
+      subtitle: Text(describePreset(preset)),
+      trailing: const Icon(Icons.unfold_more),
+      onTap: _changePreset,
+    );
+  }
+
   void _pickPastedLink() {
     final uri = Uri.tryParse(_link.text.trim());
     final target = uri == null ? null : NavigationTarget.parse(uri);
@@ -97,6 +126,7 @@ class _NavigationPickerSheetState extends State<NavigationPickerSheet> {
     final routes = widget.catalog.routes;
     final settings = widget.settings;
     final preset = settings?.preset;
+    final showPreset = settings != null && settings.hasChoice;
 
     // Un profil sans carte n'a aucun itinéraire à choisir : la feuille se réduit
     // au profil et au départ. Proposer « mes itinéraires » à qui roule sur
@@ -113,6 +143,10 @@ class _NavigationPickerSheetState extends State<NavigationPickerSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (showPreset) ...[
+              _presetTile(),
+              const SizedBox(height: 8),
+            ],
             FilledButton.icon(
               onPressed: () => _pick(const NavigationTarget.free()),
               icon: const Icon(Icons.play_arrow),
@@ -137,6 +171,10 @@ class _NavigationPickerSheetState extends State<NavigationPickerSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (showPreset) ...[
+            _presetTile(),
+            const Divider(),
+          ],
           if (_session != null) _resumeTile(_session!),
           ListTile(
             contentPadding: EdgeInsets.zero,

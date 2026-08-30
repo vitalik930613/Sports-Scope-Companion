@@ -876,10 +876,12 @@ class _HomePageState extends State<HomePage> {
     await _navigate(const NavigationTarget.free());
   }
 
-  /// Choisir le profil de la sortie, depuis l'accueil plutôt que depuis le
-  /// sélecteur de navigation : c'est le geste qu'on fait en premier — on
-  /// choisit son vélo avant son itinéraire — et il doit rester possible sans
-  /// même viser « Naviguer », pour l'enregistrement lancé d'ici.
+  /// Choisir le profil de la sortie depuis l'accueil : c'est le geste qu'on
+  /// fait en premier — on choisit son vélo avant son itinéraire — et il doit
+  /// rester possible sans même viser « Naviguer », pour l'enregistrement lancé
+  /// d'ici. Le sélecteur de navigation le rappelle et le laisse changer une
+  /// dernière fois, mais c'est la même feuille ([choosePreset]) aux deux
+  /// endroits.
   Future<void> _choosePreset() async {
     await choosePreset(context, widget.settings);
     if (mounted) setState(() {});

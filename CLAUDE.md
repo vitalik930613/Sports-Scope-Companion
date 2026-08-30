@@ -279,6 +279,15 @@ ni le même besoin de carte, ni les mêmes capteurs — et le choix se fait **au
 départ**, dans la feuille de sélection : on sait sur quel vélo on monte au moment
 où l'on monte dessus, pas la veille devant un navigateur.
 
+La feuille de choix (`choosePreset`, `dashboard/preset_picker.dart`) est
+partagée : le bouton de l'accueil l'ouvre, et le sélecteur de navigation
+(`NavigationPickerSheet`) **rappelle en tête le profil qui va partir** et laisse
+l'ouvrir une dernière fois — c'est là qu'on se rend compte qu'on a gardé le
+profil VTT pour une sortie route. La ligne ne paraît qu'à partir de deux profils
+(`hasChoice`), même seuil que le bouton d'accueil : à une seule entrée il n'y a
+rien à confirmer. Un profil sans carte choisi là replie aussitôt la feuille sur
+le seul « Démarrer la sortie ».
+
 Le nom de classe est `RidePreset` et non `RideProfile` : `RiderProfile` (les
 seuils du cycliste, `account/`) existe déjà, et une lettre d'écart entre deux
 concepts sans rapport se paierait à chaque relecture. Dans l'interface, le mot
