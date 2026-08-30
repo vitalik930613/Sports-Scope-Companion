@@ -990,6 +990,7 @@ class ReminderSpec {
     required this.intervalMinutes,
     required this.message,
     this.sound = BellSound.bell,
+    this.count,
   });
 
   /// Au plus douze par profil : au-delà, l'appli défendrait sa propre borne
@@ -1012,6 +1013,13 @@ class ReminderSpec {
   /// à un rappel qu'on ne doit pas rater en roulant.
   final BellSound sound;
 
+  /// Nombre de fois qu'il sonne dans la sortie, ou `null` pour illimité —
+  /// le comportement d'avant ce réglage. Un `1` compose une tâche à faire
+  /// une seule fois : « calibrer le capteur » avec [intervalMinutes] à 30
+  /// sonne une fois, à la 30ᵉ minute roulée, puis plus jamais. Voir
+  /// `RideReminderPolicy`.
+  final int? count;
+
   /// Décode un rappel du document, ou `null` s'il n'en reste rien
   /// d'exploitable — un intervalle absent ou nul, ou un message vide, ne
   /// composerait qu'un toast muet ou qui ne sonne jamais.
@@ -1022,10 +1030,13 @@ class ReminderSpec {
     if (interval is! num || interval <= 0) return null;
     if (message is! String || message.trim().isEmpty) return null;
 
+    final count = raw['count'];
+
     return ReminderSpec(
       intervalMinutes: interval.round(),
       message: message.trim(),
       sound: _bellSoundOf(raw['sound'] is String ? raw['sound'] as String : ''),
+      count: count is num && count > 0 ? count.round() : null,
     );
   }
 }

@@ -5,7 +5,9 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../ble/sensor_connection.dart';
 import '../ble/sensor_hub.dart';
+import '../ride/battery_status.dart';
 import '../ui/sensor_icons.dart';
+import '../ui/zone_colors.dart';
 import 'known_devices_store.dart';
 import 'sensor_link_status.dart';
 
@@ -17,6 +19,12 @@ import 'sensor_link_status.dart';
 /// mesurera quelque chose. Les listes, le scan et l'appairage sont derrière,
 /// sur la page des capteurs : on appaire une fois, on part rouler tous les
 /// jours.
+///
+/// Sous chaque capteur **connecté** qui expose son niveau, une pastille de
+/// batterie ([SensorBatteryBadge]) : la rangée disait déjà qui répond, lui
+/// coller le pourcentage dessous répond du même coup à « combien il leur
+/// reste » — ce qui a permis de retirer la carte « Batteries » qui répétait la
+/// liste des capteurs juste en dessous.
 class SensorStatusStrip extends StatelessWidget {
   const SensorStatusStrip({
     super.key,
@@ -64,7 +72,7 @@ class SensorStatusStrip extends StatelessWidget {
                         else
                           Wrap(
                             spacing: 14,
-                            runSpacing: 10,
+                            runSpacing: 12,
                             children: [
                               for (final device in known)
                                 _dotFor(device.remoteId,
@@ -88,7 +96,8 @@ class SensorStatusStrip extends StatelessWidget {
     );
   }
 
-  /// La pastille d'un capteur, recolorée à chaque changement d'état.
+  /// La pastille d'un capteur, recolorée à chaque changement d'état, avec sous
+  /// elle son niveau de batterie tant qu'il est connecté.
   ///
   /// L'abonnement est pris sur la connexion elle-même : un capteur qui décroche
   /// en cours de route doit passer à l'orange sans que personne redessine
@@ -108,8 +117,60 @@ class SensorStatusStrip extends StatelessWidget {
     }
     return ValueListenableBuilder<SensorStatus>(
       valueListenable: connection.status,
-      builder: (context, status, _) => SensorLinkDot(
-          icon: icon, name: name, status: status, autoConnect: autoConnect),
+      builder: (context, status, _) {
+        final dot = SensorLinkDot(
+            icon: icon, name: name, status: status, autoConnect: autoConnect);
+        // La batterie ne se montre que sous un capteur qui répond : la dernière
+        // lecture d'un capteur qui a décroché se lirait sinon comme du direct,
+        // exactement le contresens que l'orange de l'icône sert à éviter.
+        if (status != SensorStatus.connected) return dot;
+        return ValueListenableBuilder<int?>(
+          valueListenable: connection.batteryLevel,
+          builder: (context, percent, _) {
+            if (percent == null) return dot;
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                dot,
+                const SizedBox(height: 4),
+                SensorBatteryBadge(percent: percent),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+/// Le niveau de batterie d'un capteur connecté, en pastille sous son icône.
+///
+/// Peinte de la même palette que les zones (`batteryLevelColor`) — rouge sous
+/// l'alerte, vert plein — comme le faisait la carte « Batteries » qu'elle
+/// remplace. Jamais rendue sans lecture (`percent` est non nul par
+/// construction) : un `0 %` se lirait comme une batterie vide.
+class SensorBatteryBadge extends StatelessWidget {
+  const SensorBatteryBadge({super.key, required this.percent});
+
+  final int percent;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = batteryLevelColor(percent);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        '$percent%',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: foregroundOf(color),
+        ),
+      ),
     );
   }
 }

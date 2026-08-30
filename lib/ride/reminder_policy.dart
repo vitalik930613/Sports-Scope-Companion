@@ -14,6 +14,12 @@ import '../dashboard/ride_preset.dart';
 /// coquille se démonte et se remonte à chaque aller-retour à l'accueil (voir
 /// « Rentrer, et repartir » du guide), et repartir de zéro y rejouerait
 /// aussitôt le dernier rappel déjà sonné avant la pause.
+///
+/// Un rappel qui porte un `count` ne sonne que ses `count` premiers multiples
+/// — « calibrer le capteur » (`intervalMinutes: 30, count: 1`) tombe à la 30ᵉ
+/// minute et se tait ensuite. Le semis compte pour ça aussi : remonter la
+/// coquille après l'échéance ne le rejoue pas, le multiple courant est déjà
+/// au-delà de `count`.
 class RideReminderPolicy {
   RideReminderPolicy({
     required List<ReminderSpec> reminders,
@@ -45,6 +51,8 @@ class RideReminderPolicy {
       final multiple = _multipleOf(reminder, recorded);
       if (multiple == 0 || _lastFired[i] == multiple) continue;
       _lastFired[i] = multiple;
+      final count = reminder.count;
+      if (count != null && multiple > count) continue;
       due.add(reminder);
     }
     return due;

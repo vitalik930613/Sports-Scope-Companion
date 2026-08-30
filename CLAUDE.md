@@ -80,7 +80,13 @@ qui n'existe plus (même raison que le catalogue, plus bas).
 
 Ce qui en reste sur l'accueil est `SensorStatusStrip` : **une icône par capteur
 connu, verte s'il est connecté, orange sinon**. La forme dit quel capteur, la
-couleur dit s'il mesurera quelque chose. Deux couleurs et pas trois
+couleur dit s'il mesurera quelque chose. Sous chaque capteur **connecté** qui
+expose son niveau, une pastille de batterie (`SensorBatteryBadge`, mêmes teintes
+que `batteryLevelColor` — rouge sous l'alerte, vert plein) : la rangée dit déjà
+qui répond, la pastille dit combien il lui reste, et c'est ce qui a permis de
+retirer la carte « Batteries » (`BatteryStatusCard`, supprimée) qui répétait la
+liste des capteurs juste en dessous. Rien sous un capteur orange : la dernière
+lecture d'un capteur qui a décroché s'y lirait comme du direct. Deux couleurs et pas trois
 (`sensorLinkColor`, `devices/sensor_link_status.dart`) : « hors ligne », « en
 cours » et « échec » se ressemblent trop pour qu'on les distingue d'un coup
 d'œil, et le détail est en toutes lettres sur la sous-page.
