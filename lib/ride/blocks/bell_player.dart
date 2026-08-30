@@ -26,16 +26,24 @@ import '../../dashboard/dashboard_block.dart';
 /// 2 s) ne sert qu'à couvrir un `onPlayerComplete` qui n'arriverait pas :
 /// trop court, il coupe le son avant sa fin dans le cas courant, pas
 /// seulement dans le cas raté qu'il est censé couvrir. Son au flux d'alarme
-/// (`AndroidUsageType.alarm`, focus exclusif) plutôt qu'au volume média :
-/// c'est le seul flux qui traverse le mode silencieux/Ne pas déranger, or un
-/// téléphone qu'on cherche est justement celui qu'on a mis en silencieux
-/// avant de rouler.
+/// (`AndroidUsageType.alarm`) plutôt qu'au volume média : c'est le seul flux
+/// qui traverse le mode silencieux/Ne pas déranger, or un téléphone qu'on
+/// cherche est justement celui qu'on a mis en silencieux avant de rouler.
+///
+/// Focus `gainTransient` et non `gain` : `gain` dit à Android « je deviens la
+/// seule source de son, pour longtemps » — l'appli de musique reçoit une
+/// perte *définitive* et ne redémarre pas quand la sonnette rend le focus.
+/// `gainTransient` interrompt la musique le temps du signal (< 2 s pour
+/// `bell`/`horn`, ~6 s pour `booster`) puis Android la fait reprendre d'elle-
+/// même. On ne « duck » pas comme le radar (`gainTransientMayDuck`) : une
+/// sonnette qu'on lance pour se faire entendre doit couvrir la musique, pas
+/// jouer par-dessus.
 class BellPlayer extends ChangeNotifier {
   static final _alarmContext = AudioContext(
     android: const AudioContextAndroid(
       contentType: AndroidContentType.sonification,
       usageType: AndroidUsageType.alarm,
-      audioFocus: AndroidAudioFocus.gain,
+      audioFocus: AndroidAudioFocus.gainTransient,
     ),
   );
 
