@@ -330,6 +330,19 @@ class RideStats {
   double _npFourthSum = 0;
   int _npCount = 0;
 
+  // Découplage aérobie : une paire (puissance moyenne, cardio moyen) par
+  // tranche de [_decoupleBucketS] points capturés (≈ secondes chronométrées),
+  // d'où l'on tire la dérive du rapport puissance/cardio de la première moitié
+  // de la sortie à la seconde ([aerobicDecouplingPercent]). Purement additif —
+  // aucune interaction avec les autres agrégats — et borné par la durée d'une
+  // sortie (~360 entrées pour 6 h).
+  static const _decoupleBucketS = 60;
+  static const _decoupleMinBuckets = 10;
+  final List<_DecoupleBucket> _decoupleBuckets = [];
+  int _decouplePoints = 0;
+  int _decoupleHrSum = 0, _decoupleHrCount = 0;
+  int _decouplePowerSum = 0, _decouplePowerCount = 0;
+
   // Courbe de puissance : une fenêtre glissante par durée de
   // [powerCurveDurationsS], chacune avec sa propre somme courante — même
   // principe que [_npWindow], répété une fois par durée.
@@ -385,6 +398,34 @@ class RideStats {
   /// qu'un tiret.
   int? get normalizedPowerW =>
       _npCount > 0 ? math.pow(_npFourthSum / _npCount, 0.25).round() : null;
+
+  /// Le découplage aérobie, en pourcentage : de combien le rapport
+  /// puissance/cardio de la première moitié de la sortie a dérivé à la
+  /// seconde. Positif = dérive cardiaque (le cardio monte à puissance égale —
+  /// fatigue, chaleur, déshydratation) ; sous 5 % on parle d'une bonne tenue
+  /// aérobie. `null` tant que la sortie est trop courte pour que la
+  /// comparaison veuille dire quelque chose (moins de [_decoupleMinBuckets]
+  /// tranches), ou sans les deux capteurs.
+  double? get aerobicDecouplingPercent {
+    final buckets = _decoupleBuckets;
+    if (buckets.length < _decoupleMinBuckets) return null;
+    final mid = buckets.length ~/ 2;
+    final first = _meanPowerHrRatio(buckets.take(mid));
+    final second = _meanPowerHrRatio(buckets.skip(mid));
+    if (first == null || second == null || first == 0) return null;
+    return (first - second) / first * 100;
+  }
+
+  static double? _meanPowerHrRatio(Iterable<_DecoupleBucket> buckets) {
+    var sum = 0.0;
+    var count = 0;
+    for (final bucket in buckets) {
+      if (bucket.heartRate <= 0) continue;
+      sum += bucket.power / bucket.heartRate;
+      count++;
+    }
+    return count > 0 ? sum / count : null;
+  }
 
   /// Le travail mécanique fourni depuis le départ, en kilojoules.
   /// `null` sans capteur de puissance — voir [calories].
@@ -599,6 +640,37 @@ class RideStats {
       minSpeedMps =
           minSpeedMps == null || speed < minSpeedMps! ? speed : minSpeedMps;
     }
+
+    _accumulateDecoupling(point);
+  }
+
+  /// Empile la paire puissance/cardio du point dans la tranche courante, et
+  /// clôt la tranche tous les [_decoupleBucketS] points. Une tranche sans les
+  /// deux capteurs est écartée plutôt que comptée à moitié — le rapport n'y
+  /// veut rien dire.
+  void _accumulateDecoupling(TrackPoint point) {
+    final heartRate = point.heartRate;
+    if (heartRate != null) {
+      _decoupleHrSum += heartRate;
+      _decoupleHrCount++;
+    }
+    final power = point.power;
+    if (power != null) {
+      _decouplePowerSum += power;
+      _decouplePowerCount++;
+    }
+
+    _decouplePoints++;
+    if (_decouplePoints % _decoupleBucketS != 0) return;
+
+    if (_decoupleHrCount > 0 && _decouplePowerCount > 0) {
+      _decoupleBuckets.add(_DecoupleBucket(
+        power: _decouplePowerSum / _decouplePowerCount,
+        heartRate: _decoupleHrSum / _decoupleHrCount,
+      ));
+    }
+    _decoupleHrSum = _decoupleHrCount = 0;
+    _decouplePowerSum = _decouplePowerCount = 0;
   }
 
   /// Moyenne glissante des [baroSmoothingWindowS] dernières secondes
@@ -794,6 +866,10 @@ class RideStats {
     _npWindowSum = 0;
     _npFourthSum = 0;
     _npCount = 0;
+    _decoupleBuckets.clear();
+    _decouplePoints = 0;
+    _decoupleHrSum = _decoupleHrCount = 0;
+    _decouplePowerSum = _decouplePowerCount = 0;
     for (final window in _powerCurveWindows.values) {
       window.clear();
     }
@@ -823,4 +899,14 @@ class _GradeSample {
   final DateTime at;
   final double distanceM;
   final double altitudeM;
+}
+
+/// Une tranche de sortie pour le découplage aérobie : puissance et cardio
+/// moyens sur ~[RideStats._decoupleBucketS] secondes — voir
+/// [RideStats.aerobicDecouplingPercent].
+class _DecoupleBucket {
+  const _DecoupleBucket({required this.power, required this.heartRate});
+
+  final double power;
+  final double heartRate;
 }

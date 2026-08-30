@@ -121,6 +121,7 @@ sealed class DashboardBlock {
       'precip_forecast' => PrecipForecastBlock(color: color, textColor: textColor),
       'weather_forecast' => WeatherForecastBlock(color: color, textColor: textColor),
       'weather_compact' => WeatherCompactBlock(color: color, textColor: textColor),
+      'wind' => WindBlock(color: color, textColor: textColor),
       'training_budget' => TrainingBudgetBlock(
           mode: _modeOf(raw['mode'], TrainingBudgetMode.values),
           color: color,
@@ -256,9 +257,10 @@ class MetricBlock extends DashboardBlock {
   final MetricLayout layout;
 
   /// N'a d'effet que sur une mesure de durée ([MetricId.duration],
-  /// [MetricId.movingTime], [MetricId.pauseTime], [MetricId.routeEta]) —
-  /// présent sur toute mesure comme [layout], mais silencieusement ignoré des
-  /// autres, plutôt qu'un champ optionnel de plus à défaire au rendu.
+  /// [MetricId.movingTime], [MetricId.pauseTime], [MetricId.routeEta],
+  /// [MetricId.daylightRemaining]) — présent sur toute mesure comme [layout],
+  /// mais silencieusement ignoré des autres, plutôt qu'un champ optionnel de
+  /// plus à défaire au rendu.
   final DurationFormat format;
 
   /// L'icône personnalisée réglée dans l'éditeur, propre à ce bloc — `null` :
@@ -1740,6 +1742,29 @@ class WeatherCompactBlock extends DashboardBlock {
   @override
   bool operator ==(Object other) =>
       other is WeatherCompactBlock &&
+      other.color == color &&
+      other.textColor == textColor;
+
+  @override
+  int get hashCode => Object.hash(color, textColor);
+}
+
+/// Le vent projeté sur le cap : sa composante de face (ou de dos), et un
+/// repère de direction relative au déplacement.
+///
+/// Même source de vent que [WeatherForecastBlock] ([WeatherForecastClient],
+/// `lib/weather/`) — donc même repli GPS — croisée avec le cap de
+/// l'enregistreur. Un genre à part et non un mode de plus sur les blocs
+/// météo, même choix que [PrecipRadarBlock]/[PrecipForecastBlock] : il répond
+/// à une autre question (« est-ce que je me bats contre le vent, là,
+/// maintenant ? »), pas à « quel temps fait-il ». Un seul mode : le dessin
+/// (deux lignes) ne change pas selon la case, seule son échelle.
+class WindBlock extends DashboardBlock {
+  const WindBlock({super.color, super.textColor});
+
+  @override
+  bool operator ==(Object other) =>
+      other is WindBlock &&
       other.color == color &&
       other.textColor == textColor;
 

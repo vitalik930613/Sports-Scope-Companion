@@ -5,6 +5,7 @@ import '../account/rider_profile.dart';
 import '../account/rider_profile_store.dart';
 import '../ble/sensor_hub.dart';
 import '../drivetrain.dart';
+import '../lighting/sun.dart';
 import '../recording/ride_lap.dart';
 import '../recording/ride_recorder.dart';
 import '../recording/ride_stats.dart';
@@ -75,7 +76,12 @@ enum MetricId {
   gearRatio('gear_ratio', 'Rapport', '', Icons.compare_arrows),
   routeRemaining('route_remaining', 'Distance restante', 'km', Icons.flag_outlined),
   routeRemainingGain('route_remaining_gain', 'D+ restant', 'm', Icons.trending_up),
-  routeEta('route_eta', 'Temps restant', '', Icons.schedule);
+  routeEta('route_eta', 'Temps restant', '', Icons.schedule),
+  routeArrivalTime('route_arrival_time', 'Heure d\'arrivée', '', Icons.schedule),
+  daylightRemaining('daylight_remaining', 'Lumière du jour restante', '', Icons.wb_twilight),
+  efficiencyFactor('efficiency_factor', 'Facteur d\'efficacité', '', Icons.insights),
+  variabilityIndex('variability_index', 'Indice de variabilité', '', Icons.show_chart),
+  aerobicDecoupling('decoupling', 'Découplage aérobie', '%', Icons.timeline);
 
   const MetricId(this.key, this.name, this.unit, this.icon);
 
@@ -229,7 +235,9 @@ enum MetricId {
         ],
       // Le temps restant croise la distance qui reste (la page) et la vitesse
       // moyenne en roulant (l'enregistreur) : il lui faut suivre les deux.
-      MetricId.routeEta => [sources.recorder, if (nav != null) nav],
+      // L'heure d'arrivée en sort par simple addition (`now + reste`), mêmes
+      // sources.
+      MetricId.routeEta || MetricId.routeArrivalTime => [sources.recorder, if (nav != null) nav],
       // Le chiffre ne dépend que de l'enregistreur, mais la plage de la jauge
       // dynamique (parcouru → total de l'itinéraire) suit aussi la page :
       // c'est elle qui publie ce qu'il en reste ([liveRangeOf]).
@@ -457,6 +465,11 @@ enum MetricId {
       MetricId.routeRemaining => _remainingReading(sources),
       MetricId.routeRemainingGain => _remainingGainReading(sources),
       MetricId.routeEta => MetricReading(_eta(sources, fmt)),
+      MetricId.routeArrivalTime => MetricReading(_arrivalTime(sources)),
+      MetricId.daylightRemaining => _daylightRemainingReading(sources, fmt),
+      MetricId.efficiencyFactor => _efficiencyFactorReading(stats),
+      MetricId.variabilityIndex => _variabilityIndexReading(stats),
+      MetricId.aerobicDecoupling => _decouplingReading(stats),
     };
   }
 
@@ -558,15 +571,85 @@ enum MetricId {
   /// Temps restant estimé sur l'itinéraire : la distance qui reste (la page)
   /// divisée par la vitesse moyenne en roulant (l'enregistreur). `null` sans
   /// itinéraire suivi, ou tant qu'on n'a pas encore de vitesse à projeter.
-  static String? _eta(MetricSources sources, String Function(Duration) fmt) {
+  static Duration? _etaDuration(MetricSources sources) {
     final nav = sources.nav?.value;
     if (nav == null || !nav.onRoute || nav.isStale(DateTime.now())) return null;
 
     final speedMps = _movingAvgSpeedMps(sources.recorder.stats);
     if (speedMps == null || speedMps <= 0) return null;
 
-    final etaSeconds = nav.remainingM / speedMps;
-    return fmt(Duration(seconds: etaSeconds.round()));
+    return Duration(seconds: (nav.remainingM / speedMps).round());
+  }
+
+  static String? _eta(MetricSources sources, String Function(Duration) fmt) {
+    final eta = _etaDuration(sources);
+    return eta == null ? null : fmt(eta);
+  }
+
+  /// L'heure murale d'arrivée : maintenant plus le temps restant de [_eta].
+  /// Une horloge (`15:42`), pas un compte à rebours — d'où [formatClockHm] et
+  /// non le formateur de durée. `null` dans les mêmes cas que [_eta].
+  static String? _arrivalTime(MetricSources sources) {
+    final eta = _etaDuration(sources);
+    return eta == null ? null : formatClockHm(DateTime.now().add(eta));
+  }
+
+  /// La lumière du jour qu'il reste avant le coucher du soleil, à la position
+  /// GPS de l'enregistreur. `null` sans GPS (home-trainer) et une fois le
+  /// soleil couché : un « 00:00 » se lirait comme un compte à rebours qui
+  /// vient d'expirer, pas comme « il fait nuit ».
+  static MetricReading _daylightRemainingReading(
+    MetricSources sources,
+    String Function(Duration) fmt,
+  ) {
+    if (!sources.recorder.gpsEnabled) return const MetricReading(null);
+    final fix = sources.recorder.lastFix;
+    if (fix == null) return const MetricReading(null);
+
+    final now = DateTime.now();
+    final sunset =
+        Sun.nextSetUtc(from: now, latitude: fix.lat, longitude: fix.lng);
+    if (sunset == null) return const MetricReading(null);
+
+    final remaining = sunset.difference(now);
+    if (remaining <= Duration.zero) return const MetricReading(null);
+    return MetricReading(fmt(remaining));
+  }
+
+  /// Le facteur d'efficacité : puissance normalisée (à défaut moyenne)
+  /// rapportée au cardio moyen — des watts par battement, qui montent quand la
+  /// forme s'améliore à cardio égal. `null` sans les deux capteurs.
+  static MetricReading _efficiencyFactorReading(RideStats stats) {
+    final power = stats.normalizedPowerW ?? stats.avgPower;
+    final hr = stats.avgHeartRate;
+    if (power == null || hr == null || hr <= 0) return const MetricReading(null);
+    final value = power / hr;
+    return MetricReading(_decimal2(value), numericValue: value);
+  }
+
+  /// L'indice de variabilité : puissance normalisée sur puissance moyenne —
+  /// 1,00 pour un effort parfaitement lissé, davantage pour une sortie hachée.
+  /// `null` sans capteur de puissance.
+  static MetricReading _variabilityIndexReading(RideStats stats) {
+    final np = stats.normalizedPowerW;
+    final avg = stats.avgPower;
+    if (np == null || avg == null || avg <= 0) return const MetricReading(null);
+    final value = np / avg;
+    return MetricReading(_decimal2(value), numericValue: value);
+  }
+
+  static String _decimal2(double value) =>
+      value.toStringAsFixed(2).replaceAll('.', ',');
+
+  /// Le découplage aérobie, signe compris — `+4,2` se lit « la fatigue
+  /// commence », `-1,0` « encore frais ». Comme la pente, le signe porte
+  /// l'essentiel de l'information. `null` tant que la sortie est trop courte
+  /// (voir [RideStats.aerobicDecouplingPercent]).
+  static MetricReading _decouplingReading(RideStats stats) {
+    final value = stats.aerobicDecouplingPercent;
+    if (value == null) return const MetricReading(null);
+    final sign = value > 0 ? '+' : '';
+    return MetricReading('$sign${_decimal(value)}', numericValue: value);
   }
 
   /// Le braquet en positions — `2 × 7` — et non en dents.

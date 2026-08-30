@@ -5,20 +5,27 @@ import 'dart:io';
 import '../navigation/navigation_target.dart';
 import '../recording/gps_fix.dart';
 
-/// Un pas de la prévision : température (°C), vent (km/h) et précipitations
-/// (mm) sur l'heure, à l'heure UTC [time].
+/// Un pas de la prévision : température (°C), vent (km/h), direction d'où
+/// vient le vent ([windDirection], degrés, convention météo — 0 = du nord,
+/// 90 = de l'est) et précipitations (mm) sur l'heure, à l'heure UTC [time].
 class WeatherForecastStep {
   const WeatherForecastStep({
     required this.time,
     required this.temperature,
     required this.windSpeed,
     required this.precipitation,
+    this.windDirection,
   });
 
   final DateTime time;
   final double temperature;
   final double windSpeed;
   final double precipitation;
+
+  /// `null` pour une prévision servie par un site antérieur à ce champ — le
+  /// bloc « vent » se rabat alors sur la seule vitesse absolue, sans
+  /// projection sur le cap.
+  final double? windDirection;
 }
 
 /// La prévision renvoyée par notre proxy (`/api/weather_forecast`, voir
@@ -114,6 +121,7 @@ class WeatherForecastClient {
       if (time is! String || temperature is! num || windSpeed is! num || precipitation is! num) {
         continue;
       }
+      final windDirection = entry['wind_direction'];
 
       final parsedTime = DateTime.tryParse(time);
       if (parsedTime == null) continue;
@@ -123,6 +131,7 @@ class WeatherForecastClient {
         temperature: temperature.toDouble(),
         windSpeed: windSpeed.toDouble(),
         precipitation: precipitation.toDouble(),
+        windDirection: windDirection is num ? windDirection.toDouble() : null,
       ));
     }
     if (steps.isEmpty) return null;

@@ -60,6 +60,51 @@ class Sun {
     return _deg(math.asin(sinElevation.clamp(-1.0, 1.0)));
   }
 
+  /// L'instant (UTC) où le soleil passera pour la prochaine fois sous
+  /// [belowDeg], à partir de [from]. `null` s'il est déjà sous ce seuil (il
+  /// n'y a alors pas de « coucher à venir » à annoncer) ou s'il n'y repasse
+  /// pas dans les 24 h qui suivent (soleil de minuit).
+  ///
+  /// [belowDeg] par défaut -0,833° : le bord supérieur du disque solaire à
+  /// l'horizon, réfraction comprise — la définition usuelle du coucher.
+  ///
+  /// Balayage à pas de 10 minutes puis bissection à ~30 s : on cherche une
+  /// minute près, pas une seconde, et [elevationDeg] est bon marché.
+  static DateTime? nextSetUtc({
+    required DateTime from,
+    required double latitude,
+    required double longitude,
+    double belowDeg = -0.833,
+  }) {
+    final start = from.toUtc();
+    double elevationAt(DateTime t) =>
+        elevationDeg(utc: t, latitude: latitude, longitude: longitude);
+
+    if (elevationAt(start) <= belowDeg) return null;
+
+    const step = Duration(minutes: 10);
+    var lo = start;
+    for (var i = 1; i <= 24 * 6; i++) {
+      final hi = start.add(step * i);
+      if (elevationAt(hi) <= belowDeg) {
+        var a = lo;
+        var b = hi;
+        while (b.difference(a) > const Duration(seconds: 30)) {
+          final mid =
+              a.add(Duration(microseconds: b.difference(a).inMicroseconds ~/ 2));
+          if (elevationAt(mid) <= belowDeg) {
+            b = mid;
+          } else {
+            a = mid;
+          }
+        }
+        return b;
+      }
+      lo = hi;
+    }
+    return null;
+  }
+
   static double _julianDay(DateTime utc) =>
       utc.millisecondsSinceEpoch / 86400000.0 + 2440587.5;
 

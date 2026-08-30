@@ -25,6 +25,7 @@ import '../blocks/precip_forecast_block.dart';
 import '../blocks/precip_radar_block.dart';
 import '../blocks/weather_compact_block.dart';
 import '../blocks/weather_forecast_block.dart';
+import '../blocks/wind_block.dart';
 import '../blocks/radar_block.dart';
 import '../blocks/recording_block.dart';
 import '../blocks/route_block.dart';
@@ -424,6 +425,11 @@ class DashboardPage extends StatelessWidget {
             recorder: sources.recorder,
             color: weatherCompact.color,
             textColor: weatherCompact.textColor,
+          ),
+        final WindBlock wind => WindBlockView(
+            recorder: sources.recorder,
+            color: wind.color,
+            textColor: wind.textColor,
           ),
         final TrainingBudgetBlock budget => TrainingBudgetCard(
             budgets: sources.trainingBudget,
