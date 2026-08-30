@@ -36,6 +36,22 @@ class CompanionSettings {
     return presets.first;
   }
 
+  /// Le profil dont l'activité correspond à celle de l'itinéraire qu'on ouvre,
+  /// ou `null` — aucune activité à comparer, ou aucun profil marqué pour elle.
+  ///
+  /// Sert à présélectionner le profil quand on choisit un itinéraire dans
+  /// [NavigationPickerSheet] : ouvrir un tracé de rando fait partir le profil
+  /// rando, sans un geste de plus. Le premier qui correspond gagne — même règle
+  /// d'ordre que partout ailleurs dans ce document. Ne retombe jamais sur un
+  /// profil par défaut : sans correspondance, c'est au choix courant de rester.
+  RidePreset? presetForActivity(String? activity) {
+    if (activity == null || activity.isEmpty) return null;
+    for (final preset in presets) {
+      if (preset.activity == activity) return preset;
+    }
+    return null;
+  }
+
   static CompanionSettings parse(Object? raw) {
     if (raw is! Map) return fallback;
 

@@ -288,6 +288,19 @@ profil VTT pour une sortie route. La ligne ne paraît qu'à partir de deux profi
 rien à confirmer. Un profil sans carte choisi là replie aussitôt la feuille sur
 le seul « Démarrer la sortie ».
 
+**Choisir un itinéraire présélectionne le profil de sa pratique.** `RidePreset`
+porte une `activity` réglée sur le site (mêmes jetons que `RouteSummary.activity`
+— `cycling`, `mtb`, `hiking`) ; quand on tape un itinéraire dans
+`NavigationPickerSheet`, `CompanionSettings.presetForActivity` cherche le premier
+profil qui correspond et le sélectionne avant d'ouvrir la navigation. Silencieux,
+sans confirmation : c'est le même geste local que le sélecteur de profil, et la
+ligne en tête de la feuille vient de rappeler ce qui allait partir. Sans
+correspondance — tracé d'une pratique qu'aucun profil ne revendique, activité
+absente, `activity` inconnue de cette version — **le choix courant reste** : on
+ne retombe jamais sur un profil par défaut. Navigation libre, reprise et lien
+entrant n'ont pas d'itinéraire connu sous la main, donc pas de présélection :
+seule la liste « Mes itinéraires » la déclenche.
+
 Le nom de classe est `RidePreset` et non `RideProfile` : `RiderProfile` (les
 seuils du cycliste, `account/`) existe déjà, et une lettre d'écart entre deux
 concepts sans rapport se paierait à chaque relecture. Dans l'interface, le mot

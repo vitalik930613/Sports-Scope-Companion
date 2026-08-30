@@ -86,6 +86,25 @@ class _NavigationPickerSheetState extends State<NavigationPickerSheet> {
 
   void _pick(NavigationTarget target) => Navigator.of(context).pop(target);
 
+  /// Choisir un itinéraire de la liste : en plus de rendre la cible,
+  /// **présélectionne le profil dont l'activité correspond** à celle du tracé
+  /// (`RouteSummary.activity` ↔ `RidePreset.activity`) — on ouvre une rando, le
+  /// profil rando part avec. Silencieux et sans confirmation : c'est le même
+  /// geste local que le sélecteur de profil, et la ligne en tête de la feuille
+  /// vient de rappeler ce qui allait partir. Un tracé sans activité connue, ou
+  /// aucun profil marqué pour elle, laisse le choix courant tel quel.
+  Future<void> _pickRoute(RouteSummary route) async {
+    final settings = widget.settings;
+    if (settings != null) {
+      final match = settings.settings.presetForActivity(route.activity);
+      if (match != null && match.key != settings.preset.key) {
+        await settings.select(match.key);
+      }
+    }
+    if (!mounted) return;
+    _pick(NavigationTarget(shareToken: route.shareToken, label: route.name));
+  }
+
   /// Changer de profil sans quitter le sélecteur : la feuille de choix se pose
   /// par-dessus celle-ci, et au retour on se reconstruit — un profil sans carte
   /// choisi ici replie aussitôt la feuille sur le seul départ, un profil avec
@@ -328,9 +347,7 @@ class _NavigationPickerSheetState extends State<NavigationPickerSheet> {
         '${formatDistance(route.distanceM)} · '
         '${route.elevationGainM.round()} m D+',
       ),
-      onTap: () => _pick(
-        NavigationTarget(shareToken: route.shareToken, label: route.name),
-      ),
+      onTap: () => _pickRoute(route),
     );
   }
 

@@ -26,6 +26,7 @@ class RidePreset {
     required this.key,
     required this.name,
     this.description,
+    this.activity,
     this.icon,
     required this.pages,
     required this.bands,
@@ -90,6 +91,17 @@ class RidePreset {
   /// telle quelle dans le sélecteur ([NavigationPickerSheet]) — c'est son seul
   /// usage, elle ne pilote rien dans le tableau de bord.
   final String? description;
+
+  /// La pratique que ce profil sert — mêmes jetons que `RouteSummary.activity`
+  /// (`cycling`, `mtb`, `hiking`), ou une valeur qu'une version plus récente du
+  /// site ajouterait. `null` quand rien n'a été réglé.
+  ///
+  /// **Un seul usage : présélectionner le profil au moment où l'on choisit un
+  /// itinéraire** dans [NavigationPickerSheet] — on ouvre un tracé de rando, le
+  /// profil rando part avec, sans un geste de plus. Elle ne pilote rien dans le
+  /// tableau de bord lui-même, et une valeur inconnue de cette version ne fait
+  /// que ne correspondre à aucun itinéraire — jamais une erreur.
+  final String? activity;
 
   /// L'icône réglée sur le site pour repérer ce profil dans le sélecteur de
   /// départ ([choosePreset], le bouton d'accueil) — résolue depuis une clé de
@@ -269,6 +281,10 @@ class RidePreset {
       description:
           raw['description'] is String && (raw['description'] as String).trim().isNotEmpty
               ? (raw['description'] as String).trim()
+              : null,
+      activity:
+          raw['activity'] is String && (raw['activity'] as String).trim().isNotEmpty
+              ? (raw['activity'] as String).trim()
               : null,
       icon: companionIconFor(raw['icon'] is String ? raw['icon'] as String : null),
       // Un profil vidé de toutes ses pages retombe sur la page Effort intégrée :
