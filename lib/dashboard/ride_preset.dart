@@ -26,6 +26,7 @@ class RidePreset {
     required this.key,
     required this.name,
     this.description,
+    this.icon,
     required this.pages,
     required this.bands,
     this.notch = const [],
@@ -89,6 +90,14 @@ class RidePreset {
   /// telle quelle dans le sélecteur ([NavigationPickerSheet]) — c'est son seul
   /// usage, elle ne pilote rien dans le tableau de bord.
   final String? description;
+
+  /// L'icône réglée sur le site pour repérer ce profil dans le sélecteur de
+  /// départ ([choosePreset], le bouton d'accueil) — résolue depuis une clé de
+  /// [companionIcons], ou `null` quand rien n'a été réglé ou que la clé est
+  /// inconnue de cette version. L'appelant retombe alors sur le repère par
+  /// défaut (carte si [hasMap], maison sinon), jamais sur une icône manquante
+  /// — même tolérance et même résolution qu'[MetricBlock.icon].
+  final FaIconData? icon;
 
   /// Les pages, **dans l'ordre où on les fait défiler**. Au moins une, au plus
   /// une carte.
@@ -261,6 +270,7 @@ class RidePreset {
           raw['description'] is String && (raw['description'] as String).trim().isNotEmpty
               ? (raw['description'] as String).trim()
               : null,
+      icon: companionIconFor(raw['icon'] is String ? raw['icon'] as String : null),
       // Un profil vidé de toutes ses pages retombe sur la page Effort intégrée :
       // on ne monte jamais une coquille sans contenu, et un écran noir en pleine
       // sortie ne se diagnostique pas au guidon.

@@ -1001,11 +1001,7 @@ class _HomePageState extends State<HomePage> {
             FloatingActionButton.extended(
               heroTag: 'choosePreset',
               onPressed: _choosePreset,
-              icon: Icon(
-                widget.settings.preset.hasMap
-                    ? Icons.map_outlined
-                    : Icons.home_outlined,
-              ),
+              icon: presetLeading(widget.settings.preset),
               label: Text(widget.settings.preset.name),
             ),
             const SizedBox(width: 12),

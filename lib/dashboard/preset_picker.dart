@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'companion_settings_store.dart';
 import 'ride_preset.dart';
@@ -22,9 +23,7 @@ Future<void> choosePreset(
         children: [
           for (final preset in settings.settings.presets)
             ListTile(
-              leading: Icon(
-                preset.hasMap ? Icons.map_outlined : Icons.home_outlined,
-              ),
+              leading: presetLeading(preset),
               title: Text(preset.name),
               subtitle: presetSubtitle(context, preset),
               isThreeLine: preset.description != null,
@@ -38,6 +37,17 @@ Future<void> choosePreset(
 
   if (key == null) return;
   await settings.select(key);
+}
+
+/// Le repère d'un profil : l'icône réglée sur le site quand il y en a une,
+/// sinon le repère par défaut que le sélecteur a toujours montré — carte s'il
+/// a une carte, maison sinon. Partagé entre la feuille de choix et le bouton
+/// d'accueil ([_HomePage]), pour que le profil se reconnaisse au même dessin
+/// aux deux endroits.
+Widget presetLeading(RidePreset preset) {
+  final icon = preset.icon;
+  if (icon != null) return FaIcon(icon);
+  return Icon(preset.hasMap ? Icons.map_outlined : Icons.home_outlined);
 }
 
 /// Le sous-titre d'un profil dans le sélecteur.
