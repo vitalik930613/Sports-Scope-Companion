@@ -29,6 +29,7 @@ class NearbyPoisSheet extends StatefulWidget {
     required this.latestFix,
     required this.compassReading,
     required this.onFilter,
+    required this.onFocus,
   });
 
   final NearbyPoisNotifier notifier;
@@ -44,6 +45,10 @@ class NearbyPoisSheet extends StatefulWidget {
   /// Appelé avec la liste des clés de catégorie à afficher quand le cycliste
   /// coche/décoche une case.
   final void Function(List<String> visibleKeys) onFilter;
+
+  /// Appelé quand le cycliste tape un POI : la feuille se referme et la coquille
+  /// recadre la carte dessus.
+  final void Function(NearbyPoi poi) onFocus;
 
   @override
   State<NearbyPoisSheet> createState() => _NearbyPoisSheetState();
@@ -213,6 +218,10 @@ class _NearbyPoisSheetState extends State<NearbyPoisSheet> {
 
     return ListTile(
       dense: true,
+      onTap: () {
+        Navigator.of(context).pop();
+        widget.onFocus(row.poi);
+      },
       leading: FaIcon(row.category.icon, color: row.category.color, size: 18),
       title: Text(row.poi.name, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(row.category.label),

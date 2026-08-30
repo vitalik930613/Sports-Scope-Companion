@@ -306,6 +306,21 @@ class NavigationWebController {
     }
   }
 
+  /// Recadre la carte sur un POI et rouvre son popup (tap dans la feuille « POI à
+  /// proximité »). La page détache d'elle-même sa caméra — le bouton
+  /// « Recentrer » réapparaît pour reprendre le suivi.
+  ///
+  /// `?.` sur l'objet ET sur la méthode, même garantie que [setPoiFilter].
+  Future<void> focusPoi(double lat, double lng) async {
+    try {
+      await webView.runJavaScript(
+        'void (window.sportsScopeCompanion?.focusPoi?.($lat, $lng));',
+      );
+    } catch (e) {
+      debugPrint('[web] focus POI ignoré : $e');
+    }
+  }
+
   /// `?.` sur l'objet ET sur la méthode : un site plus ancien n'expose pas ces
   /// commandes, et l'appeler ne doit pas lever d'exception.
   Future<void> _offlineCommand(String method) async {

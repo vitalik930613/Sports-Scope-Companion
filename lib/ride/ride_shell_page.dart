@@ -1419,6 +1419,12 @@ class _RideShellPageState extends State<RideShellPage>
           _poiFilterOverride = visibleKeys;
           unawaited(_web?.setPoiFilter(visibleKeys) ?? Future.value());
         },
+        // La feuille s'est déjà refermée (Navigator.pop) : on recadre la page
+        // web sur le POI, puis on va sur la carte — c'est là que ça se voit.
+        onFocus: (poi) {
+          unawaited(_web?.focusPoi(poi.lat, poi.lng) ?? Future.value());
+          if (_mapPage case final page?) _goToPage(page);
+        },
       ),
     );
   }
