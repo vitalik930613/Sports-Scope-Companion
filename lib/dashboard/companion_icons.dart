@@ -48,6 +48,8 @@ const Map<String, FaIconData> companionIcons = {
   'fa-solid fa-route': FontAwesomeIcons.route,
   'fa-solid fa-bicycle': FontAwesomeIcons.bicycle,
   'fa-solid fa-map': FontAwesomeIcons.solidMap,
+  'fa-solid fa-person-running': FontAwesomeIcons.personRunning,
+  'fa-solid fa-person-hiking': FontAwesomeIcons.personHiking,
 };
 
 /// L'icône personnalisée d'un bloc, ou `null` si la clé est absente ou
