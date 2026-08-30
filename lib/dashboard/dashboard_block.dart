@@ -122,6 +122,8 @@ sealed class DashboardBlock {
       'weather_forecast' => WeatherForecastBlock(color: color, textColor: textColor),
       'weather_compact' => WeatherCompactBlock(color: color, textColor: textColor),
       'wind' => WindBlock(color: color, textColor: textColor),
+      'lap_delta' => LapDeltaBlock(color: color, textColor: textColor),
+      'fueling' => FuelingBlock.parse(raw),
       'training_budget' => TrainingBudgetBlock(
           mode: _modeOf(raw['mode'], TrainingBudgetMode.values),
           color: color,
@@ -1770,6 +1772,80 @@ class WindBlock extends DashboardBlock {
 
   @override
   int get hashCode => Object.hash(color, textColor);
+}
+
+/// Le tour en cours comparé au tour précédent de la série manuelle
+/// (`markLap`, série `default`) : l'écart de vitesse, de puissance et de
+/// cardio moyens — « je pousse plus fort ou moins fort que la fois d'avant ».
+///
+/// Ne lit **pas** un tour sélectionné, contrairement à [LapZonesBlock] et sa
+/// famille : il compare toujours les deux derniers tours ouverts, où qu'il
+/// soit posé. Sans bouton « Marquer un tour » pour ouvrir des tours, ou avant
+/// le deuxième tour, il affiche son état vide.
+///
+/// Un seul mode : trois lignes (`StatCard`), rien à faire varier selon la
+/// case.
+class LapDeltaBlock extends DashboardBlock {
+  const LapDeltaBlock({super.color, super.textColor});
+
+  @override
+  bool operator ==(Object other) =>
+      other is LapDeltaBlock &&
+      other.color == color &&
+      other.textColor == textColor;
+
+  @override
+  int get hashCode => Object.hash(color, textColor);
+}
+
+/// Un minuteur de ravitaillement : le compte à rebours avant la prochaine
+/// prise (cadence [FuelingBlock.intervalMin] depuis le départ, il se
+/// réenclenche seul), la cible de glucides par heure et le total conseillé
+/// depuis le début de la sortie.
+///
+/// Ne lit aucun capteur — seulement l'horloge de l'enregistreur. Les deux
+/// réglages sont portés par le bloc lui-même (pas un réglage de compte comme
+/// l'objectif d'entraînement) : c'est cosmétique et propre au profil.
+class FuelingBlock extends DashboardBlock {
+  const FuelingBlock({
+    required this.carbsPerHour,
+    required this.intervalMin,
+    super.color,
+    super.textColor,
+  });
+
+  /// Grammes de glucides par heure visés — le repère habituel va de 30
+  /// (sortie tranquille) à 90-120 (course, glucides multi-transporteurs).
+  final int carbsPerHour;
+
+  /// Minutes entre deux prises. Le compte à rebours repart de cette valeur à
+  /// chaque fois qu'il atteint zéro, calé sur le temps écoulé depuis le
+  /// départ.
+  final int intervalMin;
+
+  static const defaultCarbsPerHour = 60;
+  static const defaultIntervalMin = 20;
+
+  static FuelingBlock parse(Map<dynamic, dynamic> raw) => FuelingBlock(
+        carbsPerHour: _int(raw['carbs_g_per_h'], defaultCarbsPerHour),
+        intervalMin: _int(raw['interval_min'], defaultIntervalMin),
+        color: DashboardBlock._colorOf(raw, 'color'),
+        textColor: DashboardBlock._colorOf(raw, 'text_color'),
+      );
+
+  static int _int(Object? raw, int fallback) =>
+      raw is num && raw.isFinite ? raw.round() : fallback;
+
+  @override
+  bool operator ==(Object other) =>
+      other is FuelingBlock &&
+      other.carbsPerHour == carbsPerHour &&
+      other.intervalMin == intervalMin &&
+      other.color == color &&
+      other.textColor == textColor;
+
+  @override
+  int get hashCode => Object.hash(carbsPerHour, intervalMin, color, textColor);
 }
 
 /// L'heure courante.

@@ -7,6 +7,8 @@ import '../../recording/ride_lap.dart';
 import '../blocks/altitude_profile_block.dart';
 import '../blocks/averages_block.dart';
 import '../blocks/climb_profile_block.dart';
+import '../blocks/fueling_block.dart';
+import '../blocks/lap_delta_block.dart';
 import '../blocks/lap_summary_block.dart';
 import '../blocks/mark_lap_block.dart';
 import '../blocks/metric_trend_block.dart';
@@ -451,6 +453,21 @@ class _LapListBodyState extends State<LapListBody> {
           upcoming: status.upcoming,
           color: status.color,
           textColor: status.textColor,
+        ),
+      // Ni l'un ni l'autre ne lit le tour affiché : ils comparent les deux
+      // derniers tours ouverts / suivent l'horloge — comme `MarkLapBlock`
+      // au-dessus, `widget.sources.recorder` et pas `lap`.
+      final LapDeltaBlock lapDelta => LapDeltaCard(
+          recorder: widget.sources.recorder,
+          color: lapDelta.color,
+          textColor: lapDelta.textColor,
+        ),
+      final FuelingBlock fueling => FuelingCard(
+          recorder: widget.sources.recorder,
+          carbsPerHour: fueling.carbsPerHour,
+          intervalMin: fueling.intervalMin,
+          color: fueling.color,
+          textColor: fueling.textColor,
         ),
       _ => const SizedBox.shrink(),
     };
