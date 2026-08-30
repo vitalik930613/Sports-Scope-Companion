@@ -38,6 +38,7 @@ import 'climb_profile.dart';
 import 'di2_button_gesture_policy.dart';
 import 'native_turn_alerts.dart';
 import 'nav_state.dart';
+import 'nearby_pois.dart';
 import 'navigation_web_view.dart';
 import 'offline_map_state.dart';
 import 'pages/dashboard_page.dart';
@@ -60,6 +61,7 @@ import 'widgets/climb_profile_overlay.dart';
 import 'widgets/lap_started_toast.dart';
 import 'widgets/map_edge_handle.dart';
 import 'widgets/map_swipe_zone.dart';
+import 'widgets/nearby_pois_sheet.dart';
 import 'widgets/notch_band.dart';
 import 'widgets/radar_frame.dart';
 import 'widgets/radar_side_gauge.dart';
@@ -221,6 +223,18 @@ class _RideShellPageState extends State<RideShellPage>
   /// route_climbs.dart). Sans carte, personne ne l'alimente ni ne l'écoute —
   /// même sort que [_nav] et [_climbProfile].
   final _routeClimbs = RouteClimbsNotifier();
+
+  /// Les POI visibles autour du cycliste, poussés par la page à chaque
+  /// changement du jeu affiché (voir nearby_pois.dart, `companionPois` côté
+  /// site). Lus par la feuille « POI à proximité » ; sans carte, personne ne
+  /// les alimente ni ne les regarde.
+  final _nearbyPois = NearbyPoisNotifier();
+
+  /// Le filtre POI choisi en roulant depuis la feuille, à rejouer après un
+  /// rechargement de page (la page repart alors des préférences du compte).
+  /// `null` tant que le cycliste n'y a pas touché : on laisse alors la page
+  /// avec son filtre d'origine.
+  List<String>? _poiFilterOverride;
 
   /// Le profil d'altitude du tracé en cours, poussé une fois par tracé (voir
   /// route_profile.dart). Sans carte, personne ne l'alimente ni ne l'écoute —
@@ -1389,6 +1403,26 @@ class _RideShellPageState extends State<RideShellPage>
     _openTarget(const NavigationTarget.free());
   }
 
+  /// La feuille « POI à proximité » : les cases de catégories (elles pilotent la
+  /// carte via `setPoiFilter`) et la liste des POI visibles, triés et fléchés
+  /// depuis la position courante. Le pendant natif du panneau POI de la page
+  /// web, masqué dans l'appli.
+  Future<void> _showNearbyPois() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => NearbyPoisSheet(
+        notifier: _nearbyPois,
+        latestFix: () => widget.recorder.lastFix,
+        compassReading: _compassReading,
+        onFilter: (visibleKeys) {
+          _poiFilterOverride = visibleKeys;
+          unawaited(_web?.setPoiFilter(visibleKeys) ?? Future.value());
+        },
+      ),
+    );
+  }
+
   /// Démarrer (ou remplacer) un programme d'entraînement sans quitter la
   /// sortie — le cas soulevé en conception : décider en pleine route, se
   /// sentant en forme, de lancer un entraînement sans redémarrer la
@@ -1774,6 +1808,11 @@ class _RideShellPageState extends State<RideShellPage>
     switch (message['type']) {
       case 'ready':
         _web?.bridge.notifyPageReloaded();
+        // La page rechargée est repartie des préférences du compte : un filtre
+        // POI choisi en roulant serait perdu sans ce renvoi.
+        if (_poiFilterOverride case final keys?) {
+          unawaited(_web?.setPoiFilter(keys) ?? Future.value());
+        }
       case 'nav':
         _nav.accept(message);
         final climb = _nav.value?.climb;
@@ -1861,6 +1900,8 @@ class _RideShellPageState extends State<RideShellPage>
         _routeClimbs.accept(message);
       case 'route_profile':
         _routeProfile.accept(message);
+      case 'pois':
+        _nearbyPois.accept(message);
       case 'offline':
         _offline.accept(message);
         _maybeAutoDownloadOffline();
@@ -1944,6 +1985,7 @@ class _RideShellPageState extends State<RideShellPage>
     _upcomingClimb.dispose();
     _routeClimbs.dispose();
     _routeProfile.dispose();
+    _nearbyPois.dispose();
     _climbExpanded.dispose();
     _offline.dispose();
     _pages.dispose();
@@ -2473,6 +2515,8 @@ class _RideShellPageState extends State<RideShellPage>
       // calibrer : évalué à chaque rendu, donc juste dès que le capteur répond.
       onCalibratePower:
           powerCalibrationAvailable(widget.hub) ? _calibratePower : null,
+      // Sans carte, il n'y a ni POI ni filtre à piloter.
+      onNearbyPois: _preset.hasMap ? _showNearbyPois : null,
       // Sans rapport avec la carte : un programme d'entraînement se démarre
       // aussi bien sur home-trainer.
       onStartWorkout: _chooseWorkout,

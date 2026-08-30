@@ -286,6 +286,26 @@ class NavigationWebController {
   Future<void> cancelOfflineDownload() => _offlineCommand('offlineCancel');
   Future<void> removeOfflineDownload() => _offlineCommand('offlineRemove');
 
+  /// Fixe les catégories de POI affichées (feuille « POI à proximité »). Le
+  /// panneau qui pilote d'ordinaire ces cases (NavControlsPanel) est masqué dans
+  /// l'appli — voir `companionBridge.ts`, `setPoiFilter`.
+  ///
+  /// À rejouer après un rechargement de page : la page repart alors des
+  /// préférences du compte, un choix fait en roulant serait perdu sans ça (voir
+  /// `RideShellPage._poiFilterOverride`).
+  ///
+  /// `?.` sur l'objet ET sur la méthode : un site plus ancien n'expose pas cette
+  /// commande, l'appeler ne doit pas lever d'exception.
+  Future<void> setPoiFilter(List<String> visibleKeys) async {
+    try {
+      await webView.runJavaScript(
+        'void (window.sportsScopeCompanion?.setPoiFilter?.(${jsonEncode(visibleKeys)}));',
+      );
+    } catch (e) {
+      debugPrint('[web] filtre POI ignoré : $e');
+    }
+  }
+
   /// `?.` sur l'objet ET sur la méthode : un site plus ancien n'expose pas ces
   /// commandes, et l'appeler ne doit pas lever d'exception.
   Future<void> _offlineCommand(String method) async {

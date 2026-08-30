@@ -74,6 +74,7 @@ class DashboardPage extends StatelessWidget {
     this.offlineMap,
     this.onDownloadOffline,
     this.onCalibratePower,
+    this.onNearbyPois,
     this.debugClimbActive = false,
     this.onSimulateClimb,
     this.debugClimb,
@@ -162,6 +163,11 @@ class DashboardPage extends StatelessWidget {
   /// capteur connecté sait le faire — le menu ne montre pas une commande qui
   /// n'aurait que « non » à répondre.
   final VoidCallback? onCalibratePower;
+
+  /// Ouvrir la feuille « POI à proximité » — le pendant natif du panneau POI de
+  /// la page web, masqué dans l'appli. Nulle dans un profil sans carte : sans
+  /// page de navigation, il n'y a ni POI ni filtre à piloter.
+  final VoidCallback? onNearbyPois;
 
   /// Un col simulé est-il actuellement affiché par-dessus la sortie ?
   ///
@@ -700,6 +706,15 @@ class DashboardPage extends StatelessWidget {
                         : Icons.download_for_offline_outlined),
                 title: const Text('Carte hors ligne'),
                 subtitle: Text(_offlineSubtitle(offline)),
+              ),
+            ),
+          if (onNearbyPois case final openPois?)
+            PopupMenuItem(
+              value: openPois,
+              child: const ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.place_outlined),
+                title: Text('POI à proximité'),
               ),
             ),
           if (onCalibratePower case final calibrate?)
