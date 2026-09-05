@@ -724,7 +724,7 @@ enum MetricId {
   }) {
     final zone = value == null ? null : zoneOf(value);
     if (!asZone) {
-      return MetricReading(value?.toString(), zoneKey: zone?.key);
+      return MetricReading(value?.toString(), zoneKey: zone?.key, numericValue: value?.toDouble());
     }
     // Le seuil passe avant le capteur : sans zones, aucune mesure n'en donnera
     // jamais, et c'est ça qu'il faut dire — y compris quand le capteur est muet.
@@ -732,7 +732,10 @@ enum MetricId {
     // des deux causes que le cycliste puisse corriger, sur le site, avant de
     // partir.
     if (!hasZones) return MetricReading(threshold);
-    return MetricReading(zone?.key.toUpperCase(), zoneKey: zone?.key);
+    // `numericValue` porte la valeur brute même ici (l'affichage reste la
+    // lettre de zone) : c'est elle que trace le graphique de fond
+    // (`MetricView._paint`, `background_chart_window`), pas la zone.
+    return MetricReading(zone?.key.toUpperCase(), zoneKey: zone?.key, numericValue: value?.toDouble());
   }
 
   static double? _kmhValue(double? metresPerSecond) =>
