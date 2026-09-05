@@ -6,6 +6,7 @@ import '../../dashboard/block_density.dart';
 import '../../dashboard/dashboard_block.dart';
 import '../../dashboard/metric_id.dart';
 import '../../ui/zone_colors.dart';
+import '../widgets/background_chart_graph.dart';
 import 'block_card.dart';
 
 /// Une mesure du catalogue, dessinée selon sa disposition ([MetricLayout]) :
@@ -42,6 +43,9 @@ class MetricView extends StatelessWidget {
     this.gaugeThresholds,
     this.gaugeThresholdColors,
     this.gaugeThickness = GaugeThickness.normal,
+    this.backgroundChartWindowS,
+    this.backgroundChartColor,
+    this.backgroundChartLineColor = Colors.white,
     this.color,
     this.textColor,
     this.onTap,
@@ -88,6 +92,22 @@ class MetricView extends StatelessWidget {
 
   /// Épaisseur de la jauge — voir [MetricBlock.gaugeThickness].
   final GaugeThickness gaugeThickness;
+
+  /// Fenêtre du graphique de fond, en secondes — voir
+  /// [MetricBlock.backgroundChartWindowS]. `null` : pas de graphique,
+  /// comportement d'avant ce réglage. `0` : toute la sortie ; `> 0` : les N
+  /// dernières secondes.
+  final int? backgroundChartWindowS;
+
+  /// Couleur de l'aire sous la courbe quand la mesure n'a par ailleurs aucune
+  /// couleur de fond définie (ni zone, ni tranches) — voir
+  /// [MetricBlock.backgroundChartColor]. Sans effet sinon : la définition de
+  /// fond de la mesure prime toujours.
+  final Color? backgroundChartColor;
+
+  /// Couleur du tracé de la courbe, indépendante de [backgroundChartColor] —
+  /// voir [MetricBlock.backgroundChartLineColor]. Défaut blanc.
+  final Color backgroundChartLineColor;
 
   /// Fond réglé dans l'éditeur — voir [DashboardBlock.color]. Prioritaire sur
   /// [MetricReading.background]/la couleur de zone : c'est le seul moyen de
@@ -159,6 +179,17 @@ class MetricView extends StatelessWidget {
   }
 
   Widget _paint(MetricReading reading) {
+    final chartWindowS = backgroundChartWindowS;
+    // Échantillonnage générique : `RideRecorder` n'a pas accès à `sources`
+    // pour évaluer `MetricId.read` lui-même (voir la doc de
+    // `RideRecorder.trackFor`), c'est donc ici, à chaque reconstruction, que
+    // le point courant entre dans la piste de cette mesure. Rien tant que le
+    // graphique n'est pas réglé sur cette case : la plupart des mesures n'ont
+    // alors jamais de piste à tenir à jour.
+    if (chartWindowS != null && reading.numericValue != null) {
+      sources.recorder.trackFor(metric).add(sources.recorder.recorded.inSeconds, reading.numericValue);
+    }
+
     final background =
         color ?? _thresholdColorFor(reading.numericValue) ?? reading.background ?? zoneColorOf(reading.zoneKey);
     final ink = textColor ?? (background == null ? Colors.white : foregroundOf(background));
@@ -219,8 +250,33 @@ class MetricView extends StatelessWidget {
           children: children,
         );
 
+        // Fond scindé en deux seulement quand le graphique est actif : sans
+        // ce réglage, `background` reste inchangé et sert tel quel, aucune
+        // régression sur les cases existantes. Avec, la définition de fond
+        // de la mesure (zone/tranches) quitte le fond plat de la carte pour
+        // ne plus teinter que l'aire sous la courbe — sinon l'aire se
+        // fondrait dans un fond déjà de la même couleur et le graphique
+        // deviendrait invisible. `ink` reste calculé sur `background` dans
+        // les deux cas : le texte doit rester lisible sur la couleur
+        // sémantique habituelle de la carte, chartée ou non.
+        final plainBackground = color ?? BlockCard.background;
+        final chartAreaColor = _thresholdColorFor(reading.numericValue)
+            ?? reading.background
+            ?? zoneColorOf(reading.zoneKey)
+            ?? backgroundChartColor
+            ?? _defaultColor;
+
         return BlockSurface(
-          background: background,
+          background: chartWindowS == null ? background : plainBackground,
+          backgroundChart: chartWindowS == null
+              ? null
+              : BackgroundChartGraph(
+                  points: chartWindowS == 0
+                      ? sources.recorder.trackFor(metric).points
+                      : sources.recorder.trackFor(metric).recent(chartWindowS),
+                  areaColor: chartAreaColor,
+                  lineColor: backgroundChartLineColor,
+                ),
           child: SizedBox(
             width: width,
             height: height,

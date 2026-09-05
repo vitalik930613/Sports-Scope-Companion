@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../ble/samples.dart';
 import '../ble/sensor_hub.dart';
+import '../dashboard/metric_id.dart';
 import '../dashboard/ride_preset.dart';
 import '../drivetrain.dart';
 import '../phone/barometric_altitude.dart';
@@ -199,6 +200,16 @@ class RideRecorder extends ChangeNotifier {
   final heartRateTrack = RideMetricTrack();
   final powerTrack = RideMetricTrack();
 
+  /// La série temporelle d'une mesure quelconque, pour le graphique de fond
+  /// d'une case (`background_chart_window` — `MetricView._paint`). Créée à la
+  /// demande, une seule fois par mesure : la plupart des mesures ne portent
+  /// jamais ce réglage sur le profil courant, et n'ont donc jamais leur
+  /// propre piste — contrairement à [heartRateTrack]/[powerTrack], toujours
+  /// alimentées, celles-ci ne coûtent rien tant qu'aucune case ne les
+  /// réclame.
+  final Map<MetricId, RideMetricTrack> _metricTracks = {};
+  RideMetricTrack trackFor(MetricId id) => _metricTracks.putIfAbsent(id, RideMetricTrack.new);
+
   /// Les séries de tours de la sortie en cours, par clé de série. Plusieurs
   /// séries tournent en parallèle sans se fermer l'une l'autre — voir
   /// [markLap]. Connues dès [start] (le paramètre `lapSeries`) : une série
@@ -320,6 +331,7 @@ class RideRecorder extends ChangeNotifier {
     elevationTrack.reset();
     heartRateTrack.reset();
     powerTrack.reset();
+    _metricTracks.clear();
     _lastFix = null;
     _referenceFix = null;
     _sawMockFix = false;

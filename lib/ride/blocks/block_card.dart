@@ -295,6 +295,7 @@ class BlockSurface extends StatelessWidget {
     super.key,
     required this.child,
     this.background,
+    this.backgroundChart,
   });
 
   final Widget child;
@@ -302,10 +303,16 @@ class BlockSurface extends StatelessWidget {
   /// L'aplat de zone, quand la mesure en porte un. Le fond des cartes sinon.
   final Color? background;
 
+  /// Le graphique de fond d'une mesure (`MetricView`, `background_chart_window`)
+  /// — une couche entre le fond plat et [child], jamais un remplacement de
+  /// [background] : c'est justement lui qui doit rester visible partout où le
+  /// graphique laisse transparent. `null` pour tous les autres genres de
+  /// composants, et pour une mesure sans ce réglage — comportement inchangé.
+  final Widget? backgroundChart;
+
   @override
   Widget build(BuildContext context) => Container(
         width: double.infinity,
-        padding: EdgeInsets.all(BlockMetrics.natural.padding),
         decoration: BoxDecoration(
           color: background ?? BlockCard.background,
           borderRadius: BorderRadius.circular(12),
@@ -314,9 +321,31 @@ class BlockSurface extends StatelessWidget {
         // peut rester plus petite que ce que `ScaleToFit` sait encore réduire
         // (l'échelle a un plancher pratique), et ce qui déborderait malgré
         // tout est coupé au bord de sa propre carte plutôt que peint sur la
-        // voisine.
+        // voisine. Sert aussi à `backgroundChart` : le contour arrondi défini
+        // ici s'applique aussi à l'aire du graphique, posée bord à bord.
         clipBehavior: Clip.hardEdge,
-        child: ScaleToFit(child: child),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final content = Padding(
+              padding: EdgeInsets.all(BlockMetrics.natural.padding),
+              child: ScaleToFit(child: child),
+            );
+            final chart = backgroundChart;
+            // `Stack(fit: expand)` réclame des contraintes bornées, comme
+            // `SizedBox.expand` dans [ScaleToFit] : sans hauteur/largeur
+            // réelle (une page qui défile), le graphique de fond n'a de
+            // toute façon pas de « case » entière à remplir — on retombe
+            // silencieusement sur le rendu d'avant ce réglage plutôt que de
+            // lever.
+            if (chart == null || !constraints.hasBoundedHeight || !constraints.hasBoundedWidth) {
+              return content;
+            }
+            return Stack(
+              fit: StackFit.expand,
+              children: [Positioned.fill(child: chart), content],
+            );
+          },
+        ),
       );
 }
 

@@ -292,6 +292,9 @@ class MetricBlock extends DashboardBlock {
     this.gaugeThresholds,
     this.gaugeThresholdColors,
     this.gaugeThickness = GaugeThickness.normal,
+    this.backgroundChartWindowS,
+    this.backgroundChartColor,
+    this.backgroundChartLineColor = const Color(0xFFFFFFFF),
     super.color,
     super.textColor,
   });
@@ -368,6 +371,21 @@ class MetricBlock extends DashboardBlock {
   /// deux du même facteur, pour rester la même jauge à une épaisseur près.
   final GaugeThickness gaugeThickness;
 
+  /// Fenêtre du graphique de fond, en secondes — voir [MetricView]. `null` :
+  /// pas de graphique, comportement d'avant ce réglage. `0` : toute la
+  /// sortie ; `> 0` : les N dernières secondes. Vaut pour n'importe quelle
+  /// mesure, contrairement aux réglages de jauge ci-dessus.
+  final int? backgroundChartWindowS;
+
+  /// Couleur de l'aire sous la courbe, utilisée seulement quand la mesure
+  /// n'a par ailleurs aucune couleur de fond définie (ni zone, ni tranches)
+  /// — sinon cette dernière prime. `null` : repli fixe côté [MetricView].
+  final Color? backgroundChartColor;
+
+  /// Couleur du tracé de la courbe, indépendante de [backgroundChartColor].
+  /// `null` sur un document plus ancien retombe sur le blanc.
+  final Color backgroundChartLineColor;
+
   /// `null` si la mesure nommée n'existe pas dans cette version : mieux vaut
   /// une cellule vide qu'une case qui affiche un tiret pour toujours.
   static MetricBlock? parse(Map<dynamic, dynamic> raw) {
@@ -425,6 +443,10 @@ class MetricBlock extends DashboardBlock {
       gaugeThresholds: gaugeThresholds?.$1,
       gaugeThresholdColors: gaugeThresholds?.$2,
       gaugeThickness: GaugeThickness.fromKey(raw['gauge_thickness'] as String?),
+      backgroundChartWindowS: _toDouble(raw['background_chart_window'])?.round(),
+      backgroundChartColor: DashboardBlock._colorOf(raw, 'background_chart_color'),
+      backgroundChartLineColor:
+          DashboardBlock._colorOf(raw, 'background_chart_line_color') ?? const Color(0xFFFFFFFF),
       color: DashboardBlock._colorOf(raw, 'color'),
       textColor: DashboardBlock._colorOf(raw, 'text_color'),
     );
@@ -447,6 +469,9 @@ class MetricBlock extends DashboardBlock {
       listEquals(other.gaugeThresholds, gaugeThresholds) &&
       listEquals(other.gaugeThresholdColors, gaugeThresholdColors) &&
       other.gaugeThickness == gaugeThickness &&
+      other.backgroundChartWindowS == backgroundChartWindowS &&
+      other.backgroundChartColor == backgroundChartColor &&
+      other.backgroundChartLineColor == backgroundChartLineColor &&
       other.color == color &&
       other.textColor == textColor;
 
@@ -466,6 +491,9 @@ class MetricBlock extends DashboardBlock {
       Object.hashAll(gaugeThresholds ?? const []),
       Object.hashAll(gaugeThresholdColors ?? const []),
       gaugeThickness,
+      backgroundChartWindowS,
+      backgroundChartColor,
+      backgroundChartLineColor,
       color,
       textColor);
 }
