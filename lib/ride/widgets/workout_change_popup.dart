@@ -10,8 +10,8 @@ import '../../ui/zone_colors.dart';
 /// 2-3 s puis l'efface. Complète la pastille (`WorkoutBadge`, repère
 /// permanent) d'un front bien plus visible, le temps de lever les yeux.
 ///
-/// Pure information, comme `ReminderBanner`/`BatteryAlertBanner` : aucun
-/// geste à voler, rien à traverser pour continuer de rouler.
+/// Pure information, comme `ReminderBanner` : aucun geste à voler, rien à
+/// traverser pour continuer de rouler.
 class WorkoutChangePopup extends StatelessWidget {
   const WorkoutChangePopup({super.key, required this.milestone});
 

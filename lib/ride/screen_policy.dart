@@ -64,9 +64,10 @@ class ScreenPolicy {
     return _settle();
   }
 
-  /// Une batterie faible réveille l'écran, ou rend la veille (voir
-  /// `BatteryWakePolicy`, qui tient le délai) — même mécanique que
-  /// [radarAwake], canal séparé.
+  /// Une batterie faible réveille l'écran tant que son alerte plein écran
+  /// reste affichée, et rend la veille quand le cycliste l'écarte (voir
+  /// `RideShellPage._dismissBatteryAlert`) — pas de délai propre ici,
+  /// contrairement à [radarAwake], canal séparé.
   bool batteryAwake(bool awake) {
     _batteryAwake = awake;
     return _settle();

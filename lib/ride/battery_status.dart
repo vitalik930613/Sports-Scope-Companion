@@ -110,7 +110,16 @@ class BatteryStatusNotifier extends ValueNotifier<List<BatteryStatus>> {
     this.thresholdPercent = 20,
   }) : super(const []) {
     _devices.addListener(_resubscribe);
-    _resubscribe();
+    // Différé au prochain microtâche plutôt qu'appelé ici : le premier appel
+    // calcule déjà `low` pour un appareil connu qui serait déjà sous le seuil
+    // (rebranché avant le départ), mais l'appelant n'a pas encore eu la main
+    // pour poser son propre listener (voir `RideShellPage._battery.
+    // addListener(_onBatteryStatus)`, juste après le constructeur). Un appel
+    // synchrone ici notifierait donc une liste vide de listeners, et cet
+    // appareil déjà bas ne redirait jamais rien tant que son pourcentage ne
+    // change pas — silencieux toute la sortie. `scheduleMicrotask` s'exécute
+    // après le retour du constructeur, une fois l'appelant abonné.
+    scheduleMicrotask(_resubscribe);
     if (phone != null) {
       _phoneSub = phone.batteryPercent().listen((percent) {
         _phonePercent = percent;

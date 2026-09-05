@@ -6,12 +6,13 @@ import 'package:flutter/material.dart';
 /// le coupe.
 ///
 /// Un bandeau, pas une boîte à fermer : même raisonnement que
-/// `BatteryAlertBanner` — sur la route, une confirmation à traverser coûterait
+/// `ReminderBanner` — sur la route, une confirmation à traverser coûterait
 /// plus cher que l'information qu'elle protège. En bas de l'écran plutôt qu'en
 /// haut ou au centre : c'est là qu'on marque un tour (bandeau du bas, encoche),
 /// l'annonce paraît donc au plus près du geste qui vient de la déclencher, et
-/// ne recouvre ni la pastille de batterie ni le popup de changement de
-/// tronçon, tous deux ailleurs sur l'écran.
+/// ne recouvre pas le popup de changement de tronçon, ailleurs sur l'écran.
+/// (L'alerte batterie, elle, est plein écran et bloquante — voir
+/// `BatteryAlertPage` — les deux ne devraient donc pas se voir ensemble.)
 class LapStartedToast extends StatelessWidget {
   const LapStartedToast({super.key, required this.label});
 

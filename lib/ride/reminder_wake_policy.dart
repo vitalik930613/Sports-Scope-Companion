@@ -1,17 +1,20 @@
 /// Rallumer l'écran pour un rappel, et le rendre à la veille une fois le
 /// maintien passé.
 ///
-/// Même mécanique que `BatteryWakePolicy` — un franchissement ([trigger])
-/// suivi d'un maintien fixe, pas d'état continu à observer tic après tic —
-/// mais un canal séparé dans `ScreenPolicy` : un rappel ne pilote pas
-/// `radarWake` (réservé à `RadarWakePage`), il n'a d'ailleurs pas de page
-/// dédiée, seulement le toast (`ReminderBanner`) qui se pose par-dessus
-/// tout. Le maintien tient aussi le bandeau visible — voir
+/// Un franchissement ([trigger]) suivi d'un maintien fixe, pas d'état continu
+/// à observer tic après tic — mais un canal séparé dans `ScreenPolicy` : un
+/// rappel ne pilote pas `radarWake` (réservé à `RadarWakePage`), il n'a
+/// d'ailleurs pas de page dédiée, seulement le toast (`ReminderBanner`) qui
+/// se pose par-dessus tout. Le maintien tient aussi le bandeau visible — voir
 /// `RideShellPage._updateReminders`, qui vide `_reminderAlert` sur le même
 /// front que celui-ci referme la veille.
 ///
+/// L'alerte batterie n'a plus ce mécanisme depuis qu'elle se referme par
+/// geste, plein écran, plutôt qu'après un délai (voir
+/// `RideShellPage._dismissBatteryAlert`).
+///
 /// Classe pure, pilotée par une horloge passée en paramètre — même famille
-/// que `RadarWakePolicy`, `BatteryWakePolicy` et `AutoReturnPolicy`.
+/// que `RadarWakePolicy` et `AutoReturnPolicy`.
 class ReminderWakePolicy {
   ReminderWakePolicy({this.hold = const Duration(seconds: 10)});
 

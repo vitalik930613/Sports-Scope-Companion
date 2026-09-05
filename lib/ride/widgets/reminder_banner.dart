@@ -5,13 +5,13 @@ import '../../dashboard/ride_preset.dart';
 /// Le rappel périodique du profil — boire, manger, entamer une intervalle —
 /// montré en grand pendant que `ReminderWakePolicy` tient l'écran réveillé.
 ///
-/// Volontairement plus grand que `BatteryAlertBanner` : un pourcentage se lit
-/// d'un chiffre, un rappel est une phrase qu'on doit pouvoir lire d'un coup
-/// d'œil en roulant, sans s'arrêter dessus — c'est la « grosse alerte »
-/// demandée, pas une pastille de plus.
+/// Un rappel est une phrase qu'on doit pouvoir lire d'un coup d'œil en
+/// roulant, sans s'arrêter dessus — c'est la « grosse alerte » demandée, pas
+/// une pastille de plus.
 ///
-/// Pure information, comme `BatteryAlertBanner` : aucun geste à voler, rien
-/// à traverser pour continuer de rouler.
+/// Pure information : aucun geste à voler, rien à traverser pour continuer de
+/// rouler. Contrairement à l'alerte batterie (`BatteryAlertPage`), qui est
+/// plein écran et bloquante — un rappel n'a pas besoin d'être acquitté.
 class ReminderBanner extends StatelessWidget {
   const ReminderBanner({super.key, required this.reminders});
 

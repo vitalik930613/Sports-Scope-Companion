@@ -30,7 +30,6 @@ import '../ui/power_calibration_dialog.dart';
 import 'auto_return_policy.dart';
 import 'battery_alert_sound.dart';
 import 'battery_status.dart';
-import 'battery_wake_policy.dart';
 import 'blocks/bell_player.dart';
 import 'climb_alert_sound.dart';
 import 'climb_edge_policy.dart';
@@ -56,7 +55,7 @@ import 'screen_policy.dart';
 import 'turn_proximity.dart';
 import 'workout_cue_player.dart';
 import 'workout_policy.dart';
-import 'widgets/battery_alert_banner.dart';
+import 'widgets/battery_alert_page.dart';
 import 'widgets/climb_badge.dart';
 import 'widgets/compass_badge.dart';
 import 'widgets/climb_profile_overlay.dart';
@@ -601,14 +600,12 @@ class _RideShellPageState extends State<RideShellPage>
   final _batteryVoice = BatteryAlertVoice();
   final _batterySound = BatteryAlertPlayer();
 
-  /// Ce qui décide de rallumer l'écran pour une alerte batterie, et de le
-  /// rendre à la veille ensuite — impulsion plutôt qu'état continu, voir
-  /// `BatteryWakePolicy`.
-  late final BatteryWakePolicy _batteryWake;
-
-  /// Les appareils à nommer dans le bandeau d'alerte, vide = rien à montrer.
-  /// Partage l'horloge de [_batteryWake] : pas de minuteur séparé pour le
-  /// bandeau, voir `_updateBatteryWake`.
+  /// Les appareils à nommer dans l'alerte plein écran, vide = rien à
+  /// montrer. Contrairement au radar/aux rappels, pas de minuteur : elle
+  /// reste posée jusqu'à ce que le cycliste l'écarte (`_dismissBatteryAlert`)
+  /// — un tap dessus, ou un changement de page détourné par `_stepPage` —
+  /// plutôt que de s'effacer toute seule après un délai qu'il aurait pu
+  /// manquer.
   final _batteryAlert = ValueNotifier<List<BatteryStatus>>(const []);
 
   /// Les rappels périodiques du profil (boire, manger, entamer une
@@ -621,7 +618,8 @@ class _RideShellPageState extends State<RideShellPage>
 
   /// Ce qui décide de rallumer l'écran pour un rappel, et de le rendre à la
   /// veille ensuite — impulsion plutôt qu'état continu, même famille que
-  /// [_batteryWake].
+  /// [_radarWake]. Contrairement à l'alerte batterie, qui n'a plus de délai
+  /// propre depuis qu'elle se referme par geste (voir `_dismissBatteryAlert`).
   final _reminderWake = ReminderWakePolicy();
 
   /// Instance à part de [_buttonBell] et de tout `BellControl` posé sur le
@@ -714,7 +712,6 @@ class _RideShellPageState extends State<RideShellPage>
 
     _autoReturn = AutoReturnPolicy(mapPage: _mapPage);
     _radarWake = RadarWakePolicy(hold: _preset.radar.wakeHold);
-    _batteryWake = BatteryWakePolicy();
     _reminderPolicy = RideReminderPolicy(
       reminders: _preset.reminders,
       recorded: widget.recorder.recorded,
@@ -859,7 +856,6 @@ class _RideShellPageState extends State<RideShellPage>
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       _decideReturn();
       _updateRadarWake();
-      _updateBatteryWake();
       _updateReminders();
       _updateWorkout();
       _updateDebugClimb();
@@ -933,26 +929,27 @@ class _RideShellPageState extends State<RideShellPage>
     // tic — pas une cacophonie au démarrage.
     if (_preset.battery.sounds) _batterySound.play();
 
-    _batteryAlert.value = lowered;
-    // `trigger` rend vrai seulement sur le front veille → réveil : une
-    // deuxième alerte pendant le maintien prolonge le réveil sans le
-    // redemander à `ScreenPolicy`.
-    if (_batteryWake.trigger(DateTime.now())) {
-      _applyScreen(_screenPolicy.batteryAwake(true));
+    // Vient s'ajouter à l'alerte déjà affichée plutôt que de la remplacer :
+    // un deuxième capteur qui passe sous le seuil pendant que le cycliste
+    // lit encore le premier ne doit pas le faire disparaître de l'écran.
+    final byId = {for (final d in _batteryAlert.value) d.id: d};
+    for (final device in lowered) {
+      byId[device.id] = device;
     }
+    _batteryAlert.value = byId.values.toList(growable: false);
+
+    // L'alerte plein écran réveille l'écran tant qu'elle est affichée ; elle
+    // n'a pas de délai propre — `_dismissBatteryAlert` la referme, tapée ou
+    // via un changement de page (voir `_stepPage`).
+    _applyScreen(_screenPolicy.batteryAwake(true));
   }
 
-  /// Referme le réveil batterie une fois le maintien passé, et vide le
-  /// bandeau avec lui : les deux partagent la même horloge, pas de minuteur
-  /// séparé pour l'un ou l'autre.
-  void _updateBatteryWake() {
-    if (!mounted) return;
-
-    final changed = _batteryWake.update(DateTime.now());
-    if (!changed) return;
-
-    _applyScreen(_screenPolicy.batteryAwake(_batteryWake.awake));
+  /// Écarte l'alerte batterie plein écran — un tap dessus, ou un changement
+  /// de page détourné par `_stepPage` avant d'atteindre le défilement.
+  void _dismissBatteryAlert() {
+    if (_batteryAlert.value.isEmpty) return;
     _batteryAlert.value = const [];
+    _applyScreen(_screenPolicy.batteryAwake(false));
   }
 
   /// À chaque tic : un intervalle du profil vient-il de s'écouler, et faut-il
@@ -1669,11 +1666,17 @@ class _RideShellPageState extends State<RideShellPage>
   /// Avance ou recule d'une page, sans se soucier de laquelle : c'est ce que
   /// demandent les bandes du bord, qui parlent en gestes et pas en destinations.
   ///
-  /// Une page du menu ouverte absorbe le premier geste pour se refermer,
-  /// plutôt que de laisser le défilement changer sous elle : les bandes de
-  /// bord n'existent que sur la carte (donc menu forcément fermé), seul le
+  /// Une alerte batterie plein écran, ou une page du menu, absorbe le
+  /// premier geste pour se refermer plutôt que de laisser le défilement
+  /// changer sous elle — l'alerte d'abord, posée au-dessus de tout le reste
+  /// (voir la pile dans `build`). Les bandes de bord n'existent que sur la
+  /// carte (donc menu forcément fermé quand elles appellent ceci), seul le
   /// bouton Di2 peut appeler ceci pendant qu'une page du menu est affichée.
   void _stepPage(int direction) {
+    if (_batteryAlert.value.isNotEmpty) {
+      _dismissBatteryAlert();
+      return;
+    }
     if (_menuPage != null) {
       _setMenuPage(null);
       return;
@@ -2439,21 +2442,28 @@ class _RideShellPageState extends State<RideShellPage>
                       RadarFrame(severity: radar.severity),
                 ),
               ),
-            // Le bandeau de batterie faible : au sommet de la pile, visible
-            // quelle que soit la page (contrairement au réveil radar, qui n'a
-            // de sens que sous le voile de la carte) et même par-dessus le
-            // cadre d'alerte radar. Pure information, aucun geste à voler —
-            // voir `BatteryAlertBanner`.
+            // L'alerte de batterie faible, plein écran : au sommet de la
+            // pile, visible quelle que soit la page (contrairement au réveil
+            // radar, qui n'a de sens que sous le voile de la carte) et même
+            // par-dessus le cadre d'alerte radar. Contrairement aux autres
+            // alertes de la pile, elle capte le tap — c'est le geste qui la
+            // referme, voir `BatteryAlertPage`/`_dismissBatteryAlert`.
+            // Elle s'arrête au-dessus du bandeau du bas, qui garde ses
+            // mesures — même limite que `RadarWakePage`.
             Positioned(
               key: const ValueKey('alerte-batterie'),
-              top: 0,
               left: 0,
               right: 0,
+              top: 0,
+              bottom: bandHeight,
               child: ValueListenableBuilder<List<BatteryStatus>>(
                 valueListenable: _batteryAlert,
                 builder: (context, devices, _) => devices.isEmpty
                     ? const SizedBox.shrink()
-                    : BatteryAlertBanner(devices: devices),
+                    : BatteryAlertPage(
+                        devices: devices,
+                        onDismiss: _dismissBatteryAlert,
+                      ),
               ),
             ),
             // Le rappel périodique : au sommet de tout, batterie comprise —

@@ -13,8 +13,8 @@ import 'battery_status.dart';
 /// est juste absent, et une reconnexion sous le seuil doit donc ré-alerter.
 ///
 /// Rend la liste des appareils qui viennent de franchir le seuil **ce
-/// tic-ci**, pas un booléen : c'est elle qui nomme le bandeau visuel
-/// (`BatteryAlertBanner`), le son ne jouant qu'une fois même si plusieurs
+/// tic-ci**, pas un booléen : c'est elle qui nomme l’alerte plein écran
+/// (`BatteryAlertPage`), le son ne jouant qu'une fois même si plusieurs
 /// franchissent le seuil au même instant.
 class BatteryAlertVoice {
   final _low = <String, bool>{};
