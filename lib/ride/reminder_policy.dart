@@ -20,6 +20,14 @@ import '../dashboard/ride_preset.dart';
 /// minute et se tait ensuite. Le semis compte pour ça aussi : remonter la
 /// coquille après l'échéance ne le rejoue pas, le multiple courant est déjà
 /// au-delà de `count`.
+///
+/// Un rappel qui porte un `startAfterMinutes` ne commence à compter qu'une
+/// fois ce délai passé, et son tout premier déclenchement tombe pile à ce
+/// délai plutôt qu'un intervalle plus tard — « manger toutes les heures, à
+/// partir d'1h30 » sonne à 1h30, 2h30, 3h30… Sans délai (la valeur par
+/// défaut, `0`), le premier multiple reste `0` et [read] le passe déjà sous
+/// silence : ce cas particulier retombe donc exactement sur la formule
+/// d'avant ce réglage, plutôt que de sonner dès la première minute roulée.
 class RideReminderPolicy {
   RideReminderPolicy({
     required List<ReminderSpec> reminders,
@@ -35,7 +43,15 @@ class RideReminderPolicy {
 
   static int _multipleOf(ReminderSpec reminder, Duration recorded) {
     if (reminder.intervalMinutes <= 0) return 0;
-    return recorded.inMinutes ~/ reminder.intervalMinutes;
+    final elapsed = recorded.inMinutes - reminder.startAfterMinutes;
+    if (elapsed < 0) return 0;
+    final steps = elapsed ~/ reminder.intervalMinutes;
+    // Avec un délai, le pas `0` (pile au délai) doit sonner : décalé d'un cran
+    // pour ne jamais valoir `0`, seul multiple que [read] tait toujours. Sans
+    // délai, ce décalage disparaît et on retombe sur `steps` — la formule
+    // d'origine, dont le pas `0` (avant le premier intervalle) doit lui rester
+    // muet.
+    return reminder.startAfterMinutes > 0 ? steps + 1 : steps;
   }
 
   /// Les rappels dont l'intervalle vient de s'écouler **ce tic-ci**, dans

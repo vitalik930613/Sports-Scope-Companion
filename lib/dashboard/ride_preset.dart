@@ -1007,6 +1007,7 @@ class ReminderSpec {
     required this.message,
     this.sound = BellSound.bell,
     this.count,
+    this.startAfterMinutes = 0,
   });
 
   /// Au plus douze par profil : au-delà, l'appli défendrait sa propre borne
@@ -1036,6 +1037,13 @@ class ReminderSpec {
   /// `RideReminderPolicy`.
   final int? count;
 
+  /// Retarde le tout premier déclenchement — « manger toutes les heures, à
+  /// partir d'1h30 » se compose avec [intervalMinutes] à 60 et ceci à 90 : le
+  /// premier rappel tombe pile à 1h30, puis un toutes les heures. `0` (la
+  /// valeur par défaut) vaut le comportement d'avant ce réglage : le premier
+  /// rappel tombe au bout d'un intervalle. Voir `RideReminderPolicy`.
+  final int startAfterMinutes;
+
   /// Décode un rappel du document, ou `null` s'il n'en reste rien
   /// d'exploitable — un intervalle absent ou nul, ou un message vide, ne
   /// composerait qu'un toast muet ou qui ne sonne jamais.
@@ -1047,12 +1055,14 @@ class ReminderSpec {
     if (message is! String || message.trim().isEmpty) return null;
 
     final count = raw['count'];
+    final startAfter = raw['start_after_minutes'];
 
     return ReminderSpec(
       intervalMinutes: interval.round(),
       message: message.trim(),
       sound: _bellSoundOf(raw['sound'] is String ? raw['sound'] as String : ''),
       count: count is num && count > 0 ? count.round() : null,
+      startAfterMinutes: startAfter is num && startAfter > 0 ? startAfter.round() : 0,
     );
   }
 }
