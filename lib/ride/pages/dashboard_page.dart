@@ -309,6 +309,8 @@ class DashboardPage extends StatelessWidget {
             gaugeSegments: metric.gaugeSegments,
             gaugeColorMode: metric.gaugeColorMode,
             gaugeColor: metric.gaugeColor,
+            gaugeThresholds: metric.gaugeThresholds,
+            gaugeThresholdColors: metric.gaugeThresholdColors,
             gaugeThickness: metric.gaugeThickness,
             color: metric.color,
             textColor: metric.textColor,

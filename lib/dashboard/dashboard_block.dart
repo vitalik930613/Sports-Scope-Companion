@@ -219,8 +219,12 @@ sealed class DashboardBlock {
   /// (`companion_settings.rb`), qui garantit déjà cette forme, mais l'appli
   /// ne lui fait pas confiance pour autant (cf. tête de fichier : rien ici ne
   /// lève). `null` sur tout le reste, plutôt qu'une couleur devinée.
-  static Color? _colorOf(Map<dynamic, dynamic> raw, String key) {
-    final value = raw[key];
+  static Color? _colorOf(Map<dynamic, dynamic> raw, String key) => _colorFromString(raw[key]);
+
+  /// Le cœur de [_colorOf], partagé avec [_gaugeThresholdsOf] : une couleur
+  /// peut aussi venir d'un élément de liste (`gauge_threshold_colors`), pas
+  /// seulement d'une clé nommée.
+  static Color? _colorFromString(Object? value) {
     if (value is! String) return null;
 
     final match = RegExp(r'^#([0-9a-fA-F]{6})$').firstMatch(value);
@@ -228,6 +232,41 @@ sealed class DashboardBlock {
 
     return Color(0xFF000000 | int.parse(match.group(1)!, radix: 16));
   }
+}
+
+/// Les jalons et les couleurs d'une jauge à tranches personnalisées
+/// ([GaugeColorMode.thresholds]) — un jalon par frontière entre deux
+/// tranches, une couleur de plus que de jalons (la première tranche n'a pas
+/// de frontière basse, la dernière pas de frontière haute). `null` si l'un
+/// des deux tableaux manque, si les jalons ne sont pas strictement
+/// croissants, ou si les couleurs ne comptent pas le bon nombre : la jauge
+/// retombe alors sur le rendu par défaut plutôt que sur des tranches
+/// inventées — même contrat que
+/// `CompanionSettings#sanitize_gauge_thresholds` côté site, qui garantit déjà
+/// cette forme mais que l'appli ne présuppose pas pour autant (cf. tête de
+/// fichier : rien ici ne lève).
+(List<double>, List<Color>)? _gaugeThresholdsOf(Map<dynamic, dynamic> raw) {
+  final rawThresholds = raw['gauge_thresholds'];
+  final rawColors = raw['gauge_threshold_colors'];
+  if (rawThresholds is! List || rawColors is! List) return null;
+
+  final thresholds = <double>[];
+  for (final value in rawThresholds) {
+    final v = _toDouble(value);
+    if (v == null) return null;
+    if (thresholds.isNotEmpty && v <= thresholds.last) return null;
+    thresholds.add(v);
+  }
+  if (thresholds.isEmpty || rawColors.length != thresholds.length + 1) return null;
+
+  final colors = <Color>[];
+  for (final value in rawColors) {
+    final color = DashboardBlock._colorFromString(value);
+    if (color == null) return null;
+    colors.add(color);
+  }
+
+  return (thresholds, colors);
 }
 
 /// Le contrat commun des modes : une clé écrite à la main, pour que renommer
@@ -250,6 +289,8 @@ class MetricBlock extends DashboardBlock {
     this.gaugeSegments,
     this.gaugeColorMode,
     this.gaugeColor,
+    this.gaugeThresholds,
+    this.gaugeThresholdColors,
     this.gaugeThickness = GaugeThickness.normal,
     super.color,
     super.textColor,
@@ -314,6 +355,14 @@ class MetricBlock extends DashboardBlock {
   /// `null` : la couleur d'avant ce réglage (`#26A69A`).
   final Color? gaugeColor;
 
+  /// Jalons et couleurs d'une jauge à tranches personnalisées, réglés dans
+  /// l'éditeur — sans effet si [gaugeColorMode] n'est pas
+  /// [GaugeColorMode.thresholds]. Toujours ensemble ou ni l'un ni l'autre
+  /// (voir [_gaugeThresholdsOf]) : [gaugeThresholdColors] compte une couleur
+  /// de plus que [gaugeThresholds] n'a de jalons.
+  final List<double>? gaugeThresholds;
+  final List<Color>? gaugeThresholdColors;
+
   /// L'épaisseur de la jauge (tronçons ou barre continue) — voir
   /// [GaugeThickness]. Tronçons et barre continue s'y ajustent toutes les
   /// deux du même facteur, pour rester la même jauge à une épaisseur près.
@@ -343,6 +392,13 @@ class MetricBlock extends DashboardBlock {
     final gaugeSegmentsRaw = _toDouble(raw['gauge_segments']);
     final gaugeSegments = gaugeSegmentsRaw?.round().clamp(2, 10).toInt();
 
+    // `null` si les deux tableaux manquent ou sont mal formés — voir
+    // [_gaugeThresholdsOf]. C'est aussi ce qui fait retomber
+    // [gaugeColorMode] sur `null` (le rendu par défaut) plutôt que sur
+    // [GaugeColorMode.thresholds] sans rien à dessiner.
+    final gaugeThresholds =
+        raw['gauge_color_mode'] == 'thresholds' ? _gaugeThresholdsOf(raw) : null;
+
     return MetricBlock(
       metric: metric,
       layout: layout,
@@ -362,9 +418,12 @@ class MetricBlock extends DashboardBlock {
       gaugeColorMode: switch (raw['gauge_color_mode']) {
         'fixed' => GaugeColorMode.fixed,
         'auto' => GaugeColorMode.auto,
+        'thresholds' => gaugeThresholds != null ? GaugeColorMode.thresholds : null,
         _ => null,
       },
       gaugeColor: DashboardBlock._colorOf(raw, 'gauge_color'),
+      gaugeThresholds: gaugeThresholds?.$1,
+      gaugeThresholdColors: gaugeThresholds?.$2,
       gaugeThickness: GaugeThickness.fromKey(raw['gauge_thickness'] as String?),
       color: DashboardBlock._colorOf(raw, 'color'),
       textColor: DashboardBlock._colorOf(raw, 'text_color'),
@@ -385,6 +444,8 @@ class MetricBlock extends DashboardBlock {
       other.gaugeSegments == gaugeSegments &&
       other.gaugeColorMode == gaugeColorMode &&
       other.gaugeColor == gaugeColor &&
+      listEquals(other.gaugeThresholds, gaugeThresholds) &&
+      listEquals(other.gaugeThresholdColors, gaugeThresholdColors) &&
       other.gaugeThickness == gaugeThickness &&
       other.color == color &&
       other.textColor == textColor;
@@ -402,6 +463,8 @@ class MetricBlock extends DashboardBlock {
       gaugeSegments,
       gaugeColorMode,
       gaugeColor,
+      Object.hashAll(gaugeThresholds ?? const []),
+      Object.hashAll(gaugeThresholdColors ?? const []),
       gaugeThickness,
       color,
       textColor);
@@ -429,7 +492,13 @@ enum GaugeColorMode with BlockMode {
 
   /// La couleur de la zone du moment (`zoneColorOf`), comme la jauge de
   /// zones d'avant ce réglage.
-  auto('auto');
+  auto('auto'),
+
+  /// Une tranche par jalon choisi dans l'éditeur
+  /// ([MetricBlock.gaugeThresholds]/[MetricBlock.gaugeThresholdColors]) —
+  /// sans objet pour une jauge de zones, qui a déjà sa propre tranche
+  /// courante.
+  thresholds('thresholds');
 
   const GaugeColorMode(this.key);
 

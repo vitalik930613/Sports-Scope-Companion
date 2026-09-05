@@ -39,6 +39,8 @@ class MetricView extends StatelessWidget {
     this.gaugeSegments,
     this.gaugeColorMode,
     this.gaugeColor,
+    this.gaugeThresholds,
+    this.gaugeThresholdColors,
     this.gaugeThickness = GaugeThickness.normal,
     this.color,
     this.textColor,
@@ -77,6 +79,12 @@ class MetricView extends StatelessWidget {
   final int? gaugeSegments;
   final GaugeColorMode? gaugeColorMode;
   final Color? gaugeColor;
+
+  /// Jalons et couleurs d'une jauge à tranches personnalisées — voir
+  /// [MetricBlock.gaugeThresholds]/[MetricBlock.gaugeThresholdColors]. Sans
+  /// effet si [gaugeColorMode] n'est pas [GaugeColorMode.thresholds].
+  final List<double>? gaugeThresholds;
+  final List<Color>? gaugeThresholdColors;
 
   /// Épaisseur de la jauge — voir [MetricBlock.gaugeThickness].
   final GaugeThickness gaugeThickness;
@@ -151,7 +159,8 @@ class MetricView extends StatelessWidget {
   }
 
   Widget _paint(MetricReading reading) {
-    final background = color ?? reading.background ?? zoneColorOf(reading.zoneKey);
+    final background =
+        color ?? _thresholdColorFor(reading.numericValue) ?? reading.background ?? zoneColorOf(reading.zoneKey);
     final ink = textColor ?? (background == null ? Colors.white : foregroundOf(background));
     final valueSize = layout.gaugeRow != null ? _gaugeValueSize : _bigValueSize;
     final rows = _usedRows;
@@ -606,6 +615,18 @@ class MetricView extends StatelessWidget {
     required int naturalSegments,
     bool hasZone = false,
   }) {
+    // Sans objet pour une jauge de zones (cardio, puissance) : elle a déjà
+    // sa propre tranche courante, voir [MetricBlock.gaugeColorMode]. Une
+    // jauge à seuils personnalisés est toujours un ladder — jamais une barre
+    // continue ([GaugeFill.full] ignoré — voir [_thresholdGaugeBar]), et
+    // jamais son propre nombre de tronçons ([gaugeSegments] ignoré) : ni
+    // l'un ni l'autre n'a de sens sur des tranches d'étendues inégales,
+    // contrairement à un dégradé ou une couleur fixe.
+    if (colorMode == GaugeColorMode.thresholds && !hasZone) {
+      final bar = _thresholdGaugeBar(reading);
+      if (bar != null) return bar;
+    }
+
     final fallback = gaugeColor ?? _defaultColor;
     final auto = colorMode == GaugeColorMode.auto;
     final gradient = auto && !hasZone;
@@ -624,6 +645,58 @@ class MetricView extends StatelessWidget {
       isLit: (i) => i < lit,
       litColorAt: (i) => gradient ? _gaugeGradientColor((i + 1) / count) : color,
     );
+  }
+
+  /// La jauge à seuils personnalisés ([gaugeThresholds]/
+  /// [gaugeThresholdColors], réglés dans l'éditeur) : un palier par tranche,
+  /// chacun de sa propre couleur, allumés jusqu'à celle du moment — même
+  /// dessin en ladder que [_zoneGaugeBar], mais sur des jalons choisis à la
+  /// composition plutôt que sur les zones du cycliste. `null` sans les deux
+  /// tableaux (ou mal formés) : l'appelant retombe alors sur le rendu fixe
+  /// habituel plutôt que sur une tranche inventée.
+  Widget? _thresholdGaugeBar(MetricReading reading) {
+    final colors = gaugeThresholdColors;
+    final thresholds = gaugeThresholds;
+    if (colors == null || thresholds == null || colors.length != thresholds.length + 1) return null;
+
+    final index = _thresholdBandIndex(reading.numericValue, thresholds);
+    return _segments(
+      count: colors.length,
+      isLit: (i) => i <= index && index >= 0,
+      litColorAt: (i) => colors[i],
+    );
+  }
+
+  /// La couleur de la tranche dans laquelle tombe la valeur courante — voir
+  /// [_thresholdGaugeBar]. `null` sans les deux tableaux, ou tant que la
+  /// mesure ne porte pas de chiffre (capteur muet) : la carte garde alors son
+  /// fond sémantique habituel plutôt qu'une tranche devinée.
+  Color? _thresholdColorFor(double? value) {
+    final colors = gaugeThresholdColors;
+    final thresholds = gaugeThresholds;
+    if (colors == null || thresholds == null || colors.length != thresholds.length + 1) return null;
+
+    final index = _thresholdBandIndex(value, thresholds);
+    return index < 0 ? null : colors[index];
+  }
+
+  /// La tranche dans laquelle tombe [value] parmi [thresholds] (triés dans
+  /// l'ordre croissant, voir `DashboardBlock._gaugeThresholdsOf`) : combien
+  /// de jalons lui sont inférieurs ou égaux. `-1` sans chiffre — aucune
+  /// tranche n'est alors retenue, comme un index de zone inconnu
+  /// ([_zoneGaugeBar]). Même calcul que `gaugeThresholdBandIndex`
+  /// (`companionSettings.ts`).
+  static int _thresholdBandIndex(double? value, List<double> thresholds) {
+    if (value == null) return -1;
+    var index = 0;
+    for (final threshold in thresholds) {
+      if (value >= threshold) {
+        index++;
+      } else {
+        break;
+      }
+    }
+    return index;
   }
 
   /// Les paliers du dégradé — repris de [zoneColors] (z1 à z6) plutôt que
