@@ -2291,12 +2291,14 @@ class AltitudeProfileBlock extends DashboardBlock {
 class MetricTrendBlock extends DashboardBlock {
   const MetricTrendBlock({
     required this.source,
+    this.mode = MetricTrendMode.chart,
     this.windowS,
     super.color,
     super.textColor,
   });
 
   final ZonesSource source;
+  final MetricTrendMode mode;
 
   /// La fenêtre affichée, en secondes — réglée dans l'éditeur (`window_s`).
   /// `null` : toute la sortie, rééchantillonnée (`RideMetricTrack.points`).
@@ -2309,6 +2311,7 @@ class MetricTrendBlock extends DashboardBlock {
         'power' => ZonesSource.power,
         _ => ZonesSource.hr,
       },
+      mode: DashboardBlock._modeOf(raw['mode'], MetricTrendMode.values),
       windowS: rawWindow != null && rawWindow > 0 ? rawWindow.round() : null,
       color: DashboardBlock._colorOf(raw, 'color'),
       textColor: DashboardBlock._colorOf(raw, 'text_color'),
@@ -2319,12 +2322,30 @@ class MetricTrendBlock extends DashboardBlock {
   bool operator ==(Object other) =>
       other is MetricTrendBlock &&
       other.source == source &&
+      other.mode == mode &&
       other.windowS == windowS &&
       other.color == color &&
       other.textColor == textColor;
 
   @override
-  int get hashCode => Object.hash(source, windowS, color, textColor);
+  int get hashCode => Object.hash(source, mode, windowS, color, textColor);
+}
+
+enum MetricTrendMode with BlockMode {
+  /// Le dessin d'origine : un titre au-dessus de la courbe. Mode par défaut,
+  /// celui d'un document plus ancien que ce réglage.
+  chart('chart'),
+
+  /// Sans titre, la courbe seule remplit toute la case — juste une icône
+  /// (cœur ou éclair, selon [MetricTrendBlock.source]/[LapMetricTrendBlock.source])
+  /// en haut à gauche pour distinguer cardio et puissance sans un mot. Pensé
+  /// pour une case qui doit gagner de la place.
+  compact('compact');
+
+  const MetricTrendMode(this.key);
+
+  @override
+  final String key;
 }
 
 /// La même tendance, mais bornée au tour sélectionné plutôt qu'à la sortie
@@ -2335,17 +2356,20 @@ class MetricTrendBlock extends DashboardBlock {
 class LapMetricTrendBlock extends DashboardBlock {
   const LapMetricTrendBlock({
     required this.source,
+    this.mode = MetricTrendMode.chart,
     super.color,
     super.textColor,
   });
 
   final ZonesSource source;
+  final MetricTrendMode mode;
 
   static LapMetricTrendBlock parse(Map<dynamic, dynamic> raw) => LapMetricTrendBlock(
         source: switch (raw['source']) {
           'power' => ZonesSource.power,
           _ => ZonesSource.hr,
         },
+        mode: DashboardBlock._modeOf(raw['mode'], MetricTrendMode.values),
         color: DashboardBlock._colorOf(raw, 'color'),
         textColor: DashboardBlock._colorOf(raw, 'text_color'),
       );
@@ -2354,11 +2378,12 @@ class LapMetricTrendBlock extends DashboardBlock {
   bool operator ==(Object other) =>
       other is LapMetricTrendBlock &&
       other.source == source &&
+      other.mode == mode &&
       other.color == color &&
       other.textColor == textColor;
 
   @override
-  int get hashCode => Object.hash(source, color, textColor);
+  int get hashCode => Object.hash(source, mode, color, textColor);
 }
 
 /// Une cellule volontairement vide.

@@ -506,6 +506,7 @@ class DashboardPage extends StatelessWidget {
           ),
         final MetricTrendBlock trend => MetricTrendCard(
             source: trend.source,
+            mode: trend.mode,
             recorder: sources.recorder,
             riderProfile: sources.riderProfile,
             windowS: trend.windowS,

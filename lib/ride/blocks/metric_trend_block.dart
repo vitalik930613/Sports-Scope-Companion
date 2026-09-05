@@ -37,6 +37,7 @@ class MetricTrendCard extends StatelessWidget {
     required this.source,
     required this.recorder,
     required this.riderProfile,
+    this.mode = MetricTrendMode.chart,
     this.windowS,
     this.trackOverride,
     this.color,
@@ -46,6 +47,7 @@ class MetricTrendCard extends StatelessWidget {
   final ZonesSource source;
   final RideRecorder recorder;
   final RiderProfileStore riderProfile;
+  final MetricTrendMode mode;
 
   /// `null` : toute la sortie ([RideMetricTrack.points], rééchantillonnée).
   /// Sinon, les `windowS` dernières secondes enregistrées
@@ -110,6 +112,8 @@ class MetricTrendCard extends StatelessWidget {
     final profile = riderProfile.profile;
     return _MetricTrendChartCard(
       title: title,
+      icon: hr ? Icons.favorite : Icons.bolt,
+      mode: mode,
       points: points,
       zones: hr ? profile.hrZones : profile.powerZones,
       color: color,
@@ -121,9 +125,17 @@ class MetricTrendCard extends StatelessWidget {
 /// Le graphique seul, plein cadre — même patron que `_PowerCurveChartCard`
 /// (`power_curve_block.dart`) et `ElevationProfileSurface` : un graphique n'a
 /// pas de forme propre, il doit toujours remplir la largeur de sa case.
+///
+/// [MetricTrendMode.compact] retire le titre — [header] ne s'en sert plus
+/// que pour construire le graphique par-dessus toute la case — et pose
+/// [icon] (cœur ou éclair) en surimpression, en haut à gauche : c'est ce qui
+/// dit « cardio » ou « puissance » à la place du mot qu'on vient de gagner en
+/// place.
 class _MetricTrendChartCard extends StatelessWidget {
   const _MetricTrendChartCard({
     required this.title,
+    required this.icon,
+    required this.mode,
     required this.points,
     required this.zones,
     this.color,
@@ -131,6 +143,8 @@ class _MetricTrendChartCard extends StatelessWidget {
   });
 
   final String title;
+  final IconData icon;
+  final MetricTrendMode mode;
   final List<MetricTrackPoint> points;
   final List<TrainingZone> zones;
   final Color? color;
@@ -147,18 +161,20 @@ class _MetricTrendChartCard extends StatelessWidget {
   Widget build(BuildContext context) {
     const metrics = BlockMetrics.natural;
     final ink = textColor ?? (color == null ? Colors.white : foregroundOf(color!));
-
-    final header = Text(
-      title.toUpperCase(),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: TextStyle(color: ink.withValues(alpha: 0.7), fontSize: metrics.titleSize),
-    );
+    final compact = mode == MetricTrendMode.compact;
 
     final chart = ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: MetricTrendGraph(points: points, zones: zones),
     );
+
+    Widget chartWithIcon(Widget child) => Stack(
+          fit: StackFit.expand,
+          children: [
+            child,
+            Positioned(top: 4, left: 4, child: _MetricTrendIconBadge(icon: icon)),
+          ],
+        );
 
     return Container(
       width: double.infinity,
@@ -173,6 +189,19 @@ class _MetricTrendChartCard extends StatelessWidget {
       clipBehavior: Clip.hardEdge,
       child: LayoutBuilder(
         builder: (context, constraints) {
+          if (compact) {
+            return constraints.hasBoundedHeight
+                ? chartWithIcon(chart)
+                : SizedBox(height: _chartHeight, child: chartWithIcon(chart));
+          }
+
+          final header = Text(
+            title.toUpperCase(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: ink.withValues(alpha: 0.7), fontSize: metrics.titleSize),
+          );
+
           if (!constraints.hasBoundedHeight) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -210,4 +239,23 @@ class _MetricTrendChartCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// L'icône seule (cœur ou éclair) du mode compact, sur un pavé sombre pour
+/// rester lisible quelle que soit la couleur de zone sous elle — même parade
+/// que le halo des libellés d'échelle de `MetricTrendGraph`.
+class _MetricTrendIconBadge extends StatelessWidget {
+  const _MetricTrendIconBadge({required this.icon});
+
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.45),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Icon(icon, size: 14, color: Colors.white),
+      );
 }

@@ -411,6 +411,7 @@ class _LapListBodyState extends State<LapListBody> {
       // juste en dessous, est son pendant recadré.
       final MetricTrendBlock trend => MetricTrendCard(
           source: trend.source,
+          mode: trend.mode,
           recorder: widget.sources.recorder,
           riderProfile: widget.sources.riderProfile,
           windowS: trend.windowS,
@@ -423,6 +424,7 @@ class _LapListBodyState extends State<LapListBody> {
       // `ZonesCard`/`AveragesCard` ci-dessus.
       final LapMetricTrendBlock trend => MetricTrendCard(
           source: trend.source,
+          mode: trend.mode,
           recorder: widget.sources.recorder,
           riderProfile: widget.sources.riderProfile,
           trackOverride: trend.source == ZonesSource.hr ? lap.heartRateTrack : lap.powerTrack,
