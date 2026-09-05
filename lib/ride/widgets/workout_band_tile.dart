@@ -36,6 +36,7 @@ class WorkoutBandTile extends StatelessWidget {
     required this.recorder,
     required this.mode,
     this.upcoming = false,
+    this.color,
     this.altBackground,
   });
 
@@ -47,6 +48,11 @@ class WorkoutBandTile extends StatelessWidget {
   /// plutôt que le tronçon en cours — même bascule que sur
   /// [WorkoutSegmentCard]/[WorkoutRemainingCard], voir [BandWorkoutSlot.upcoming].
   final bool upcoming;
+
+  /// Fond réglé dans l'éditeur pour cette case (`BandSlot.color`) — sous la
+  /// couleur du tronçon (une donnée), mais au-dessus de l'alternance — voir
+  /// [BandMetricTile.color].
+  final Color? color;
 
   /// Le noir ou l'anthracite de l'alternance, quand le tronçon ne porte pas
   /// de couleur propre — voir [BandMetricTile.altBackground].
@@ -67,7 +73,7 @@ class WorkoutBandTile extends StatelessWidget {
               ? (upcoming ? program.nextSegmentDurationAt(elapsed) : program.remainingAt(elapsed))
               : null;
 
-          final zoneColor = milestone?.color;
+          final zoneColor = milestone?.color ?? color;
           final foreground =
               milestone?.textColor ?? (zoneColor == null ? Colors.white : foregroundOf(zoneColor));
 

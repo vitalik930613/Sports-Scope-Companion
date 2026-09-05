@@ -18,6 +18,7 @@ class BandMetricTile extends StatelessWidget {
     required this.label,
     this.zoneKey,
     this.background,
+    this.color,
     this.altBackground,
     this.labelFirst = false,
   });
@@ -40,13 +41,18 @@ class BandMetricTile extends StatelessWidget {
   /// [MetricView] : elle l'emporte sur l'alternance noir/anthracite.
   final Color? background;
 
+  /// Fond réglé dans l'éditeur pour cette case (`BandSlot.color`) — sous la
+  /// couleur de zone/mesure ([background]/[zoneKey]), qui reste la donnée,
+  /// mais au-dessus de l'alternance ([altBackground]).
+  final Color? color;
+
   /// Le noir ou l'anthracite de l'alternance, quand la case ne porte pas de
   /// zone — c'est elle qui recule dès qu'une zone donne une vraie couleur.
   final Color? altBackground;
 
   @override
   Widget build(BuildContext context) {
-    final zoneColor = background ?? zoneColorOf(zoneKey);
+    final zoneColor = background ?? zoneColorOf(zoneKey) ?? color;
     final foreground = zoneColor == null ? Colors.white : foregroundOf(zoneColor);
 
     final valueText = FittedBox(
