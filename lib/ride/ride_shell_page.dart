@@ -68,6 +68,7 @@ import 'widgets/notch_band.dart';
 import 'widgets/radar_frame.dart';
 import 'widgets/radar_side_gauge.dart';
 import 'widgets/radar_wake_page.dart';
+import 'widgets/recording_paused_page.dart';
 import 'widgets/reminder_banner.dart';
 import 'widgets/ride_bottom_band.dart';
 import 'widgets/ride_button_flash.dart';
@@ -2478,6 +2479,29 @@ class _RideShellPageState extends State<RideShellPage>
                       RadarFrame(severity: radar.severity),
                 ),
               ),
+            // L'enregistrement en pause, plein écran : par-dessus la carte et
+            // les pages de données — c'est la seule façon de perdre la fin
+            // d'une sortie sans s'en apercevoir (voir `_ResumeBanner`,
+            // `blocks/recording_block.dart`, qui dit la même chose mais
+            // seulement sur la page qui porte le bloc d'enregistrement). Sous
+            // l'alerte batterie et le rappel : une pause n'a rien d'urgent à
+            // leur céder, et les deux restent des informations à part.
+            // Comme `BatteryAlertPage`, capte le tap — c'est le geste qui
+            // reprend — et s'arrête au-dessus du bandeau du bas, qui garde
+            // ses commandes (dont, le cas échéant, le bouton de reprise).
+            Positioned(
+              key: const ValueKey('enregistrement-en-pause'),
+              left: 0,
+              right: 0,
+              top: 0,
+              bottom: bandHeight,
+              child: ListenableBuilder(
+                listenable: widget.recorder,
+                builder: (context, _) => widget.recorder.state == RecorderState.paused
+                    ? RecordingPausedPage(onResume: widget.recorder.resume)
+                    : const SizedBox.shrink(),
+              ),
+            ),
             // L'alerte de batterie faible, plein écran : au sommet de la
             // pile, visible quelle que soit la page (contrairement au réveil
             // radar, qui n'a de sens que sous le voile de la carte) et même
