@@ -2479,16 +2479,18 @@ class _RideShellPageState extends State<RideShellPage>
                       RadarFrame(severity: radar.severity),
                 ),
               ),
-            // L'enregistrement en pause, plein écran : par-dessus la carte et
-            // les pages de données — c'est la seule façon de perdre la fin
-            // d'une sortie sans s'en apercevoir (voir `_ResumeBanner`,
+            // L'enregistrement en pause, par-dessus la carte et les pages de
+            // données — c'est la seule façon de perdre la fin d'une sortie
+            // sans s'en apercevoir (voir `_ResumeBanner`,
             // `blocks/recording_block.dart`, qui dit la même chose mais
             // seulement sur la page qui porte le bloc d'enregistrement). Sous
             // l'alerte batterie et le rappel : une pause n'a rien d'urgent à
             // leur céder, et les deux restent des informations à part.
-            // Comme `BatteryAlertPage`, capte le tap — c'est le geste qui
-            // reprend — et s'arrête au-dessus du bandeau du bas, qui garde
-            // ses commandes (dont, le cas échéant, le bouton de reprise).
+            // Contrairement à `BatteryAlertPage`, ne capte pas le tap — c'est
+            // un pictogramme en transparence, pas un voile, et la carte comme
+            // les pages restent utilisables dessous. S'arrête au-dessus du
+            // bandeau du bas, qui garde ses commandes (dont le bouton de
+            // reprise).
             Positioned(
               key: const ValueKey('enregistrement-en-pause'),
               left: 0,
@@ -2498,7 +2500,7 @@ class _RideShellPageState extends State<RideShellPage>
               child: ListenableBuilder(
                 listenable: widget.recorder,
                 builder: (context, _) => widget.recorder.state == RecorderState.paused
-                    ? RecordingPausedPage(onResume: widget.recorder.resume)
+                    ? const RecordingPausedPage()
                     : const SizedBox.shrink(),
               ),
             ),
