@@ -53,15 +53,22 @@ class BatteryAlertPage extends StatelessWidget {
                   for (final device in devices)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Text(
-                        '${device.label} · ${device.percent} %',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 30,
-                          height: 1.2,
-                        ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(device.icon, color: Colors.white, size: 26),
+                          const SizedBox(width: 10),
+                          Text(
+                            '${device.label} · ${device.percent} %',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 30,
+                              height: 1.2,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   const SizedBox(height: 28),
