@@ -46,6 +46,7 @@ class MetricView extends StatelessWidget {
     this.backgroundChartWindowS,
     this.backgroundChartColor,
     this.backgroundChartLineColor = Colors.white,
+    this.computeWindowS,
     this.color,
     this.textColor,
     this.onTap,
@@ -109,6 +110,11 @@ class MetricView extends StatelessWidget {
   /// voir [MetricBlock.backgroundChartLineColor]. Défaut blanc.
   final Color backgroundChartLineColor;
 
+  /// Fenêtre du calcul d'une mesure moyenne/maximum, en secondes — voir
+  /// [MetricBlock.computeWindowS]. Passé tel quel à [MetricId.read], qui
+  /// l'ignore silencieusement sur toute autre mesure.
+  final int? computeWindowS;
+
   /// Fond réglé dans l'éditeur — voir [DashboardBlock.color]. Prioritaire sur
   /// [MetricReading.background]/la couleur de zone : c'est le seul moyen de
   /// choisir un fond différent de celui, sémantique, que la mesure porte
@@ -153,7 +159,8 @@ class MetricView extends StatelessWidget {
         ...metric.dependencies(sources),
         for (final slot in layout.secondary) ...slot.metric.dependencies(sources),
       ]),
-      builder: (context, _) => _paint(metric.read(sources, format: format)),
+      builder: (context, _) =>
+          _paint(metric.read(sources, format: format, computeWindowS: computeWindowS)),
     );
 
     if (onTap == null) return content;
@@ -199,7 +206,8 @@ class MetricView extends StatelessWidget {
     // slots peuvent porter la même mesure (rare mais pas interdit), et
     // `MetricId.read` n'est pas gratuit (zones, formatage).
     final secondaryReadings = {
-      for (final slot in layout.secondary) slot: slot.metric.read(sources, format: format),
+      for (final slot in layout.secondary)
+        slot: slot.metric.read(sources, format: format, computeWindowS: slot.computeWindowS),
     };
 
     return LayoutBuilder(

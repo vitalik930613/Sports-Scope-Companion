@@ -7,6 +7,7 @@ import '../ble/sensor_hub.dart';
 import '../drivetrain.dart';
 import '../lighting/sun.dart';
 import '../recording/ride_lap.dart';
+import '../recording/ride_metric_track.dart';
 import '../recording/ride_recorder.dart';
 import '../recording/ride_stats.dart';
 import '../ride/climb_profile.dart';
@@ -282,9 +283,17 @@ enum MetricId {
   /// `null` veut dire « pas de mesure », ce que le rendu écrit **`—` et jamais
   /// `0`** : un zéro se lit comme une mesure, et un capteur muet ne mesure pas
   /// zéro, il ne mesure rien.
+  ///
+  /// [computeWindowS] ne vaut que pour les mesures moyenne/maximum du
+  /// catalogue ([MetricBlock.computeWindowS]) — `null`/`0` : le cumul de toute
+  /// la sortie (ou du tour, voir ci-dessous), comme avant ce réglage ; `> 0` :
+  /// les N dernières secondes. Silencieusement ignoré par toute autre mesure,
+  /// et par une mesure moyenne/maximum lue sur un tour déjà terminé
+  /// ([sources.lap]) — voir [_effectiveWindowS].
   MetricReading read(
     MetricSources sources, {
     DurationFormat format = DurationFormat.hm,
+    int? computeWindowS,
   }) {
     // Une page Tours pose ce même catalogue sur le tour choisi plutôt que sur
     // la sortie entière (`LapListBody._block`) : `sources.lap` porte alors ce
@@ -331,14 +340,8 @@ enum MetricId {
       MetricId.speed => _speedReading(sources),
       // Moyenne en roulant, pas la moyenne des échantillons bruts : sans ça,
       // un feu rouge dilue la case pendant que la sortie continue.
-      MetricId.speedAvg => MetricReading(
-          _kmh(_movingAvgSpeedMps(stats)),
-          numericValue: _kmhValue(_movingAvgSpeedMps(stats)),
-        ),
-      MetricId.speedMax => MetricReading(
-          _kmh(stats.maxSpeedMps),
-          numericValue: _kmhValue(stats.maxSpeedMps),
-        ),
+      MetricId.speedAvg => _speedAvgReading(sources, stats, computeWindowS),
+      MetricId.speedMax => _speedMaxReading(sources, stats, computeWindowS),
       MetricId.speedMin => MetricReading(
           _kmh(stats.minSpeedMps),
           numericValue: _kmhValue(stats.minSpeedMps),
@@ -359,16 +362,8 @@ enum MetricId {
           threshold: 'LTHR ?',
           hasZones: profile.hasHrZones,
         ),
-      MetricId.hrAvg => MetricReading(
-          stats.avgHeartRate?.toString(),
-          numericValue: stats.avgHeartRate?.toDouble(),
-          zoneKey: stats.avgHeartRate == null ? null : profile.hrZoneFor(stats.avgHeartRate!)?.key,
-        ),
-      MetricId.hrMax => MetricReading(
-          stats.maxHeartRate?.toString(),
-          numericValue: stats.maxHeartRate?.toDouble(),
-          zoneKey: stats.maxHeartRate == null ? null : profile.hrZoneFor(stats.maxHeartRate!)?.key,
-        ),
+      MetricId.hrAvg => _hrAvgReading(sources, stats, profile, computeWindowS),
+      MetricId.hrMax => _hrMaxReading(sources, stats, profile, computeWindowS),
       MetricId.hrMin => MetricReading(
           stats.minHeartRate?.toString(),
           numericValue: stats.minHeartRate?.toDouble(),
@@ -390,21 +385,13 @@ enum MetricId {
           threshold: 'FTP ?',
           hasZones: profile.hasPowerZones,
         ),
-      MetricId.powerAvg => MetricReading(
-          stats.avgPower?.toString(),
-          numericValue: stats.avgPower?.toDouble(),
-          zoneKey: stats.avgPower == null ? null : profile.powerZoneFor(stats.avgPower!)?.key,
-        ),
+      MetricId.powerAvg => _powerAvgReading(sources, stats, profile, computeWindowS),
       MetricId.powerNormalized => MetricReading(
           stats.normalizedPowerW?.toString(),
           numericValue: stats.normalizedPowerW?.toDouble(),
           zoneKey: stats.normalizedPowerW == null ? null : profile.powerZoneFor(stats.normalizedPowerW!)?.key,
         ),
-      MetricId.powerMax => MetricReading(
-          stats.maxPower?.toString(),
-          numericValue: stats.maxPower?.toDouble(),
-          zoneKey: stats.maxPower == null ? null : profile.powerZoneFor(stats.maxPower!)?.key,
-        ),
+      MetricId.powerMax => _powerMaxReading(sources, stats, profile, computeWindowS),
       MetricId.powerMin => MetricReading(
           stats.minPower?.toString(),
           numericValue: stats.minPower?.toDouble(),
@@ -416,14 +403,8 @@ enum MetricId {
           sources.hub.latestCadence.value?.round().toString(),
           numericValue: sources.hub.latestCadence.value,
         ),
-      MetricId.cadenceAvg => MetricReading(
-          stats.avgCadence?.toString(),
-          numericValue: stats.avgCadence?.toDouble(),
-        ),
-      MetricId.cadenceMax => MetricReading(
-          stats.maxCadence?.toString(),
-          numericValue: stats.maxCadence?.toDouble(),
-        ),
+      MetricId.cadenceAvg => _cadenceAvgReading(sources, stats, computeWindowS),
+      MetricId.cadenceMax => _cadenceMaxReading(sources, stats, computeWindowS),
       MetricId.cadenceMin => MetricReading(
           stats.minCadence?.toString(),
           numericValue: stats.minCadence?.toDouble(),
@@ -446,22 +427,16 @@ enum MetricId {
           sources.recorder.stats.currentAltitudeM?.round().toString(),
           numericValue: sources.recorder.stats.currentAltitudeM,
         ),
-      MetricId.altitudeAvg => MetricReading(
-          stats.avgAltitudeM?.round().toString(),
-          numericValue: stats.avgAltitudeM,
-        ),
-      MetricId.altitudeMax => MetricReading(
-          stats.maxAltitudeM?.round().toString(),
-          numericValue: stats.maxAltitudeM,
-        ),
+      MetricId.altitudeAvg => _altitudeAvgReading(sources, stats, computeWindowS),
+      MetricId.altitudeMax => _altitudeMaxReading(sources, stats, computeWindowS),
       // La pente vient de l'enregistreur et pas du dernier point : c'est un
       // rapport entre deux endroits du parcours, elle n'existe pas avant le
       // départ ni sur un rouleau, où l'on ne se déplace pas.
       MetricId.grade => _gradeReading(active ? stats.gradePercent : null),
       // Mêmes bornes que la pente instantanée : hors sortie, ou sur un
       // rouleau sans distance parcourue, la fenêtre ne s'est jamais remplie.
-      MetricId.gradeAvg => _gradeReading(active ? stats.avgGrade : null),
-      MetricId.gradeMax => _gradeReading(active ? stats.maxGrade : null),
+      MetricId.gradeAvg => _gradeAvgReading(sources, stats, active, computeWindowS),
+      MetricId.gradeMax => _gradeMaxReading(sources, stats, active, computeWindowS),
       MetricId.gradeMin => _gradeReading(active ? stats.minGrade : null),
       // Même garde que la pente : la vitesse ascensionnelle se lit sur la même
       // fenêtre, qui reste naturellement vide sans altitude.
@@ -469,14 +444,8 @@ enum MetricId {
           active ? stats.climbRateMph?.round().toString() : null,
           numericValue: active ? stats.climbRateMph : null,
         ),
-      MetricId.climbRateAvg => MetricReading(
-          active ? stats.avgClimbRateMph?.round().toString() : null,
-          numericValue: active ? stats.avgClimbRateMph : null,
-        ),
-      MetricId.climbRateMax => MetricReading(
-          active ? stats.maxClimbRateMph?.round().toString() : null,
-          numericValue: active ? stats.maxClimbRateMph : null,
-        ),
+      MetricId.climbRateAvg => _climbRateAvgReading(sources, stats, active, computeWindowS),
+      MetricId.climbRateMax => _climbRateMaxReading(sources, stats, active, computeWindowS),
       MetricId.calories => MetricReading(
           stats.calories?.toString(),
           numericValue: stats.calories?.toDouble(),
@@ -546,6 +515,228 @@ enum MetricId {
         _roundedGrade(value),
         background: value == null ? null : gradeColorOf(value),
       );
+
+  // ── Fenêtre de calcul des mesures moyenne/maximum ──────────────────────
+  //
+  // [MetricBlock.computeWindowS] fait relire une moyenne/un maximum sur les N
+  // dernières secondes plutôt que sur le cumul de [RideStats] depuis le
+  // départ. L'historique brut qu'il faut pour ça vit dans les pistes dédiées
+  // de [RideRecorder] (`heartRateTrack`, `cadenceTrack`…), alimentées à
+  // chaque point quelle que soit la disposition courante — voir leur doc.
+
+  /// `null` si [computeWindowS] ne demande rien (absent, `0`) ou si la mesure
+  /// est lue sur un tour déjà terminé plutôt que la sortie en cours
+  /// ([MetricSources.lap]) : [RideLap] ne garde que ses propres
+  /// `heartRateTrack`/`powerTrack`, pas les six autres pistes qu'il faudrait
+  /// ici, et une page Tours n'a de toute façon plus rien à faire d'une
+  /// « fenêtre récente » sur un tour figé.
+  static int? _effectiveWindowS(MetricSources sources, int? computeWindowS) {
+    if (computeWindowS == null || computeWindowS <= 0) return null;
+    if (sources.lap != null) return null;
+    return computeWindowS;
+  }
+
+  /// Moyenne d'une piste brute sur ses [windowS] dernières secondes — `null`
+  /// tant qu'elle est vide (sortie qui vient de démarrer, capteur qui vient
+  /// de se connecter).
+  static double? _windowedMean(RideMetricTrack track, int windowS) {
+    final points = track.recent(windowS);
+    if (points.isEmpty) return null;
+    var sum = 0.0;
+    for (final point in points) {
+      sum += point.value;
+    }
+    return sum / points.length;
+  }
+
+  /// Le pendant maximum de [_windowedMean], même piste, même fenêtre.
+  static double? _windowedMax(RideMetricTrack track, int windowS) {
+    final points = track.recent(windowS);
+    if (points.isEmpty) return null;
+    var result = points.first.value;
+    for (final point in points.skip(1)) {
+      if (point.value > result) result = point.value;
+    }
+    return result;
+  }
+
+  /// Le delta d'une piste de cumul (distance, dénivelé, temps en mouvement)
+  /// sur ses [windowS] dernières secondes — sert aux moyennes qui sont un
+  /// rapport et pas une moyenne d'échantillons ([_speedAvgReading],
+  /// [_climbRateAvgReading] : voir [_movingAvgSpeedMps]) : fenêtrer une
+  /// moyenne-ratio doit garder le même rapport sur le sous-intervalle, pas
+  /// moyenner des valeurs instantanées, sans quoi un feu rouge dans la
+  /// fenêtre la fausserait exactement comme il aurait faussé la moyenne de
+  /// toute la sortie sans ce correctif. `null` tant que la fenêtre n'a pas au
+  /// moins deux points.
+  static double? _windowedDelta(RideMetricTrack track, int windowS) {
+    final points = track.recent(windowS);
+    if (points.length < 2) return null;
+    return points.last.value - points.first.value;
+  }
+
+  static MetricReading _speedAvgReading(MetricSources sources, RideStats stats, int? computeWindowS) {
+    final windowS = _effectiveWindowS(sources, computeWindowS);
+    double? speedMps;
+    if (windowS == null) {
+      speedMps = _movingAvgSpeedMps(stats);
+    } else {
+      final recorder = sources.recorder;
+      final distanceDeltaM = _windowedDelta(recorder.distanceTrack, windowS);
+      final movingMsDelta = _windowedDelta(recorder.movingMsTrack, windowS);
+      if (distanceDeltaM != null && movingMsDelta != null && movingMsDelta > 0) {
+        speedMps = distanceDeltaM / (movingMsDelta / 1000);
+      }
+    }
+    return MetricReading(_kmh(speedMps), numericValue: _kmhValue(speedMps));
+  }
+
+  static MetricReading _speedMaxReading(MetricSources sources, RideStats stats, int? computeWindowS) {
+    final windowS = _effectiveWindowS(sources, computeWindowS);
+    final speedMps = windowS == null ? stats.maxSpeedMps : _windowedMax(sources.recorder.speedTrack, windowS);
+    return MetricReading(_kmh(speedMps), numericValue: _kmhValue(speedMps));
+  }
+
+  static MetricReading _hrAvgReading(
+    MetricSources sources,
+    RideStats stats,
+    RiderProfile profile,
+    int? computeWindowS,
+  ) {
+    final windowS = _effectiveWindowS(sources, computeWindowS);
+    final value =
+        windowS == null ? stats.avgHeartRate?.toDouble() : _windowedMean(sources.recorder.heartRateTrack, windowS);
+    final rounded = value?.round();
+    return MetricReading(
+      rounded?.toString(),
+      numericValue: value,
+      zoneKey: rounded == null ? null : profile.hrZoneFor(rounded)?.key,
+    );
+  }
+
+  static MetricReading _hrMaxReading(
+    MetricSources sources,
+    RideStats stats,
+    RiderProfile profile,
+    int? computeWindowS,
+  ) {
+    final windowS = _effectiveWindowS(sources, computeWindowS);
+    final value =
+        windowS == null ? stats.maxHeartRate?.toDouble() : _windowedMax(sources.recorder.heartRateTrack, windowS);
+    final rounded = value?.round();
+    return MetricReading(
+      rounded?.toString(),
+      numericValue: value,
+      zoneKey: rounded == null ? null : profile.hrZoneFor(rounded)?.key,
+    );
+  }
+
+  static MetricReading _powerAvgReading(
+    MetricSources sources,
+    RideStats stats,
+    RiderProfile profile,
+    int? computeWindowS,
+  ) {
+    final windowS = _effectiveWindowS(sources, computeWindowS);
+    final value = windowS == null ? stats.avgPower?.toDouble() : _windowedMean(sources.recorder.powerTrack, windowS);
+    final rounded = value?.round();
+    return MetricReading(
+      rounded?.toString(),
+      numericValue: value,
+      zoneKey: rounded == null ? null : profile.powerZoneFor(rounded)?.key,
+    );
+  }
+
+  static MetricReading _powerMaxReading(
+    MetricSources sources,
+    RideStats stats,
+    RiderProfile profile,
+    int? computeWindowS,
+  ) {
+    final windowS = _effectiveWindowS(sources, computeWindowS);
+    final value = windowS == null ? stats.maxPower?.toDouble() : _windowedMax(sources.recorder.powerTrack, windowS);
+    final rounded = value?.round();
+    return MetricReading(
+      rounded?.toString(),
+      numericValue: value,
+      zoneKey: rounded == null ? null : profile.powerZoneFor(rounded)?.key,
+    );
+  }
+
+  static MetricReading _cadenceAvgReading(MetricSources sources, RideStats stats, int? computeWindowS) {
+    final windowS = _effectiveWindowS(sources, computeWindowS);
+    final value =
+        windowS == null ? stats.avgCadence?.toDouble() : _windowedMean(sources.recorder.cadenceTrack, windowS);
+    return MetricReading(value?.round().toString(), numericValue: value);
+  }
+
+  static MetricReading _cadenceMaxReading(MetricSources sources, RideStats stats, int? computeWindowS) {
+    final windowS = _effectiveWindowS(sources, computeWindowS);
+    final value =
+        windowS == null ? stats.maxCadence?.toDouble() : _windowedMax(sources.recorder.cadenceTrack, windowS);
+    return MetricReading(value?.round().toString(), numericValue: value);
+  }
+
+  static MetricReading _altitudeAvgReading(MetricSources sources, RideStats stats, int? computeWindowS) {
+    final windowS = _effectiveWindowS(sources, computeWindowS);
+    final value = windowS == null ? stats.avgAltitudeM : _windowedMean(sources.recorder.altitudeTrack, windowS);
+    return MetricReading(value?.round().toString(), numericValue: value);
+  }
+
+  static MetricReading _altitudeMaxReading(MetricSources sources, RideStats stats, int? computeWindowS) {
+    final windowS = _effectiveWindowS(sources, computeWindowS);
+    final value = windowS == null ? stats.maxAltitudeM : _windowedMax(sources.recorder.altitudeTrack, windowS);
+    return MetricReading(value?.round().toString(), numericValue: value);
+  }
+
+  static MetricReading _gradeAvgReading(MetricSources sources, RideStats stats, bool active, int? computeWindowS) {
+    if (!active) return _gradeReading(null);
+    final windowS = _effectiveWindowS(sources, computeWindowS);
+    final value = windowS == null ? stats.avgGrade : _windowedMean(sources.recorder.gradeTrack, windowS);
+    return _gradeReading(value);
+  }
+
+  static MetricReading _gradeMaxReading(MetricSources sources, RideStats stats, bool active, int? computeWindowS) {
+    if (!active) return _gradeReading(null);
+    final windowS = _effectiveWindowS(sources, computeWindowS);
+    final value = windowS == null ? stats.maxGrade : _windowedMax(sources.recorder.gradeTrack, windowS);
+    return _gradeReading(value);
+  }
+
+  static MetricReading _climbRateAvgReading(
+    MetricSources sources,
+    RideStats stats,
+    bool active,
+    int? computeWindowS,
+  ) {
+    if (!active) return const MetricReading(null);
+    final windowS = _effectiveWindowS(sources, computeWindowS);
+    double? value;
+    if (windowS == null) {
+      value = stats.avgClimbRateMph;
+    } else {
+      final recorder = sources.recorder;
+      final ascentDeltaM = _windowedDelta(recorder.ascentTrack, windowS);
+      final movingMsDelta = _windowedDelta(recorder.movingMsTrack, windowS);
+      if (ascentDeltaM != null && movingMsDelta != null && movingMsDelta > 0) {
+        value = ascentDeltaM / (movingMsDelta / 1000 / 3600);
+      }
+    }
+    return MetricReading(value?.round().toString(), numericValue: value);
+  }
+
+  static MetricReading _climbRateMaxReading(
+    MetricSources sources,
+    RideStats stats,
+    bool active,
+    int? computeWindowS,
+  ) {
+    if (!active) return const MetricReading(null);
+    final windowS = _effectiveWindowS(sources, computeWindowS);
+    final value =
+        windowS == null ? stats.maxClimbRateMph : _windowedMax(sources.recorder.climbRateTrack, windowS);
+    return MetricReading(value?.round().toString(), numericValue: value);
+  }
 
   static MetricReading _remainingReading(MetricSources sources) {
     final nav = sources.nav?.value;

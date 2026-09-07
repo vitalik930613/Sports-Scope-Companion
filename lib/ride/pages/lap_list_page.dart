@@ -352,6 +352,7 @@ class _LapListBodyState extends State<LapListBody> {
           backgroundChartWindowS: metric.backgroundChartWindowS,
           backgroundChartColor: metric.backgroundChartColor,
           backgroundChartLineColor: metric.backgroundChartLineColor,
+          computeWindowS: metric.computeWindowS,
           color: metric.color,
           textColor: metric.textColor,
         ),

@@ -295,6 +295,7 @@ class MetricBlock extends DashboardBlock {
     this.backgroundChartWindowS,
     this.backgroundChartColor,
     this.backgroundChartLineColor = const Color(0xFFFFFFFF),
+    this.computeWindowS,
     super.color,
     super.textColor,
   });
@@ -386,6 +387,17 @@ class MetricBlock extends DashboardBlock {
   /// `null` sur un document plus ancien retombe sur le blanc.
   final Color backgroundChartLineColor;
 
+  /// Fenêtre du **calcul** d'une mesure moyenne/maximum, en secondes — voir
+  /// [MetricId.read]. `null` ou `0` : toute la sortie, le comportement d'avant
+  /// ce réglage ; `> 0` : les N dernières secondes. Sans effet sur toute autre
+  /// mesure (silencieusement ignoré, même contrat que [icon]/[label]) et sur
+  /// un tour déjà terminé (page Tours) — seule la sortie en cours garde
+  /// l'historique brut qu'il faut pour le recalculer.
+  ///
+  /// À ne pas confondre avec [backgroundChartWindowS], qui fenêtre
+  /// l'*affichage* du mini-graphique de fond et pas le chiffre lui-même.
+  final int? computeWindowS;
+
   /// `null` si la mesure nommée n'existe pas dans cette version : mieux vaut
   /// une cellule vide qu'une case qui affiche un tiret pour toujours.
   static MetricBlock? parse(Map<dynamic, dynamic> raw) {
@@ -447,6 +459,7 @@ class MetricBlock extends DashboardBlock {
       backgroundChartColor: DashboardBlock._colorOf(raw, 'background_chart_color'),
       backgroundChartLineColor:
           DashboardBlock._colorOf(raw, 'background_chart_line_color') ?? const Color(0xFFFFFFFF),
+      computeWindowS: _toDouble(raw['compute_window_s'])?.round(),
       color: DashboardBlock._colorOf(raw, 'color'),
       textColor: DashboardBlock._colorOf(raw, 'text_color'),
     );
@@ -472,6 +485,7 @@ class MetricBlock extends DashboardBlock {
       other.backgroundChartWindowS == backgroundChartWindowS &&
       other.backgroundChartColor == backgroundChartColor &&
       other.backgroundChartLineColor == backgroundChartLineColor &&
+      other.computeWindowS == computeWindowS &&
       other.color == color &&
       other.textColor == textColor;
 
@@ -493,9 +507,7 @@ class MetricBlock extends DashboardBlock {
       gaugeThickness,
       backgroundChartWindowS,
       backgroundChartColor,
-      backgroundChartLineColor,
-      color,
-      textColor);
+      Object.hash(backgroundChartLineColor, computeWindowS, color, textColor));
 }
 
 /// Forme du remplissage d'une jauge — voir [MetricBlock.gaugeFill].
@@ -614,6 +626,7 @@ class SecondaryMetricSlot {
     required this.position,
     this.label,
     this.size = SecondaryMetricSize.small,
+    this.computeWindowS,
   });
 
   final MetricId metric;
@@ -629,6 +642,11 @@ class SecondaryMetricSlot {
   /// Sa propre taille, indépendante de [RowHeight] — voir [SecondaryMetricSize].
   final SecondaryMetricSize size;
 
+  /// Fenêtre du calcul, en secondes — voir [MetricBlock.computeWindowS], même
+  /// contrat (`null`/`0` : toute la sortie ; sans effet sur une mesure qui
+  /// n'est ni moyenne ni maximum).
+  final int? computeWindowS;
+
   /// `null` si `raw` ne décrit pas un slot exploitable — mesure inconnue de
   /// cette version, ou position absente/invalide. Même tolérance que le reste
   /// de ce fichier : rien ici ne lève.
@@ -642,11 +660,13 @@ class SecondaryMetricSlot {
     if (position == null) return null;
 
     final label = raw['label'];
+    final windowRaw = raw['compute_window_s'];
     return SecondaryMetricSlot(
       metric: metric,
       position: position,
       label: label is String && label.trim().isNotEmpty ? label.trim() : null,
       size: SecondaryMetricSize.fromKey(raw['size'] as String?),
+      computeWindowS: windowRaw is num ? windowRaw.round() : null,
     );
   }
 
@@ -656,10 +676,11 @@ class SecondaryMetricSlot {
       other.metric == metric &&
       other.position == position &&
       other.label == label &&
-      other.size == size;
+      other.size == size &&
+      other.computeWindowS == computeWindowS;
 
   @override
-  int get hashCode => Object.hash(metric, position, label, size);
+  int get hashCode => Object.hash(metric, position, label, size, computeWindowS);
 }
 
 /// La taille d'une annotation de coin — indépendante de [RowHeight] : c'est
