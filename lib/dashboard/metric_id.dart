@@ -139,6 +139,18 @@ enum MetricId {
         _ => const [],
       };
 
+  /// La couleur directe de cette mesure pour une valeur donnée, pour les
+  /// mesures qui se colorent sans zones du cycliste ni tranches de
+  /// l'éditeur — la pente, dont la couleur vient de sa tranche de difficulté
+  /// ([gradeColorOf]), même table que le profil des cols. `null` pour toutes
+  /// les autres : sert au graphique de fond d'une case ([MetricView]), qui
+  /// doit pouvoir recolorer un point passé de la même façon que la lecture
+  /// courante ([MetricReading.background]) le fait déjà.
+  Color Function(double value)? get directColorOf => switch (this) {
+        MetricId.grade || MetricId.gradeAvg || MetricId.gradeMax || MetricId.gradeMin => gradeColorOf,
+        _ => null,
+      };
+
   /// La plage de [MetricMode.dynamicGauge] : `null` tant qu'elle n'a pas
   /// encore de sens plutôt que d'en inventer une — mêmes gardes que [read].
   ///
