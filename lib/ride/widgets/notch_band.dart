@@ -175,19 +175,20 @@ class _NotchBandState extends State<NotchBand> {
     if (slot == null) return const SizedBox.shrink();
 
     return switch (slot) {
-      BandMetricSlot(:final metric) => _metric(metric),
-      BandActionSlot(:final action) => _action(action),
-      BandBellSlot(:final sound) => BellControl(mode: BellMode.compact, sound: sound),
-      BandRadarSlot(:final mode) => _radar(mode),
-      BandWorkoutSlot(:final mode, :final upcoming) => _workout(mode, upcoming),
-      BandMarkLapSlot(:final series, :final label) => _markLap(series, label),
+      BandMetricSlot(:final metric, :final color) => _metric(metric, color),
+      BandActionSlot(:final action, :final color) => _action(action, color),
+      BandBellSlot(:final sound, :final color) =>
+        BellControl(mode: BellMode.compact, sound: sound, color: color),
+      BandRadarSlot(:final mode, :final color) => _radar(mode, color),
+      BandWorkoutSlot(:final mode, :final upcoming, :final color) => _workout(mode, upcoming, color),
+      BandMarkLapSlot(:final series, :final label, :final color) => _markLap(series, label, color),
     };
   }
 
   // Même geste que [MarkLapControl] (`mark_lap_block.dart`) et même garde que
   // `RideBottomBand._markLap` : un tour ne veut rien dire hors
   // enregistrement.
-  Widget _markLap(String series, String? label) => ListenableBuilder(
+  Widget _markLap(String series, String? label, Color? background) => ListenableBuilder(
         listenable: widget.recorder,
         builder: (context, _) {
           final onTap = widget.recorder.isActive ? () => widget.recorder.markLap(series) : null;
@@ -195,7 +196,7 @@ class _NotchBandState extends State<NotchBand> {
           return FittedBox(
             fit: BoxFit.scaleDown,
             child: Material(
-              color: const Color(0xFF1F2226),
+              color: background ?? const Color(0xFF1F2226),
               borderRadius: BorderRadius.circular(6),
               child: InkWell(
                 onTap: onTap,
@@ -227,9 +228,10 @@ class _NotchBandState extends State<NotchBand> {
   // Pas de `FittedBox` ici, à l'inverse de [_metric] : [RadarBlockView] se
   // met déjà à l'échelle de sa case via [BlockSurface] (`block_card.dart`),
   // comme dans une case de grille — l'ajouter mesurerait deux fois.
-  Widget _radar(RadarMode mode) => RadarBlockView(radar: widget.radar, mode: mode);
+  Widget _radar(RadarMode mode, Color? color) =>
+      RadarBlockView(radar: widget.radar, mode: mode, color: color);
 
-  Widget _metric(MetricId metric) {
+  Widget _metric(MetricId metric, Color? color) {
     return FittedBox(
       fit: BoxFit.scaleDown,
       child: ListenableBuilder(
@@ -241,6 +243,7 @@ class _NotchBandState extends State<NotchBand> {
             label: metric.name,
             zoneKey: reading.zoneKey,
             background: reading.background,
+            color: color,
             // Inverse du bandeau du bas : le libellé au-dessus du chiffre.
             labelFirst: true,
           );
@@ -249,27 +252,34 @@ class _NotchBandState extends State<NotchBand> {
     );
   }
 
-  Widget _action(BandAction action) => switch (action) {
-        BandAction.sleep => SleepControl(onSleep: widget.onSleep, mode: SleepMode.compact),
+  Widget _action(BandAction action, Color? color) => switch (action) {
+        BandAction.sleep =>
+          SleepControl(onSleep: widget.onSleep, mode: SleepMode.compact, color: color),
         BandAction.toggleWorkout => ToggleWorkoutControl(
             recorder: widget.recorder,
             onChooseWorkout: widget.onChooseWorkout,
             mode: ToggleWorkoutMode.compact,
+            color: color,
           ),
-        BandAction.leaveRide =>
-          LeaveRideControl(onLeaveRide: widget.onLeaveRide, mode: LeaveRideMode.compact),
+        BandAction.leaveRide => LeaveRideControl(
+            onLeaveRide: widget.onLeaveRide,
+            mode: LeaveRideMode.compact,
+            color: color,
+          ),
         BandAction.route => RouteControl(
             onChooseRoute: widget.onChooseRoute,
             onClearRoute: widget.onClearRoute,
             nav: widget.sources.nav,
             mode: RouteMode.compact,
+            color: color,
           ),
-        BandAction.togglePause => TogglePauseControl(recorder: widget.recorder, compact: true),
+        BandAction.togglePause =>
+          TogglePauseControl(recorder: widget.recorder, compact: true, color: color),
       };
 
   // Pas de `FittedBox` externe ici, à l'inverse de [_metric] :
   // [WorkoutBandTile] se met déjà à l'échelle elle-même (voir sa note de
   // classe) — un `FittedBox` de plus l'envelopperait pour rien.
-  Widget _workout(BandWorkoutMode mode, bool upcoming) =>
-      WorkoutBandTile(recorder: widget.recorder, mode: mode, upcoming: upcoming);
+  Widget _workout(BandWorkoutMode mode, bool upcoming, Color? color) =>
+      WorkoutBandTile(recorder: widget.recorder, mode: mode, upcoming: upcoming, color: color);
 }

@@ -46,6 +46,7 @@ class MetricView extends StatelessWidget {
     this.backgroundChartWindowS,
     this.backgroundChartColor,
     this.backgroundChartLineColor = Colors.white,
+    this.computeWindowS,
     this.color,
     this.textColor,
     this.onTap,
@@ -109,6 +110,11 @@ class MetricView extends StatelessWidget {
   /// voir [MetricBlock.backgroundChartLineColor]. Défaut blanc.
   final Color backgroundChartLineColor;
 
+  /// Fenêtre du calcul d'une mesure moyenne/maximum, en secondes — voir
+  /// [MetricBlock.computeWindowS]. Passé tel quel à [MetricId.read], qui
+  /// l'ignore silencieusement sur toute autre mesure.
+  final int? computeWindowS;
+
   /// Fond réglé dans l'éditeur — voir [DashboardBlock.color]. Prioritaire sur
   /// [MetricReading.background]/la couleur de zone : c'est le seul moyen de
   /// choisir un fond différent de celui, sémantique, que la mesure porte
@@ -153,7 +159,8 @@ class MetricView extends StatelessWidget {
         ...metric.dependencies(sources),
         for (final slot in layout.secondary) ...slot.metric.dependencies(sources),
       ]),
-      builder: (context, _) => _paint(metric.read(sources, format: format)),
+      builder: (context, _) =>
+          _paint(metric.read(sources, format: format, computeWindowS: computeWindowS)),
     );
 
     if (onTap == null) return content;
@@ -199,7 +206,8 @@ class MetricView extends StatelessWidget {
     // slots peuvent porter la même mesure (rare mais pas interdit), et
     // `MetricId.read` n'est pas gratuit (zones, formatage).
     final secondaryReadings = {
-      for (final slot in layout.secondary) slot: slot.metric.read(sources, format: format),
+      for (final slot in layout.secondary)
+        slot: slot.metric.read(sources, format: format, computeWindowS: slot.computeWindowS),
     };
 
     return LayoutBuilder(
@@ -250,24 +258,22 @@ class MetricView extends StatelessWidget {
           children: children,
         );
 
-        // Fond scindé en deux seulement quand le graphique est actif : sans
-        // ce réglage, `background` reste inchangé et sert tel quel, aucune
-        // régression sur les cases existantes. Avec, la définition de fond
-        // de la mesure (zone/tranches) quitte le fond plat de la carte pour
-        // ne plus teinter que l'aire sous la courbe — sinon l'aire se
-        // fondrait dans un fond déjà de la même couleur et le graphique
-        // deviendrait invisible. `ink` reste calculé sur `background` dans
-        // les deux cas : le texte doit rester lisible sur la couleur
-        // sémantique habituelle de la carte, chartée ou non.
-        final plainBackground = color ?? BlockCard.background;
-        final chartAreaColor = _thresholdColorFor(reading.numericValue)
-            ?? reading.background
-            ?? zoneColorOf(reading.zoneKey)
+        // Le fond plat de la carte reste `background` (zone/tranches/couleur
+        // d'éditeur) que le graphique soit actif ou non — c'est justement lui
+        // qui doit se reconnaître d'un coup d'œil, comme une carte sans
+        // graphique. L'aire sous la courbe ne s'y fond pas pour autant : elle
+        // n'est jamais un seul aplat de la même teinte, mais un trapèze par
+        // segment coloré sur *sa propre* valeur ([_valueColorOf]) — c'est ce
+        // qui la distingue du fond plat même quand les deux se recoupent
+        // (couleur de la zone du moment), et qui fait apparaître les zones
+        // traversées au fil de la courbe plutôt que la seule zone courante.
+        final valueColorOf = _valueColorOf();
+        final chartAreaColor = valueColorOf?.call(reading.numericValue ?? 0)
             ?? backgroundChartColor
             ?? _defaultColor;
 
         return BlockSurface(
-          background: chartWindowS == null ? background : plainBackground,
+          background: background,
           backgroundChart: chartWindowS == null
               ? null
               : BackgroundChartGraph(
@@ -275,6 +281,7 @@ class MetricView extends StatelessWidget {
                       ? sources.recorder.trackFor(metric).points
                       : sources.recorder.trackFor(metric).recent(chartWindowS),
                   areaColor: chartAreaColor,
+                  colorForValue: valueColorOf,
                   lineColor: backgroundChartLineColor,
                 ),
           child: SizedBox(
@@ -734,6 +741,48 @@ class MetricView extends StatelessWidget {
 
     final index = _thresholdBandIndex(value, thresholds);
     return index < 0 ? null : colors[index];
+  }
+
+  /// La couleur de cette mesure pour une valeur *quelconque*, pas seulement
+  /// la valeur courante — sert au graphique de fond ([BackgroundChartGraph]),
+  /// qui doit pouvoir recolorer chaque point de son historique selon sa
+  /// propre valeur. Trois sources possibles, dans l'ordre où la carte elle-
+  /// même les préfère ([_paint]) : les tranches réglées dans l'éditeur
+  /// ([gaugeThresholds]/[gaugeThresholdColors]), les zones du cycliste
+  /// ([MetricId.zonesOf]), ou la couleur directe de la mesure
+  /// ([MetricId.directColorOf], la pente). `null` sans aucune des trois — la
+  /// mesure n'a alors qu'une seule teinte possible ([backgroundChartColor]),
+  /// pas un dégradé à calculer.
+  Color Function(double value)? _valueColorOf() {
+    final thresholds = gaugeThresholds;
+    final colors = gaugeThresholdColors;
+    if (colors != null && thresholds != null && colors.length == thresholds.length + 1) {
+      return (value) => colors[_thresholdBandIndex(value, thresholds)];
+    }
+
+    final zones = metric.zonesOf(sources.riderProfile.profile);
+    if (zones.isNotEmpty) {
+      return (value) => zoneColorOf(_zoneOf(zones, value)?.key) ?? _neutralZoneColor;
+    }
+
+    return metric.directColorOf;
+  }
+
+  /// Repli neutre d'une zone sans couleur connue — cas resté théorique
+  /// (toutes les clés `z1`…`z7` sont dans `zoneColors`), même repli que
+  /// `MetricTrendGraph._neutral`.
+  static const _neutralZoneColor = Color(0xFF546E7A);
+
+  /// La zone contenant cette valeur — même repli que `MetricTrendGraph._zoneOf`
+  /// (`background_chart_graph.dart` recolore ainsi chaque segment de son
+  /// historique) : sous la première borne (repos, un capteur à l'arrêt), la
+  /// première zone prend le relais plutôt que de laisser un segment sans
+  /// couleur.
+  static TrainingZone? _zoneOf(List<TrainingZone> zones, num value) {
+    for (final zone in zones) {
+      if (zone.contains(value)) return zone;
+    }
+    return zones.isEmpty ? null : (value < zones.first.lo ? zones.first : null);
   }
 
   /// La tranche dans laquelle tombe [value] parmi [thresholds] (triés dans

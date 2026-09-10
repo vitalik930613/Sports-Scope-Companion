@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart' show Color;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import '../ble/sensor_profile.dart';
@@ -924,7 +925,18 @@ class LapGridLayout extends LapPageLayout {
 /// plutôt qu'à chaque lecture par les deux bandes.
 @immutable
 sealed class BandSlot {
-  const BandSlot();
+  const BandSlot({this.color});
+
+  /// Fond réglé dans l'éditeur, pour n'importe quelle case de bandeau ou
+  /// d'encoche — même réglage qu'un composant de grille
+  /// ([DashboardBlock.color]). Un jeton simple ne peut pas porter de clé
+  /// supplémentaire (c'est une chaîne nue), le site l'enveloppe donc dans
+  /// `{"slot": ..., "color": ...}` dès qu'une couleur est réglée ; un
+  /// `mark_lap` la porte directement, déjà un objet — voir
+  /// `CompanionSettings.sanitize_band_colored_slot`/`sanitize_band_lap_slot`.
+  /// `null` : le fond habituel de chaque case (aplat de zone, alternance
+  /// noir/anthracite).
+  final Color? color;
 
   /// `null` pour une case vide, ou une clé inconnue de cette version de
   /// l'appli — même repli que [MetricId.fromKey], pour la même raison : un
@@ -937,8 +949,18 @@ sealed class BandSlot {
       return BandMarkLapSlot(
         series: series.trim(),
         label: label is String && label.trim().isNotEmpty ? label.trim() : null,
+        color: _colorOf(raw),
       );
     }
+    // L'enveloppe d'un jeton simple avec sa couleur : le jeton lui-même est
+    // décodé par `_parseToken`, seule la couleur est propre à ce niveau.
+    if (raw is Map && raw.containsKey('slot')) {
+      return _parseToken(raw['slot'])?.withColor(_colorOf(raw));
+    }
+    return _parseToken(raw);
+  }
+
+  static BandSlot? _parseToken(Object? raw) {
     if (raw == 'sleep') return const BandActionSlot(BandAction.sleep);
     if (raw == 'toggle_workout') return const BandActionSlot(BandAction.toggleWorkout);
     if (raw == 'leave_ride') return const BandActionSlot(BandAction.leaveRide);
@@ -963,6 +985,32 @@ sealed class BandSlot {
     final metric = MetricId.fromKey(raw);
     return metric == null ? null : BandMetricSlot(metric);
   }
+
+  /// La couleur écrite par le site sous `"color"`, `#rrggbb` uniquement —
+  /// même contrat que [DashboardBlock._colorOf], dupliqué ici : classe
+  /// scellée d'un autre fichier, même prudence (rien ici ne lève).
+  static Color? _colorOf(Map raw) {
+    final value = raw['color'];
+    if (value is! String) return null;
+    final match = RegExp(r'^#([0-9a-fA-F]{6})$').firstMatch(value);
+    if (match == null) return null;
+    return Color(0xFF000000 | int.parse(match.group(1)!, radix: 16));
+  }
+
+  /// Recompose la même case avec une couleur de fond — utilisé seulement par
+  /// [parse] pour l'enveloppe `{"slot": ..., "color": ...}` : la case
+  /// elle-même est déjà décodée par [_parseToken], il ne reste qu'à y
+  /// accrocher le réglage que porte l'enveloppe.
+  BandSlot withColor(Color? color) => switch (this) {
+        BandMetricSlot(:final metric) => BandMetricSlot(metric, color: color),
+        BandActionSlot(:final action) => BandActionSlot(action, color: color),
+        BandRadarSlot(:final mode) => BandRadarSlot(mode, color: color),
+        BandWorkoutSlot(:final mode, :final upcoming) =>
+          BandWorkoutSlot(mode, upcoming: upcoming, color: color),
+        BandBellSlot(:final sound) => BandBellSlot(sound, color: color),
+        BandMarkLapSlot(:final series, :final label) =>
+          BandMarkLapSlot(series: series, label: label, color: color),
+      };
 }
 
 /// Le son nommé, ou [BellSound.bell] — le son par défaut, pour un son de
@@ -1071,7 +1119,7 @@ class ReminderSpec {
 /// `BandSlot` existe.
 @immutable
 class BandMetricSlot extends BandSlot {
-  const BandMetricSlot(this.metric);
+  const BandMetricSlot(this.metric, {super.color});
   final MetricId metric;
 }
 
@@ -1109,7 +1157,7 @@ enum BandAction { sleep, toggleWorkout, leaveRide, route, togglePause }
 
 @immutable
 class BandActionSlot extends BandSlot {
-  const BandActionSlot(this.action);
+  const BandActionSlot(this.action, {super.color});
   final BandAction action;
 }
 
@@ -1119,7 +1167,7 @@ class BandActionSlot extends BandSlot {
 /// `BAND_RADAR_MODES` côté site.
 @immutable
 class BandRadarSlot extends BandSlot {
-  const BandRadarSlot(this.mode);
+  const BandRadarSlot(this.mode, {super.color});
   final RadarMode mode;
 }
 
@@ -1165,7 +1213,7 @@ enum BandWorkoutMode {
 /// site.
 @immutable
 class BandWorkoutSlot extends BandSlot {
-  const BandWorkoutSlot(this.mode, {this.upcoming = false});
+  const BandWorkoutSlot(this.mode, {this.upcoming = false, super.color});
   final BandWorkoutMode mode;
 
   /// Les cinq habillages, mais pour le tronçon qui suivra celui en cours —
@@ -1183,7 +1231,7 @@ class BandWorkoutSlot extends BandSlot {
 /// `BAND_BELL` côté site.
 @immutable
 class BandBellSlot extends BandSlot {
-  const BandBellSlot(this.sound);
+  const BandBellSlot(this.sound, {super.color});
   final BellSound sound;
 }
 
@@ -1196,7 +1244,7 @@ class BandBellSlot extends BandSlot {
 /// `CompanionSettings.sanitize_band_lap_slot` côté site.
 @immutable
 class BandMarkLapSlot extends BandSlot {
-  const BandMarkLapSlot({required this.series, this.label});
+  const BandMarkLapSlot({required this.series, this.label, super.color});
   final String series;
   final String? label;
 }

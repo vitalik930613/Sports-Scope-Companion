@@ -200,6 +200,23 @@ class RideRecorder extends ChangeNotifier {
   final heartRateTrack = RideMetricTrack();
   final powerTrack = RideMetricTrack();
 
+  /// Les mêmes séries temporelles, pour les autres grandeurs qu'une case
+  /// `metric` peut fenêtrer ([MetricBlock.computeWindowS]) — une mesure
+  /// « moyenne »/« maximum » réglée sur X secondes relit sa fenêtre ici plutôt
+  /// que le cumul de [stats], qui ne connaît que le total depuis le départ.
+  /// Valeurs brutes, à la même fréquence que [heartRateTrack]/[powerTrack] :
+  /// [MetricId.read] compose lui-même le rapport qu'il faut (une moyenne
+  /// simple pour la plupart, un delta de cumul pour vitesse/vitesse
+  /// ascensionnelle — voir sa doc).
+  final cadenceTrack = RideMetricTrack();
+  final speedTrack = RideMetricTrack();
+  final altitudeTrack = RideMetricTrack();
+  final gradeTrack = RideMetricTrack();
+  final climbRateTrack = RideMetricTrack();
+  final distanceTrack = RideMetricTrack();
+  final ascentTrack = RideMetricTrack();
+  final movingMsTrack = RideMetricTrack();
+
   /// La série temporelle d'une mesure quelconque, pour le graphique de fond
   /// d'une case (`background_chart_window` — `MetricView._paint`). Créée à la
   /// demande, une seule fois par mesure : la plupart des mesures ne portent
@@ -331,6 +348,14 @@ class RideRecorder extends ChangeNotifier {
     elevationTrack.reset();
     heartRateTrack.reset();
     powerTrack.reset();
+    cadenceTrack.reset();
+    speedTrack.reset();
+    altitudeTrack.reset();
+    gradeTrack.reset();
+    climbRateTrack.reset();
+    distanceTrack.reset();
+    ascentTrack.reset();
+    movingMsTrack.reset();
     _metricTracks.clear();
     _lastFix = null;
     _referenceFix = null;
@@ -600,6 +625,14 @@ class RideRecorder extends ChangeNotifier {
     if (altitude != null) elevationTrack.add(point.distanceM, altitude);
     heartRateTrack.add(_recordedSeconds, point.heartRate);
     powerTrack.add(_recordedSeconds, point.power);
+    cadenceTrack.add(_recordedSeconds, point.cadence);
+    speedTrack.add(_recordedSeconds, point.speedMps);
+    altitudeTrack.add(_recordedSeconds, stats.currentAltitudeM);
+    gradeTrack.add(_recordedSeconds, stats.gradePercent);
+    climbRateTrack.add(_recordedSeconds, stats.climbRateMph);
+    distanceTrack.add(_recordedSeconds, stats.distanceM);
+    ascentTrack.add(_recordedSeconds, stats.ascentM);
+    movingMsTrack.add(_recordedSeconds, stats.movingTime.inMilliseconds);
     for (final laps in _series.values) {
       final lap = laps.last;
       lap.stats.add(point);

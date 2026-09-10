@@ -16,13 +16,19 @@ import 'ride_preset.dart';
 /// [RidePreset.builtIn], qui est le tableau de bord d'avant ce chantier.
 @immutable
 class CompanionSettings {
-  const CompanionSettings(this.presets);
+  const CompanionSettings(this.presets, {this.colDetection = true});
 
   /// Ce qu'on affiche quand le site n'a rien pu dire.
   static const fallback = CompanionSettings([RidePreset.builtIn]);
 
   /// Au moins un profil, toujours, et jamais deux fois la même clé.
   final List<RidePreset> presets;
+
+  /// Réglage global (pas par profil) : deviner un col en navigation libre et
+  /// l'annoncer (voir `RideColGuessFlash`). Activé par défaut côté site
+  /// (`CompanionSettings.defaults`, dépôt Rails) — même valeur ici pour qu'un
+  /// document non encore reçu (juste après l'installation) ne coupe rien.
+  final bool colDetection;
 
   /// Le profil de cette clé, ou **le premier** à défaut.
   ///
@@ -68,6 +74,10 @@ class CompanionSettings {
       presets.add(preset);
     }
 
-    return presets.isEmpty ? fallback : CompanionSettings(presets);
+    if (presets.isEmpty) return fallback;
+    return CompanionSettings(
+      presets,
+      colDetection: raw['col_detection'] != false,
+    );
   }
 }

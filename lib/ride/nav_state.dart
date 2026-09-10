@@ -113,6 +113,37 @@ class NavClimb {
   }
 }
 
+/// Col deviné par la page en navigation libre : pente soutenue + col OSM le plus
+/// proche dans l'axe de progression. Une hypothèse à faible confiance, pas une
+/// certitude comme [NavClimb] sur itinéraire — la page ne l'envoie d'ailleurs
+/// jamais en même temps que [NavClimb] (voir `navStateFor` côté site).
+@immutable
+class NavColGuess {
+  const NavColGuess({
+    required this.name,
+    required this.lat,
+    required this.lng,
+    required this.distanceM,
+  });
+
+  final String name;
+  final double lat;
+  final double lng;
+  final double distanceM;
+
+  static NavColGuess? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final name = raw['name'];
+    final lat = _toDouble(raw['lat']);
+    final lng = _toDouble(raw['lng']);
+    final distanceM = _toDouble(raw['distanceM']);
+    if (name is! String || lat == null || lng == null || distanceM == null) {
+      return null;
+    }
+    return NavColGuess(name: name, lat: lat, lng: lng, distanceM: distanceM);
+  }
+}
+
 /// Ce que la page de navigation dit d'elle-même.
 ///
 /// Reçu ~1 fois par seconde tant que le GPS accroche. La coquille s'en sert pour
@@ -130,6 +161,7 @@ class NavState {
     this.remainingM = 0,
     this.remainingGainM = 0,
     this.climb,
+    this.colGuess,
   });
 
   /// Horodatage du message, tel qu'il a été posé par la page.
@@ -145,6 +177,7 @@ class NavState {
   final double remainingM;
   final double remainingGainM;
   final NavClimb? climb;
+  final NavColGuess? colGuess;
 
   /// L'information a-t-elle vieilli ? Au-delà, on ne s'y fie plus : la page a pu
   /// être ralentie, rechargée, ou perdre le GPS. C'est ce qui fait basculer la
@@ -171,6 +204,7 @@ class NavState {
       remainingM: _toDouble(json['remainingM']) ?? 0,
       remainingGainM: _toDouble(json['remainingGainM']) ?? 0,
       climb: NavClimb.fromJson(json['climb']),
+      colGuess: NavColGuess.fromJson(json['colGuess']),
     );
   }
 }

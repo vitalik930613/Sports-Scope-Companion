@@ -11,6 +11,7 @@ import '../training/wprime_balance.dart';
 import '../account/site_session.dart';
 import '../ble/samples.dart';
 import '../ble/sensor_hub.dart';
+import '../dashboard/companion_settings_store.dart';
 import '../dashboard/metric_id.dart';
 import '../dashboard/ride_preset.dart';
 import '../devices/known_devices_store.dart';
@@ -67,9 +68,11 @@ import 'widgets/notch_band.dart';
 import 'widgets/radar_frame.dart';
 import 'widgets/radar_side_gauge.dart';
 import 'widgets/radar_wake_page.dart';
+import 'widgets/recording_paused_page.dart';
 import 'widgets/reminder_banner.dart';
 import 'widgets/ride_bottom_band.dart';
 import 'widgets/ride_button_flash.dart';
+import 'widgets/ride_col_guess_flash.dart';
 import 'widgets/ride_page_flash.dart';
 import 'widgets/workout_badge.dart';
 import 'widgets/workout_change_popup.dart';
@@ -113,6 +116,7 @@ class RideShellPage extends StatefulWidget {
     required this.trainingBudget,
     required this.routes,
     required this.trainingPrograms,
+    required this.companionSettings,
     this.onGridMeasured,
     this.baseUrl = sportsScopeBaseUrl,
   });
@@ -144,6 +148,10 @@ class RideShellPage extends StatefulWidget {
   /// coquille ne le pilote pas — il vit au-dessus des écrans et survit à la
   /// navigation.
   final RideRecorder recorder;
+
+  /// Le document de compte (profils + réglages globaux). La coquille n'y lit
+  /// que `colDetection` — le reste est déjà figé dans [preset] au départ.
+  final CompanionSettingsStore companionSettings;
 
   /// La boussole du téléphone. La coquille est la SEULE à l'allumer, et
   /// seulement le temps de la sortie : un magnétomètre branché en permanence
@@ -2397,6 +2405,35 @@ class _RideShellPageState extends State<RideShellPage>
                 },
               ),
             ),
+            // Devinette de col en navigation libre : centrée en haut, pour ne
+            // pas empiéter sur les pastilles de coin (entraînement/boussole à
+            // gauche, col réel/radar à droite). La page pousse `colGuess` sans
+            // condition (voir navHelpers.ts côté site) — c'est ici, côté
+            // appli, qu'on décide d'agir dessus selon le réglage du compte.
+            Positioned(
+              key: const ValueKey('col-devine'),
+              top: 8,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                bottom: false,
+                child: Center(
+                  child: ListenableBuilder(
+                    listenable: widget.companionSettings,
+                    builder: (context, _) {
+                      if (!widget.companionSettings.colDetection) {
+                        return const SizedBox.shrink();
+                      }
+                      return ValueListenableBuilder<NavState?>(
+                        valueListenable: _nav,
+                        builder: (context, nav, _) =>
+                            RideColGuessFlash(guess: nav?.colGuess),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
             // Pastille de boussole, en haut à gauche (la pastille de col
             // occupe déjà le coin droit) : cap mesuré, et bouton pour forcer
             // sa priorité sur la course GPS — utile sous un couvert
@@ -2442,6 +2479,31 @@ class _RideShellPageState extends State<RideShellPage>
                       RadarFrame(severity: radar.severity),
                 ),
               ),
+            // L'enregistrement en pause, par-dessus la carte et les pages de
+            // données — c'est la seule façon de perdre la fin d'une sortie
+            // sans s'en apercevoir (voir `_ResumeBanner`,
+            // `blocks/recording_block.dart`, qui dit la même chose mais
+            // seulement sur la page qui porte le bloc d'enregistrement). Sous
+            // l'alerte batterie et le rappel : une pause n'a rien d'urgent à
+            // leur céder, et les deux restent des informations à part.
+            // Contrairement à `BatteryAlertPage`, ne capte pas le tap — c'est
+            // un pictogramme en transparence, pas un voile, et la carte comme
+            // les pages restent utilisables dessous. S'arrête au-dessus du
+            // bandeau du bas, qui garde ses commandes (dont le bouton de
+            // reprise).
+            Positioned(
+              key: const ValueKey('enregistrement-en-pause'),
+              left: 0,
+              right: 0,
+              top: 0,
+              bottom: bandHeight,
+              child: ListenableBuilder(
+                listenable: widget.recorder,
+                builder: (context, _) => widget.recorder.state == RecorderState.paused
+                    ? const RecordingPausedPage()
+                    : const SizedBox.shrink(),
+              ),
+            ),
             // L'alerte de batterie faible, plein écran : au sommet de la
             // pile, visible quelle que soit la page (contrairement au réveil
             // radar, qui n'a de sens que sous le voile de la carte) et même

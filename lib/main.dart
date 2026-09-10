@@ -6,6 +6,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'account/account_page.dart';
+import 'account/companion_settings_page.dart';
 import 'account/rider_profile_store.dart';
 import 'training/training_budget_store.dart';
 import 'account/site_session.dart';
@@ -483,6 +484,7 @@ Future<void> openNavigation(
         trainingBudget: trainingBudget,
         routes: routes,
         trainingPrograms: trainingPrograms,
+        companionSettings: settings,
         // Ce que le tableau de bord mesure part au site au prochain
         // rafraîchissement : son éditeur cesse alors de supposer un téléphone.
         onGridMeasured: settings.recordGrid,
@@ -723,6 +725,12 @@ class _HomePageState extends State<HomePage> {
     ));
   }
 
+  void _openCompanionSettings() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => CompanionSettingsPage(settings: widget.settings),
+    ));
+  }
+
   /// Banc d'essai temporaire, le temps d'identifier la caractéristique D-Fly
   /// des boutons Di2 — voir `devices/gatt_sniff_page.dart`.
   void _openGattSniff() {
@@ -932,6 +940,11 @@ class _HomePageState extends State<HomePage> {
             onPressed: _openSensors,
             icon: const Icon(Icons.sensors),
             tooltip: 'Capteurs',
+          ),
+          IconButton(
+            onPressed: _openCompanionSettings,
+            icon: const Icon(Icons.settings),
+            tooltip: 'Réglages',
           ),
           // Bancs d'essai et journal : utiles en développement, pas au
           // quotidien — regroupés pour ne pas noyer les boutons qu'on touche

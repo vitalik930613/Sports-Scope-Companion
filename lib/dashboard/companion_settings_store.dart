@@ -82,6 +82,19 @@ class CompanionSettingsStore extends ChangeNotifier {
   /// n'est que du bruit sur l'écran d'avant-départ.
   bool get hasChoice => _settings.presets.length > 1;
 
+  /// Deviner un col en navigation libre et l'annoncer (voir `RideColGuessFlash`).
+  bool get colDetection => _settings.colDetection;
+
+  /// Le document brut du compte, tel que reçu du site (ou déjà réécrit par un
+  /// PATCH précédent). `null` tant qu'aucun document n'a jamais été reçu.
+  ///
+  /// C'est lui qu'il faut repartir pour toute écriture, jamais un document
+  /// reconstruit depuis les modèles décodés : `RidePreset` n'a qu'une lecture
+  /// tolérante, pas de sérialisation retour — un document reconstruit perdrait
+  /// silencieusement tout champ qu'il ne connaît pas encore.
+  Map<String, dynamic>? get rawDocument =>
+      _document is Map ? Map<String, dynamic>.from(_document as Map) : null;
+
   Future<void> load() async {
     try {
       if (await _file.exists()) {

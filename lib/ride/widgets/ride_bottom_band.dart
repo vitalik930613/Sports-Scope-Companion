@@ -181,12 +181,13 @@ class _RideBottomBandState extends State<RideBottomBand> {
     if (slot == null) return const SizedBox.shrink();
 
     return switch (slot) {
-      BandMetricSlot(:final metric) => _metric(metric, index),
-      BandActionSlot(:final action) => _action(action),
-      BandBellSlot(:final sound) => _bell(sound),
-      BandRadarSlot(:final mode) => _radar(mode),
-      BandWorkoutSlot(:final mode, :final upcoming) => _workout(mode, upcoming, index),
-      BandMarkLapSlot(:final series, :final label) => _markLap(series, label),
+      BandMetricSlot(:final metric, :final color) => _metric(metric, index, color),
+      BandActionSlot(:final action, :final color) => _action(action, color),
+      BandBellSlot(:final sound, :final color) => _bell(sound, color),
+      BandRadarSlot(:final mode, :final color) => _radar(mode, color),
+      BandWorkoutSlot(:final mode, :final upcoming, :final color) =>
+        _workout(mode, upcoming, index, color),
+      BandMarkLapSlot(:final series, :final label, :final color) => _markLap(series, label, color),
     };
   }
 
@@ -194,7 +195,7 @@ class _RideBottomBandState extends State<RideBottomBand> {
   // rien dire hors enregistrement. `ListenableBuilder` et non un simple
   // `onTap` figé au premier rendu : `recorder.isActive` change en cours de
   // sortie (démarrage/pause), sans reconstruire toute la coquille.
-  Widget _markLap(String series, String? label) => Padding(
+  Widget _markLap(String series, String? label, Color? background) => Padding(
         padding: const EdgeInsets.fromLTRB(2, 3, 2, 3),
         child: ListenableBuilder(
           listenable: widget.recorder,
@@ -202,7 +203,7 @@ class _RideBottomBandState extends State<RideBottomBand> {
             final onTap = widget.recorder.isActive ? () => widget.recorder.markLap(series) : null;
             final color = onTap == null ? Colors.white24 : Colors.white70;
             return Material(
-              color: const Color(0xFF1F2226),
+              color: background ?? const Color(0xFF1F2226),
               borderRadius: BorderRadius.circular(6),
               child: InkWell(
                 onTap: onTap,
@@ -235,10 +236,10 @@ class _RideBottomBandState extends State<RideBottomBand> {
 
   // Même marge que `BandMetricTile` : sans elle, l'icône touchait ses
   // voisines alors que chaque case de mesure en garde une.
-  Widget _action(BandAction action) => switch (action) {
+  Widget _action(BandAction action, Color? color) => switch (action) {
         BandAction.sleep => Padding(
             padding: const EdgeInsets.fromLTRB(2, 3, 2, 3),
-            child: SleepControl(onSleep: widget.onSleep, mode: SleepMode.compact),
+            child: SleepControl(onSleep: widget.onSleep, mode: SleepMode.compact, color: color),
           ),
         BandAction.toggleWorkout => Padding(
             padding: const EdgeInsets.fromLTRB(2, 3, 2, 3),
@@ -246,11 +247,16 @@ class _RideBottomBandState extends State<RideBottomBand> {
               recorder: widget.recorder,
               onChooseWorkout: widget.onChooseWorkout,
               mode: ToggleWorkoutMode.compact,
+              color: color,
             ),
           ),
         BandAction.leaveRide => Padding(
             padding: const EdgeInsets.fromLTRB(2, 3, 2, 3),
-            child: LeaveRideControl(onLeaveRide: widget.onLeaveRide, mode: LeaveRideMode.compact),
+            child: LeaveRideControl(
+              onLeaveRide: widget.onLeaveRide,
+              mode: LeaveRideMode.compact,
+              color: color,
+            ),
           ),
         BandAction.route => Padding(
             padding: const EdgeInsets.fromLTRB(2, 3, 2, 3),
@@ -259,24 +265,26 @@ class _RideBottomBandState extends State<RideBottomBand> {
               onClearRoute: widget.onClearRoute,
               nav: widget.sources.nav,
               mode: RouteMode.compact,
+              color: color,
             ),
           ),
         BandAction.togglePause => Padding(
             padding: const EdgeInsets.fromLTRB(2, 3, 2, 3),
-            child: TogglePauseControl(recorder: widget.recorder, compact: true),
+            child: TogglePauseControl(recorder: widget.recorder, compact: true, color: color),
           ),
       };
 
-  Widget _bell(BellSound sound) => Padding(
+  Widget _bell(BellSound sound, Color? color) => Padding(
         padding: const EdgeInsets.fromLTRB(2, 3, 2, 3),
-        child: BellControl(mode: BellMode.compact, sound: sound),
+        child: BellControl(mode: BellMode.compact, sound: sound, color: color),
       );
 
   // Pas de marge supplémentaire : [BlockSurface] (`block_card.dart`) porte
   // déjà son propre padding, comme dans une case de grille.
-  Widget _radar(RadarMode mode) => RadarBlockView(radar: widget.radar, mode: mode);
+  Widget _radar(RadarMode mode, Color? color) =>
+      RadarBlockView(radar: widget.radar, mode: mode, color: color);
 
-  Widget _metric(MetricId metric, int index) {
+  Widget _metric(MetricId metric, int index, Color? color) {
     final tile = ListenableBuilder(
       listenable: Listenable.merge(metric.dependencies(widget.sources)),
       builder: (context, _) {
@@ -288,6 +296,7 @@ class _RideBottomBandState extends State<RideBottomBand> {
           label: metric.name,
           zoneKey: reading.zoneKey,
           background: reading.background,
+          color: color,
           altBackground: _alternateBackgrounds[index % 2],
         );
       },
@@ -308,10 +317,11 @@ class _RideBottomBandState extends State<RideBottomBand> {
 
   // Même alternance que [_metric] : deux cases voisines ne se confondent pas
   // en une seule masse quand le tronçon ne porte pas de couleur propre.
-  Widget _workout(BandWorkoutMode mode, bool upcoming, int index) => WorkoutBandTile(
+  Widget _workout(BandWorkoutMode mode, bool upcoming, int index, Color? color) => WorkoutBandTile(
         recorder: widget.recorder,
         mode: mode,
         upcoming: upcoming,
+        color: color,
         altBackground: _alternateBackgrounds[index % 2],
       );
 

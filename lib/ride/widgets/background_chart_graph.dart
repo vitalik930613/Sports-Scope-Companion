@@ -17,27 +17,49 @@ class BackgroundChartGraph extends StatelessWidget {
     super.key,
     required this.points,
     required this.areaColor,
+    this.colorForValue,
     this.lineColor = Colors.white,
   });
 
   final List<MetricTrackPoint> points;
+
+  /// Couleur de l'aire quand [colorForValue] est `null` — une mesure sans
+  /// zones ni tranches n'a rien d'autre à montrer qu'une teinte unique.
   final Color areaColor;
+
+  /// Couleur de l'aire selon la valeur de chaque segment plutôt qu'une seule
+  /// teinte — zones du cycliste (cardio/puissance) ou tranches réglées dans
+  /// l'éditeur, même dessin par trapèze que `MetricTrendGraph`. `null` : l'aire
+  /// entière garde [areaColor], comportement d'avant ce réglage.
+  final Color Function(double value)? colorForValue;
+
   final Color lineColor;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
         builder: (context, constraints) => CustomPaint(
           size: Size(constraints.maxWidth, constraints.maxHeight),
-          painter: _BackgroundChartPainter(points: points, areaColor: areaColor, lineColor: lineColor),
+          painter: _BackgroundChartPainter(
+            points: points,
+            areaColor: areaColor,
+            colorForValue: colorForValue,
+            lineColor: lineColor,
+          ),
         ),
       );
 }
 
 class _BackgroundChartPainter extends CustomPainter {
-  _BackgroundChartPainter({required this.points, required this.areaColor, required this.lineColor});
+  _BackgroundChartPainter({
+    required this.points,
+    required this.areaColor,
+    required this.colorForValue,
+    required this.lineColor,
+  });
 
   final List<MetricTrackPoint> points;
   final Color areaColor;
+  final Color Function(double value)? colorForValue;
   final Color lineColor;
 
   @override
@@ -72,11 +94,34 @@ class _BackgroundChartPainter extends CustomPainter {
       }
     }
 
-    final area = Path.from(line)
-      ..lineTo(xOf(points.last.elapsedS), size.height)
-      ..lineTo(xOf(points.first.elapsedS), size.height)
-      ..close();
-    canvas.drawPath(area, Paint()..color = areaColor);
+    final byValue = colorForValue;
+    if (byValue == null) {
+      final area = Path.from(line)
+        ..lineTo(xOf(points.last.elapsedS), size.height)
+        ..lineTo(xOf(points.first.elapsedS), size.height)
+        ..close();
+      canvas.drawPath(area, Paint()..color = areaColor);
+    } else {
+      // Un trapèze par segment, coloré sur la valeur *du segment* (son
+      // milieu) plutôt qu'un seul aplat pour toute l'aire — c'est ce qui fait
+      // apparaître les zones traversées au fil de la courbe, pas seulement
+      // celle du moment. Même dessin que `MetricTrendGraph`.
+      for (var i = 0; i < points.length - 1; i++) {
+        final a = points[i];
+        final b = points[i + 1];
+        final x1 = xOf(a.elapsedS), x2 = xOf(b.elapsedS);
+        final y1 = yOf(a.value), y2 = yOf(b.value);
+        final mid = (a.value + b.value) / 2;
+
+        final trapeze = Path()
+          ..moveTo(x1, size.height)
+          ..lineTo(x1, y1)
+          ..lineTo(x2, y2)
+          ..lineTo(x2, size.height)
+          ..close();
+        canvas.drawPath(trapeze, Paint()..color = byValue(mid));
+      }
+    }
 
     // Le tracé, par-dessus l'aire : un liseré noir sous le trait choisi, même
     // parade que `MetricTrendGraph` — reste lisible même quand `lineColor`
@@ -103,5 +148,8 @@ class _BackgroundChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_BackgroundChartPainter old) =>
-      old.points != points || old.areaColor != areaColor || old.lineColor != lineColor;
+      old.points != points ||
+      old.areaColor != areaColor ||
+      old.colorForValue != colorForValue ||
+      old.lineColor != lineColor;
 }
