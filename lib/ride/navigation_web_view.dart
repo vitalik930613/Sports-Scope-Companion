@@ -286,6 +286,18 @@ class NavigationWebController {
   Future<void> cancelOfflineDownload() => _offlineCommand('offlineCancel');
   Future<void> removeOfflineDownload() => _offlineCommand('offlineRemove');
 
+  /// Coche/décoche un fond pour le prochain téléchargement (`OfflineMapLayer.id`) — même
+  /// geste que les cases du panneau web, relayé par `companionBridge.ts`.
+  Future<void> toggleOfflineLayer(String id) async {
+    try {
+      await webView.runJavaScript(
+        'void (window.sportsScopeCompanion?.offlineToggleLayer?.(${jsonEncode(id)}));',
+      );
+    } catch (e) {
+      debugPrint('[web] choix de couche hors ligne ignoré : $e');
+    }
+  }
+
   /// Fixe les catégories de POI affichées (feuille « POI à proximité »). Le
   /// panneau qui pilote d'ordinaire ces cases (NavControlsPanel) est masqué dans
   /// l'appli — voir `companionBridge.ts`, `setPoiFilter`.
