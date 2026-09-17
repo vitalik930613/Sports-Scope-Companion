@@ -298,6 +298,23 @@ class NavigationWebController {
     }
   }
 
+  /// Bascule le fond de carte de la page déjà ouverte, en direct — depuis le
+  /// menu natif d'une page de sortie (voir `pickMapStyle`, `lib/ui/`). Même
+  /// geste que le sélecteur du panneau web (`setMapStyle`, masqué dans
+  /// l'appli) : la page persiste aussi ce choix comme préférence de compte,
+  /// donc `CompanionSettingsStore.recordMapStyle` n'a qu'à suivre côté appli
+  /// sans repasser par le réseau (contrairement au choix fait hors sortie,
+  /// via `MapStyleWrite`).
+  Future<void> setMapStyle(String id) async {
+    try {
+      await webView.runJavaScript(
+        'void (window.sportsScopeCompanion?.setMapStyle?.(${jsonEncode(id)}));',
+      );
+    } catch (e) {
+      debugPrint('[web] choix de fond de carte ignoré : $e');
+    }
+  }
+
   /// Fixe les catégories de POI affichées (feuille « POI à proximité »). Le
   /// panneau qui pilote d'ordinaire ces cases (NavControlsPanel) est masqué dans
   /// l'appli — voir `companionBridge.ts`, `setPoiFilter`.

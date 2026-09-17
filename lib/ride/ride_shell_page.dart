@@ -26,6 +26,7 @@ import '../training_program/training_program.dart';
 import '../training_program/training_program_catalog_store.dart';
 import '../training_program/workout_lap_series.dart';
 import '../training_program/workout_picker_sheet.dart';
+import '../ui/map_style_picker.dart';
 import '../ui/offline_download_dialog.dart';
 import '../ui/power_calibration_dialog.dart';
 import 'auto_return_policy.dart';
@@ -1509,6 +1510,40 @@ class _RideShellPageState extends State<RideShellPage>
     );
   }
 
+  /// Change le fond de carte de la page déjà ouverte, en direct — même
+  /// raison que [_downloadOffline] : `NavControlsPanel`, qui le propose en
+  /// navigateur, est masqué dans l'appli tout du long d'une sortie, il faut
+  /// donc bien un chemin natif pour ce geste-là aussi pendant qu'on roule, pas
+  /// seulement avant de partir (`CompanionSettingsPage`, `MapStyleWrite`).
+  ///
+  /// Catalogue lu dans `widget.companionSettings` (déjà tenu à jour par
+  /// [SportsScopeApp], sans requête ici) plutôt que par le pont de navigation :
+  /// c'est la même liste que la page de réglages, et il n'y a aucune raison
+  /// qu'elle diffère selon d'où on la choisit.
+  Future<void> _pickMapStyle() async {
+    final web = _web;
+    if (web == null) return;
+
+    final styles = widget.companionSettings.mapStyles;
+    if (styles.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Réglage pas encore disponible — connecte-toi (bouton '
+            'Compte) et relance l\'appli.'),
+      ));
+      return;
+    }
+
+    final current = widget.companionSettings.mapStyle;
+    final chosen = await pickMapStyle(context, styles: styles, current: current);
+    if (chosen == null || chosen == current) return;
+
+    unawaited(web.setMapStyle(chosen));
+    // La page persiste elle-même ce choix comme préférence de compte
+    // (`setMapStyle` côté site) : on ne fait ici que suivre, pour que le
+    // document en cache reste cohérent sans repasser par le réseau.
+    await widget.companionSettings.recordMapStyle(chosen);
+  }
+
   /// Lance le téléchargement hors-ligne sans passer par le menu, quand le lien
   /// qui a ouvert cette sortie le demandait (`?download=1` sur le site, voir
   /// [NavigationTarget.autoDownloadOffline]) — la même boîte que
@@ -2166,6 +2201,7 @@ class _RideShellPageState extends State<RideShellPage>
                   onSleep: _preset.hasMap ? _sleep : null,
                   offlineMap: _preset.hasMap ? _offline : null,
                   onDownloadOffline: _preset.hasMap ? _downloadOffline : null,
+                  onMapStyle: _preset.hasMap ? _pickMapStyle : null,
                   onCalibratePower:
                       powerCalibrationAvailable(widget.hub) ? _calibratePower : null,
                   // Sans rapport avec la carte, contrairement aux commandes
@@ -2617,6 +2653,9 @@ class _RideShellPageState extends State<RideShellPage>
       // lui-même si un tracé est effectivement suivi (`supported`).
       offlineMap: _preset.hasMap ? _offline : null,
       onDownloadOffline: _preset.hasMap ? _downloadOffline : null,
+      // Même garde que `onDownloadOffline` : sans carte, aucune page web à
+      // restyler.
+      onMapStyle: _preset.hasMap ? _pickMapStyle : null,
       // La commande n'apparaît que si un capteur connecté sait effectivement se
       // calibrer : évalué à chaque rendu, donc juste dès que le capteur répond.
       onCalibratePower:

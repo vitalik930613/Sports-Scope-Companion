@@ -77,6 +77,7 @@ class DashboardPage extends StatelessWidget {
     this.onSleep,
     this.offlineMap,
     this.onDownloadOffline,
+    this.onMapStyle,
     this.onCalibratePower,
     this.onNearbyPois,
     this.debugClimbActive = false,
@@ -162,6 +163,12 @@ class DashboardPage extends StatelessWidget {
   /// n'est envisageable ici (pas de tracé suivi, ou page trop ancienne) : voir
   /// `OfflineMapState.supported`.
   final VoidCallback? onDownloadOffline;
+
+  /// Ouvrir le choix du fond de carte de navigation — même geste que le
+  /// sélecteur du panneau web (masqué dans l'appli), mais agit sur la page
+  /// déjà ouverte, en direct. Nul dans un profil sans carte, même raison que
+  /// [onChooseRoute] : il n'y a alors aucune page web à restyler.
+  final VoidCallback? onMapStyle;
 
   /// Calibrer le capteur de puissance. Fourni par la coquille seulement quand un
   /// capteur connecté sait le faire — le menu ne montre pas une commande qui
@@ -626,6 +633,7 @@ class DashboardPage extends StatelessWidget {
               onChooseRoute != null ||
               onClearRoute != null ||
               onDownloadOffline != null ||
+              onMapStyle != null ||
               onCalibratePower != null ||
               onStartWorkout != null ||
               onSimulateClimb != null ||
@@ -740,6 +748,17 @@ class DashboardPage extends StatelessWidget {
                         : Icons.download_for_offline_outlined),
                 title: const Text('Carte hors ligne'),
                 subtitle: Text(_offlineSubtitle(offline)),
+              ),
+            ),
+          // Juste après « Carte hors ligne » : les deux portent sur le même
+          // fond, l'un le choisit, l'autre l'emporte.
+          if (onMapStyle case final pick?)
+            PopupMenuItem(
+              value: pick,
+              child: const ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.map_outlined),
+                title: Text('Fond de carte'),
               ),
             ),
           if (onNearbyPois case final openPois?)

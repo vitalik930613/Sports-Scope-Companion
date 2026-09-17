@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../dashboard/companion_settings_store.dart';
+import '../ui/map_style_picker.dart';
 import 'companion_settings_write.dart';
 import 'map_style_write.dart';
 
@@ -12,11 +13,12 @@ import 'map_style_write.dart';
 /// `MapStyleWrite` (un seul champ, fusionné côté serveur) ; seul autre
 /// précédent d'écriture depuis Dart : `RideUploadFetch`.
 ///
-/// Le fond de carte vit ici et non dans la coquille de sortie
-/// (`RideShellPage`) : `NavControlsPanel`, qui le propose en navigateur, est
-/// masqué dans l'appli tout du long d'une sortie (`appOwnsChrome`) — il n'y a
-/// donc nulle part où le choisir *pendant* la navigation, seulement avant de
-/// partir.
+/// Le fond de carte se choisit aussi depuis le menu d'une page de sortie, en
+/// roulant (`RideShellPage`, `NavigationWebController.setMapStyle`) — mais
+/// celui-là agit sur la page déjà ouverte, en direct, et n'existe donc que
+/// pendant une navigation. Cette ligne-ci reste le seul chemin hors sortie,
+/// avant de partir : `NavControlsPanel`, qui le propose en navigateur, est
+/// masqué dans l'appli (`appOwnsChrome`).
 class CompanionSettingsPage extends StatefulWidget {
   const CompanionSettingsPage({super.key, required this.settings});
 
@@ -71,25 +73,7 @@ class _CompanionSettingsPageState extends State<CompanionSettingsPage> {
     }
 
     final current = widget.settings.mapStyle;
-    final chosen = await showDialog<String>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('Fond de carte de navigation'),
-        children: [
-          RadioGroup<String>(
-            groupValue: current,
-            onChanged: (id) => Navigator.of(context).pop(id),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final style in styles)
-                  RadioListTile<String>(value: style.id, title: Text(style.label)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
+    final chosen = await pickMapStyle(context, styles: styles, current: current);
     if (chosen == null || chosen == current) return;
     await _setMapStyle(chosen);
   }
