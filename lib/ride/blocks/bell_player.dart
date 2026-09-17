@@ -21,9 +21,10 @@ import '../../dashboard/dashboard_block.dart';
 ///
 /// Joue le son une fois, jusqu'au bout — pas de boucle : sonnette, klaxon et
 /// booster sont des signaux, pas une alarme à faire cesser. Le minuteur de
-/// secours à 7 s (largement plus long que le plus long des trois —
-/// `booster.wav`, ~6,3 s ; `bell.wav`/`horn.wav` tiennent tous les deux sous
-/// 2 s) ne sert qu'à couvrir un `onPlayerComplete` qui n'arriverait pas :
+/// secours à 7 s (largement plus long que le plus long des sons —
+/// `booster.wav`, ~6,3 s, et `bout-du-rouleau.wav`, ~5,9 s ; `bell.wav`/
+/// `horn.wav` tiennent tous les deux sous 2 s) ne sert qu'à couvrir un
+/// `onPlayerComplete` qui n'arriverait pas :
 /// trop court, il coupe le son avant sa fin dans le cas courant, pas
 /// seulement dans le cas raté qu'il est censé couvrir. Son au flux d'alarme
 /// (`AndroidUsageType.alarm`) plutôt qu'au volume média : c'est le seul flux

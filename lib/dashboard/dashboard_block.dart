@@ -1616,7 +1616,10 @@ enum BellSound with BlockMode {
   /// minuteur).
   horn2('horn2'),
   horn3('horn3'),
-  horn4('horn4');
+  horn4('horn4'),
+
+  /// Aussi long que [booster] (~5,9 s) — même minuteur de secours.
+  boutDuRouleau('bout-du-rouleau');
 
   const BellSound(this.key);
 
