@@ -178,12 +178,17 @@ class PrecipRadarBlockView extends StatefulWidget {
   PrecipRadarBlockView({
     super.key,
     required this.recorder,
+    this.mapStyle,
     this.color,
     this.textColor,
     RainviewerClient? client,
   }) : client = client ?? RainviewerClient();
 
   final RideRecorder recorder;
+
+  /// Le fond de carte à suivre (`CompanionSettingsStore.mapStyle`) — voir
+  /// `basemapTileUrl` dans `rainviewer_client.dart`.
+  final String? mapStyle;
 
   /// Fond de la carte, réglé dans l'éditeur — voir `DashboardBlock.color`.
   final Color? color;
@@ -258,6 +263,7 @@ class _PrecipRadarBlockViewState extends State<PrecipRadarBlockView> {
               frame: frame,
               fix: fix,
               zoom: _zoom,
+              mapStyle: widget.mapStyle,
               showClock: true,
               paused: _animator.isPaused,
               onScrub: _animator.seekTo,
@@ -272,7 +278,11 @@ class _PrecipRadarBlockViewState extends State<PrecipRadarBlockView> {
   void _openDetail(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => _PrecipRadarDetailPage(recorder: widget.recorder, client: widget.client),
+        builder: (_) => _PrecipRadarDetailPage(
+          recorder: widget.recorder,
+          client: widget.client,
+          mapStyle: widget.mapStyle,
+        ),
         fullscreenDialog: true,
       ),
     );
@@ -326,6 +336,7 @@ class RadarCanvas extends StatelessWidget {
     required this.frame,
     required this.fix,
     required this.zoom,
+    this.mapStyle,
     this.showClock = false,
     this.paused = false,
     this.onScrub,
@@ -336,6 +347,9 @@ class RadarCanvas extends StatelessWidget {
   final RainviewerFrame frame;
   final GpsFix fix;
   final int zoom;
+
+  /// Le fond de carte à suivre — voir `PrecipRadarBlockView.mapStyle`.
+  final String? mapStyle;
 
   final bool showClock;
 
@@ -391,10 +405,12 @@ class RadarCanvas extends StatelessWidget {
     // tuile source est 256×256, et `BoxFit.cover` dans une case non carrée
     // recadrerait chaque tuile différemment de sa voisine selon l'axe le
     // plus serré — les routes ne se raccorderaient plus d'une tuile à
-    // l'autre (vérifié : les tuiles de swisstopo s'alignent parfaitement
+    // l'autre (vérifié sur swisstopo : les tuiles s'alignent parfaitement
     // entre elles quand on les recadre soi-même à la même échelle sur les
-    // deux axes). La grille peut donc déborder légèrement la case ; le
-    // `Stack` la coupe au bord comme toute case trop généreuse.
+    // deux axes — même grille XYZ Web Mercator standard pour tous les fonds
+    // que ce composant sait afficher, voir `rainviewer_client.dart`). La
+    // grille peut donc déborder légèrement la case ; le `Stack` la coupe au
+    // bord comme toute case trop généreuse.
     const tileSize = _targetTilePx;
 
     final xFrac = lonToTileX(fix.lng, zoom);
@@ -449,7 +465,7 @@ class RadarCanvas extends StatelessWidget {
                 width: tileSize,
                 height: tileSize,
                 child: Image.network(
-                  basemapTileUrl(zoom, centerX + dx, centerY + dy),
+                  basemapTileUrl(mapStyle, zoom, centerX + dx, centerY + dy),
                   fit: BoxFit.cover,
                   gaplessPlayback: true,
                   errorBuilder: (context, error, stackTrace) =>
@@ -514,7 +530,9 @@ class RadarCanvas extends StatelessWidget {
                     // Fond propre plutôt que de compter sur le seul dégradé
                     // du bandeau : cette ligne est la plus proche du haut de
                     // la case, là où le dégradé est le plus transparent — et
-                    // la carte en dessous peut être claire (swisstopo).
+                    // le fond de carte en dessous suit le réglage du
+                    // cycliste (`mapStyle`), qui peut être clair (swissgrau,
+                    // atgrau…) comme sombre (une photo aérienne).
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                       decoration: BoxDecoration(
@@ -734,8 +752,9 @@ class _FrameTimeline extends StatelessWidget {
   }
 
   /// L'heure d'une extrémité de la frise, sur un fond propre — la carte en
-  /// dessous (`RadarCanvas`) peut très bien être claire (swisstopo est un
-  /// fond blanc/gris), et le texte doit rester lisible même là.
+  /// dessous (`RadarCanvas`) suit le fond choisi pour la navigation et peut
+  /// donc très bien être claire (swissgrau, par exemple), et le texte doit
+  /// rester lisible même là.
   Widget _timeLabel(RainviewerFrame frame) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
         decoration: BoxDecoration(
@@ -763,10 +782,13 @@ class _FrameTimeline extends StatelessWidget {
 /// [RainviewerCatalog.maxZoom] : servies quand même, elles affichent
 /// littéralement « Zoom Level Not Supported » en pixels).
 class _PrecipRadarDetailPage extends StatefulWidget {
-  const _PrecipRadarDetailPage({required this.recorder, required this.client});
+  const _PrecipRadarDetailPage({required this.recorder, required this.client, this.mapStyle});
 
   final RideRecorder recorder;
   final RainviewerClient client;
+
+  /// Le fond de carte à suivre — voir `PrecipRadarBlockView.mapStyle`.
+  final String? mapStyle;
 
   @override
   State<_PrecipRadarDetailPage> createState() => _PrecipRadarDetailPageState();
@@ -881,7 +903,7 @@ class _PrecipRadarDetailPageState extends State<_PrecipRadarDetailPage> {
                       ),
                       children: [
                         TileLayer(
-                          urlTemplate: basemapTileUrlTemplate,
+                          urlTemplate: basemapTileUrlTemplate(widget.mapStyle),
                           userAgentPackageName: 'ch.logicraft.sports.companion',
                         ),
                         Opacity(
@@ -958,9 +980,9 @@ class _PrecipRadarDetailPageState extends State<_PrecipRadarDetailPage> {
                         ),
                       ],
                     ),
-                    const Text(
-                      '© swisstopo, © RainViewer',
-                      style: TextStyle(color: Colors.white38, fontSize: 10),
+                    Text(
+                      '${basemapAttribution(widget.mapStyle)}, © RainViewer',
+                      style: const TextStyle(color: Colors.white38, fontSize: 10),
                     ),
                   ],
                 ),

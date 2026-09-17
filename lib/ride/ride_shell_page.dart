@@ -2202,6 +2202,11 @@ class _RideShellPageState extends State<RideShellPage>
                   offlineMap: _preset.hasMap ? _offline : null,
                   onDownloadOffline: _preset.hasMap ? _downloadOffline : null,
                   onMapStyle: _preset.hasMap ? _pickMapStyle : null,
+                  // Sans rapport avec la carte de navigation : le bloc
+                  // précipitations lit la météo locale via le GPS de
+                  // l'enregistreur, avec ou sans profil de carte. Ce n'est
+                  // que le fond SOUS ses tuiles qui suit ce réglage.
+                  mapStyle: widget.companionSettings.mapStyle,
                   onCalibratePower:
                       powerCalibrationAvailable(widget.hub) ? _calibratePower : null,
                   // Sans rapport avec la carte, contrairement aux commandes
@@ -2656,6 +2661,9 @@ class _RideShellPageState extends State<RideShellPage>
       // Même garde que `onDownloadOffline` : sans carte, aucune page web à
       // restyler.
       onMapStyle: _preset.hasMap ? _pickMapStyle : null,
+      // Toujours transmis, avec ou sans carte — voir le commentaire jumeau
+      // plus haut (page ouverte depuis le menu).
+      mapStyle: widget.companionSettings.mapStyle,
       // La commande n'apparaît que si un capteur connecté sait effectivement se
       // calibrer : évalué à chaque rendu, donc juste dès que le capteur répond.
       onCalibratePower:

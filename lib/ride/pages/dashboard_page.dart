@@ -78,6 +78,7 @@ class DashboardPage extends StatelessWidget {
     this.offlineMap,
     this.onDownloadOffline,
     this.onMapStyle,
+    this.mapStyle,
     this.onCalibratePower,
     this.onNearbyPois,
     this.debugClimbActive = false,
@@ -169,6 +170,13 @@ class DashboardPage extends StatelessWidget {
   /// déjà ouverte, en direct. Nul dans un profil sans carte, même raison que
   /// [onChooseRoute] : il n'y a alors aucune page web à restyler.
   final VoidCallback? onMapStyle;
+
+  /// Le fond choisi (`CompanionSettingsStore.mapStyle`), transmis au bloc
+  /// `precip_radar` pour qu'il affiche le même fond que celui vu en roulant
+  /// plutôt qu'un fond choisi indépendamment — voir `rainviewer_client.dart`.
+  /// `null` tant qu'aucun document n'a été reçu, comme un style vectoriel ou
+  /// inconnu : le bloc retombe alors sur `defaultBasemapStyle`.
+  final String? mapStyle;
 
   /// Calibrer le capteur de puissance. Fourni par la coquille seulement quand un
   /// capteur connecté sait le faire — le menu ne montre pas une commande qui
@@ -424,6 +432,7 @@ class DashboardPage extends StatelessWidget {
           ),
         final PrecipRadarBlock precip => PrecipRadarBlockView(
             recorder: sources.recorder,
+            mapStyle: mapStyle,
             color: precip.color,
             textColor: precip.textColor,
           ),

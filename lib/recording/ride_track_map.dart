@@ -4,12 +4,16 @@ import 'package:latlong2/latlong.dart' as ll;
 
 import '../dashboard/block_density.dart';
 import '../ride/blocks/block_card.dart';
-import '../weather/rainviewer_client.dart' show basemapTileUrlTemplate;
+import '../weather/rainviewer_client.dart' show basemapTileUrlTemplate, defaultBasemapStyle;
 import 'track_point.dart';
 
-/// Le tracé d'une sortie déjà enregistrée, sur le même fond de carte
-/// auto-hébergé que le bloc radar précipitations (swisstopo — voir
-/// `basemapTileUrlTemplate` pour la couverture et l'attribution requises).
+/// Le tracé d'une sortie déjà enregistrée, sur le fond de carte auto-hébergé
+/// par défaut ([defaultBasemapStyle], swisstopo gris) — voir
+/// `basemapTileUrlTemplate` pour la couverture et l'attribution requises.
+/// Fixe et non celui choisi pour la navigation, contrairement au bloc radar
+/// précipitations : c'est un aperçu du **tracé**, pas de la météo qu'on a
+/// suivie, et il n'a donc pas la même raison de suivre le réglage du
+/// cycliste.
 ///
 /// Non interactive à dessein : elle vit dans le `ListView` d'une page qui
 /// doit rester libre de défiler par-dessus. La carte de navigation, elle,
@@ -87,7 +91,7 @@ class RideTrackMap extends StatelessWidget {
                         ),
                         children: [
                           TileLayer(
-                            urlTemplate: basemapTileUrlTemplate,
+                            urlTemplate: basemapTileUrlTemplate(defaultBasemapStyle),
                             userAgentPackageName: 'ch.logicraft.sports.companion',
                           ),
                           PolylineLayer(
@@ -218,7 +222,7 @@ class _RideTrackDetailPageState extends State<_RideTrackDetailPage> {
             ),
             children: [
               TileLayer(
-                urlTemplate: basemapTileUrlTemplate,
+                urlTemplate: basemapTileUrlTemplate(defaultBasemapStyle),
                 userAgentPackageName: 'ch.logicraft.sports.companion',
               ),
               PolylineLayer(
