@@ -175,7 +175,8 @@ class _NotchBandState extends State<NotchBand> {
     if (slot == null) return const SizedBox.shrink();
 
     return switch (slot) {
-      BandMetricSlot(:final metric, :final color) => _metric(metric, color),
+      BandMetricSlot(:final metric, :final color, :final gaugeThresholds, :final gaugeThresholdColors) =>
+        _metric(metric, color, gaugeThresholds, gaugeThresholdColors),
       BandActionSlot(:final action, :final color) => _action(action, color),
       BandBellSlot(:final sound, :final color) =>
         BellControl(mode: BellMode.compact, sound: sound, color: color),
@@ -231,7 +232,7 @@ class _NotchBandState extends State<NotchBand> {
   Widget _radar(RadarMode mode, Color? color) =>
       RadarBlockView(radar: widget.radar, mode: mode, color: color);
 
-  Widget _metric(MetricId metric, Color? color) {
+  Widget _metric(MetricId metric, Color? color, List<double>? gaugeThresholds, List<Color>? gaugeThresholdColors) {
     return FittedBox(
       fit: BoxFit.scaleDown,
       child: ListenableBuilder(
@@ -243,6 +244,7 @@ class _NotchBandState extends State<NotchBand> {
             label: metric.name,
             zoneKey: reading.zoneKey,
             background: reading.background,
+            thresholdColor: bandThresholdColorFor(reading.numericValue, gaugeThresholds, gaugeThresholdColors),
             color: color,
             // Inverse du bandeau du bas : le libellé au-dessus du chiffre.
             labelFirst: true,

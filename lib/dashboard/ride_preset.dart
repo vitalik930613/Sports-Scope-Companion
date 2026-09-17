@@ -952,10 +952,19 @@ sealed class BandSlot {
         color: _colorOf(raw),
       );
     }
-    // L'enveloppe d'un jeton simple avec sa couleur : le jeton lui-même est
-    // décodé par `_parseToken`, seule la couleur est propre à ce niveau.
+    // L'enveloppe d'un jeton simple avec sa couleur (fixe) ou ses tranches
+    // (conditionnelle) : le jeton lui-même est décodé par `_parseToken`, ces
+    // deux réglages sont propres à ce niveau. Les tranches ne concernent
+    // qu'une case `metric` — voir `_bandGaugeThresholdsOf`.
     if (raw is Map && raw.containsKey('slot')) {
-      return _parseToken(raw['slot'])?.withColor(_colorOf(raw));
+      final slot = _parseToken(raw['slot'])?.withColor(_colorOf(raw));
+      if (slot is BandMetricSlot) {
+        final bands = _bandGaugeThresholdsOf(raw);
+        if (bands != null) {
+          return BandMetricSlot(slot.metric, gaugeThresholds: bands.$1, gaugeThresholdColors: bands.$2);
+        }
+      }
+      return slot;
     }
     return _parseToken(raw);
   }
@@ -995,6 +1004,40 @@ sealed class BandSlot {
     final match = RegExp(r'^#([0-9a-fA-F]{6})$').firstMatch(value);
     if (match == null) return null;
     return Color(0xFF000000 | int.parse(match.group(1)!, radix: 16));
+  }
+
+  /// Jalons et couleurs d'une case `metric` à couleur de fond conditionnelle
+  /// (`{"slot": ..., "gauge_thresholds": [...], "gauge_threshold_colors":
+  /// [...]}`) — même forme que `_gaugeThresholdsOf` (`dashboard_block.dart`),
+  /// dupliquée ici pour la même raison (classe scellée d'un autre fichier) ;
+  /// chaque couleur passe par [_colorOf] plutôt qu'un accès direct, pour
+  /// réutiliser sa même regex plutôt que la récrire. `null` si l'un des deux
+  /// tableaux manque, si les jalons ne sont pas strictement croissants, ou si
+  /// les couleurs ne comptent pas le bon nombre — même repli que côté site
+  /// (`CompanionSettings#sanitize_gauge_thresholds`) : la case retombe alors
+  /// sur son rendu habituel plutôt que sur des tranches inventées.
+  static (List<double>, List<Color>)? _bandGaugeThresholdsOf(Map raw) {
+    final rawThresholds = raw['gauge_thresholds'];
+    final rawColors = raw['gauge_threshold_colors'];
+    if (rawThresholds is! List || rawColors is! List) return null;
+
+    final thresholds = <double>[];
+    for (final value in rawThresholds) {
+      final v = value is num ? value.toDouble() : null;
+      if (v == null) return null;
+      if (thresholds.isNotEmpty && v <= thresholds.last) return null;
+      thresholds.add(v);
+    }
+    if (thresholds.isEmpty || rawColors.length != thresholds.length + 1) return null;
+
+    final colors = <Color>[];
+    for (final value in rawColors) {
+      final color = _colorOf({'color': value});
+      if (color == null) return null;
+      colors.add(color);
+    }
+
+    return (thresholds, colors);
   }
 
   /// Recompose la même case avec une couleur de fond — utilisé seulement par
@@ -1119,8 +1162,18 @@ class ReminderSpec {
 /// `BandSlot` existe.
 @immutable
 class BandMetricSlot extends BandSlot {
-  const BandMetricSlot(this.metric, {super.color});
+  const BandMetricSlot(this.metric, {super.color, this.gaugeThresholds, this.gaugeThresholdColors});
   final MetricId metric;
+
+  /// Jalons et couleurs d'une couleur de fond conditionnelle, réglée dans
+  /// l'éditeur — même contrat que [MetricBlock.gaugeThresholds]/
+  /// [MetricBlock.gaugeThresholdColors] (`dashboard_block.dart`), voir
+  /// [BandSlot.parse]/[BandSlot._bandGaugeThresholdsOf]. Exclusif avec
+  /// [BandSlot.color] : le site n'écrit jamais les deux à la fois (voir
+  /// `CompanionSettings#sanitize_band_colored_slot`). `null` : aucun seuil
+  /// réglé, la case garde son fond habituel.
+  final List<double>? gaugeThresholds;
+  final List<Color>? gaugeThresholdColors;
 }
 
 /// Les commandes qu'une case peut porter, sans réglage propre. Un `enum` et

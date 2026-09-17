@@ -181,7 +181,8 @@ class _RideBottomBandState extends State<RideBottomBand> {
     if (slot == null) return const SizedBox.shrink();
 
     return switch (slot) {
-      BandMetricSlot(:final metric, :final color) => _metric(metric, index, color),
+      BandMetricSlot(:final metric, :final color, :final gaugeThresholds, :final gaugeThresholdColors) =>
+        _metric(metric, index, color, gaugeThresholds, gaugeThresholdColors),
       BandActionSlot(:final action, :final color) => _action(action, color),
       BandBellSlot(:final sound, :final color) => _bell(sound, color),
       BandRadarSlot(:final mode, :final color) => _radar(mode, color),
@@ -284,7 +285,9 @@ class _RideBottomBandState extends State<RideBottomBand> {
   Widget _radar(RadarMode mode, Color? color) =>
       RadarBlockView(radar: widget.radar, mode: mode, color: color);
 
-  Widget _metric(MetricId metric, int index, Color? color) {
+  Widget _metric(
+    MetricId metric, int index, Color? color, List<double>? gaugeThresholds, List<Color>? gaugeThresholdColors,
+  ) {
     final tile = ListenableBuilder(
       listenable: Listenable.merge(metric.dependencies(widget.sources)),
       builder: (context, _) {
@@ -296,6 +299,7 @@ class _RideBottomBandState extends State<RideBottomBand> {
           label: metric.name,
           zoneKey: reading.zoneKey,
           background: reading.background,
+          thresholdColor: bandThresholdColorFor(reading.numericValue, gaugeThresholds, gaugeThresholdColors),
           color: color,
           altBackground: _alternateBackgrounds[index % 2],
         );

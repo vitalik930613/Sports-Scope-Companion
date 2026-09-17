@@ -2,6 +2,28 @@ import 'package:flutter/material.dart';
 
 import '../../ui/zone_colors.dart';
 
+/// La couleur de la tranche dans laquelle tombe [value] parmi [thresholds]/
+/// [colors] (une case `metric` de bandeau/encoche à couleur de fond
+/// conditionnelle, `BandMetricSlot.gaugeThresholds`/`gaugeThresholdColors`) —
+/// même calcul que `MetricView._thresholdColorFor`, dupliqué ici (méthode
+/// privée d'une autre classe). `null` sans les deux tableaux, ou tant que la
+/// mesure ne porte pas de chiffre (capteur muet) : la case garde alors son
+/// fond sémantique habituel plutôt qu'une tranche devinée.
+Color? bandThresholdColorFor(double? value, List<double>? thresholds, List<Color>? colors) {
+  if (thresholds == null || colors == null || colors.length != thresholds.length + 1 || value == null) {
+    return null;
+  }
+  var index = 0;
+  for (final threshold in thresholds) {
+    if (value >= threshold) {
+      index++;
+    } else {
+      break;
+    }
+  }
+  return colors[index];
+}
+
 /// Une valeur affichée en case : le chiffre, puis son unité en dessous.
 ///
 /// Un tiret quand la mesure manque, jamais un zéro — même règle que
@@ -18,6 +40,7 @@ class BandMetricTile extends StatelessWidget {
     required this.label,
     this.zoneKey,
     this.background,
+    this.thresholdColor,
     this.color,
     this.altBackground,
     this.labelFirst = false,
@@ -41,6 +64,13 @@ class BandMetricTile extends StatelessWidget {
   /// [MetricView] : elle l'emporte sur l'alternance noir/anthracite.
   final Color? background;
 
+  /// Couleur de la tranche réglée dans l'éditeur pour la valeur courante —
+  /// voir [bandThresholdColorFor]. Prioritaire sur tout le reste (comme dans
+  /// une case de grille, `MetricView._paint`) : c'est le seul réglage de fond
+  /// qui réagit à la valeur, il n'a de sens que si on le voit vraiment.
+  /// Exclusif avec [color] (voir `BandMetricSlot.gaugeThresholds`).
+  final Color? thresholdColor;
+
   /// Fond réglé dans l'éditeur pour cette case (`BandSlot.color`) — sous la
   /// couleur de zone/mesure ([background]/[zoneKey]), qui reste la donnée,
   /// mais au-dessus de l'alternance ([altBackground]).
@@ -52,7 +82,7 @@ class BandMetricTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final zoneColor = background ?? zoneColorOf(zoneKey) ?? color;
+    final zoneColor = thresholdColor ?? background ?? zoneColorOf(zoneKey) ?? color;
     final foreground = zoneColor == null ? Colors.white : foregroundOf(zoneColor);
 
     final valueText = FittedBox(
