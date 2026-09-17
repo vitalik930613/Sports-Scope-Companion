@@ -85,6 +85,36 @@ class CompanionSettingsStore extends ChangeNotifier {
   /// Deviner un col en navigation libre et l'annoncer (voir `RideColGuessFlash`).
   bool get colDetection => _settings.colDetection;
 
+  /// Le fond de carte choisi pour la navigation guidée
+  /// (`preferences.navigation.default_style` côté site, cf.
+  /// `CompanionSettingsController#show`). `null` tant qu'aucun document n'a
+  /// jamais été reçu — un site plus ancien que ce réglage l'aurait aussi laissé
+  /// absent, mais il n'en existe plus depuis son introduction.
+  String? get mapStyle {
+    final doc = _document;
+    if (doc is! Map) return null;
+    final id = doc['map_style'];
+    return id is String && id.isNotEmpty ? id : null;
+  }
+
+  /// Le catalogue des fonds proposables (id + libellé déjà traduit par le
+  /// site — voir `map_style_write.dart`). Vide contre un site plus ancien que
+  /// ce réglage : la page de réglages garde alors sa ligne, inerte.
+  List<({String id, String label})> get mapStyles {
+    final doc = _document;
+    final raw = doc is Map ? doc['map_styles'] : null;
+    if (raw is! List) return const [];
+    final result = <({String id, String label})>[];
+    for (final entry in raw) {
+      if (entry is! Map) continue;
+      final id = entry['id'];
+      if (id is! String || id.isEmpty) continue;
+      final label = entry['label'];
+      result.add((id: id, label: label is String && label.isNotEmpty ? label : id));
+    }
+    return result;
+  }
+
   /// Le document brut du compte, tel que reçu du site (ou déjà réécrit par un
   /// PATCH précédent). `null` tant qu'aucun document n'a jamais été reçu.
   ///
@@ -162,6 +192,18 @@ class CompanionSettingsStore extends ChangeNotifier {
   Future<void> select(String key) async {
     if (_selectedKey == key) return;
     _selectedKey = key;
+    notifyListeners();
+    await _write();
+  }
+
+  /// Reporte le fond de carte de navigation confirmé par le serveur
+  /// ([MapStyleWrite]) dans le document en cache. Ne redemande pas tout le
+  /// document — un seul champ a changé, l'aller-retour complet coûterait un
+  /// WebView hors écran de plus pour rien.
+  Future<void> recordMapStyle(String id) async {
+    final doc = _document;
+    if (doc is! Map) return;
+    _document = {...doc, 'map_style': id};
     notifyListeners();
     await _write();
   }
