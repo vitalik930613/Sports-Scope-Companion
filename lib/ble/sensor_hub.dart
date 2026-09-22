@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import 'decoders/di2.dart';
+import 'primary_source_gate.dart';
 import 'samples.dart';
 import 'sensor_connection.dart';
 import 'sensor_profile.dart';
@@ -15,6 +16,15 @@ import 'sensor_profile.dart';
 /// *avant* que l'UI ne lise [latest…] — un crash ne doit jamais coûter une
 /// sortie.
 class SensorHub {
+  SensorHub({String? Function()? primaryHeartRateOf})
+      : _primaryHeartRateOf = primaryHeartRateOf ?? (() => null);
+
+  /// L'appareil désigné « cardio principal » (`KnownDevice.primaryHeartRate`).
+  /// Une fonction et non une valeur : il se choisit sur la page des capteurs,
+  /// pendant que le hub tourne déjà.
+  final String? Function() _primaryHeartRateOf;
+  final _heartRateGate = PrimarySourceGate();
+
   final _connections = <SensorConnection>[];
   final _samples = StreamController<SensorSample>.broadcast();
   final _rawFrames = StreamController<RawFrame>.broadcast();
@@ -72,7 +82,8 @@ class SensorHub {
     final connection = SensorConnection(device: device, label: label);
     _connections.add(connection);
 
-    connection.samples.listen(_onSample, onError: (Object e) {
+    connection.samples.listen((sample) => _onSample(connection, sample),
+        onError: (Object e) {
       debugPrint('[hub] ${connection.name}: $e');
     });
     connection.rawFrames.listen(_rawFrames.add);
@@ -81,7 +92,19 @@ class SensorHub {
     return connection;
   }
 
-  void _onSample(SensorSample sample) {
+  void _onSample(SensorConnection source, SensorSample sample) {
+    // Filtré ici, avant `_samples` : l'enregistreur et le pont lisent ce flux,
+    // pas `latestHeartRate`, et la relève doit valoir pour eux aussi. Les
+    // trames brutes, elles, passent toutes — c'est l'outil de diagnostic.
+    if (sample is HeartRateSample &&
+        !_heartRateGate.accept(
+          source: source.device.remoteId.str,
+          primary: _primaryHeartRateOf(),
+          at: sample.at,
+          live: sample.bpm > 0,
+        )) {
+      return;
+    }
     switch (sample) {
       case HeartRateSample(:final bpm):
         latestHeartRate.value = bpm;

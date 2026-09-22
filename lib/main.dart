@@ -129,7 +129,9 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
   /// Le hub vit au-dessus des écrans : les capteurs restent connectés quand on
   /// passe de la page de diagnostic à la navigation, et un lien entrant peut
   /// ouvrir la navigation sans repasser par la page des capteurs.
-  final _hub = SensorHub();
+  late final _hub = SensorHub(
+    primaryHeartRateOf: () => widget.devices.primaryHeartRateId,
+  );
 
   /// Les capteurs du téléphone lui-même : baromètre (dénivelé), luminosité
   /// (éclairage) et boussole (cap à l'arrêt). Une seule façade, partagée — rien

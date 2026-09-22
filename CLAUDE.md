@@ -145,6 +145,27 @@ ce qui rattrape le capteur qui décroche en pleine sortie. Et le guetteur écout
 les résultats de **n'importe quel** scan, y compris celui lancé à la main depuis
 la page des capteurs.
 
+### Deux cardios : le principal et la relève
+
+Le hub n'a qu'une valeur par mesure. Une ceinture et une montre (Garmin en
+« Diffuser la FC ») connectées ensemble y écrivaient donc à tour de rôle, et
+l'enregistrement mélangeait les deux courbes. Depuis la page Capteurs, un appareil
+peut être désigné **cardio principal** (`KnownDevice.primaryHeartRate`, au plus un,
+`setPrimaryHeartRate` est exclusif). `PrimarySourceGate`
+(`ble/primary_source_gate.dart`, pur) filtre dans `SensorHub._onSample`,
+**avant** `samples`, pour que l'enregistreur et le pont en profitent aussi, et
+pas seulement `latestHeartRate`. Trois choses à ne pas défaire :
+
+- **Les autres appareils prennent la relève et ne sont jamais coupés.** Si le
+  principal ne donne plus de mesure utile pendant 5 s (ceinture qui glisse, pile
+  à plat), les autres reprennent la main : une trace sans cardio ne se rattrape
+  pas.
+- **Un zéro n'est pas une mesure** : il ne garde pas la place du principal et ne
+  vient pas s'intercaler entre les mesures de la relève.
+- Sans principal désigné, le comportement reste celui d'avant : la dernière
+  mesure reçue gagne. Les trames brutes, elles, passent toutes, parce que c'est
+  l'outil de diagnostic.
+
 ## Le WebView de navigation
 
 **Choix structurant** : les ~8 000 lignes de navigation web (carte MapLibre,

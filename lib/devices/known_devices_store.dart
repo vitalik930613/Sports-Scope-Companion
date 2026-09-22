@@ -44,6 +44,14 @@ class KnownDevicesStore extends ChangeNotifier {
     return null;
   }
 
+  /// L'appareil désigné cardio principal, s'il y en a un.
+  String? get primaryHeartRateId {
+    for (final device in _devices) {
+      if (device.primaryHeartRate) return device.remoteId;
+    }
+    return null;
+  }
+
   Future<void> load() async {
     _devices = await _read();
     notifyListeners();
@@ -110,6 +118,23 @@ class KnownDevicesStore extends ChangeNotifier {
     final index = _devices.indexWhere((d) => d.remoteId == remoteId);
     if (index < 0) return;
     _devices[index] = _devices[index].copyWith(autoConnect: autoConnect);
+    await _flush();
+  }
+
+  /// Désigne (ou retire) le cardio principal.
+  ///
+  /// Exclusif : en désigner un détrône l'ancien, faute de quoi deux
+  /// « principaux » ramèneraient exactement le mélange qu'on voulait éviter.
+  Future<void> setPrimaryHeartRate(String remoteId, bool primary) async {
+    if (byId(remoteId) == null) return;
+    _devices = [
+      for (final device in _devices)
+        device.copyWith(
+          primaryHeartRate: device.remoteId == remoteId
+              ? primary
+              : (primary ? false : device.primaryHeartRate),
+        ),
+    ];
     await _flush();
   }
 

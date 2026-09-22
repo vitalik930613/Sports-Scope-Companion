@@ -15,6 +15,7 @@ class KnownDevice {
     this.kinds = const {},
     this.lastConnectedAt,
     this.autoConnect = true,
+    this.primaryHeartRate = false,
   }) : originalName = originalName ?? name;
 
   /// Adresse MAC (Android) ou UUID (iOS). Stable pour un capteur donné.
@@ -40,12 +41,19 @@ class KnownDevice {
   /// qu'on n'utilise pas aujourd'hui.
   final bool autoConnect;
 
+  /// Le cardio qui a la parole quand plusieurs appareils en mesurent un — la
+  /// ceinture plutôt que la montre, typiquement. Au plus un appareil le porte
+  /// (`KnownDevicesStore.setPrimaryHeartRate`) ; les autres ne servent que de
+  /// relève quand il se tait (voir `PrimarySourceGate`).
+  final bool primaryHeartRate;
+
   KnownDevice copyWith({
     String? name,
     String? originalName,
     Set<SensorKind>? kinds,
     DateTime? lastConnectedAt,
     bool? autoConnect,
+    bool? primaryHeartRate,
   }) {
     return KnownDevice(
       remoteId: remoteId,
@@ -57,6 +65,7 @@ class KnownDevice {
       kinds: kinds ?? this.kinds,
       lastConnectedAt: lastConnectedAt ?? this.lastConnectedAt,
       autoConnect: autoConnect ?? this.autoConnect,
+      primaryHeartRate: primaryHeartRate ?? this.primaryHeartRate,
     );
   }
 
@@ -67,6 +76,7 @@ class KnownDevice {
         'kinds': [for (final kind in kinds) kind.name],
         'lastConnectedAt': lastConnectedAt?.toIso8601String(),
         'autoConnect': autoConnect,
+        'primaryHeartRate': primaryHeartRate,
       };
 
   /// Renvoie `null` sur une entrée inexploitable plutôt que de lever : un
@@ -104,6 +114,9 @@ class KnownDevice {
       lastConnectedAt:
           rawDate is String ? DateTime.tryParse(rawDate) : null,
       autoConnect: json['autoConnect'] is bool ? json['autoConnect'] as bool : true,
+      // Absent = pas principal : sans désignation, le hub garde son
+      // comportement d'avant (dernière mesure reçue, d'où qu'elle vienne).
+      primaryHeartRate: json['primaryHeartRate'] == true,
     );
   }
 

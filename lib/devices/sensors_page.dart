@@ -289,7 +289,10 @@ class _SensorsPageState extends State<SensorsPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SensorKindIcons(known.kinds),
-            Text(sensorStatusLabel(status, autoConnect: known.autoConnect)),
+            Text([
+              if (known.primaryHeartRate) 'Cardio principal',
+              sensorStatusLabel(status, autoConnect: known.autoConnect),
+            ].join(' · ')),
           ],
         ),
         isThreeLine: true,
@@ -308,6 +311,9 @@ class _SensorsPageState extends State<SensorsPage> {
                 _forget(known);
               case 'rename':
                 _rename(known);
+              case 'primary_hr':
+                _devices.setPrimaryHeartRate(
+                    known.remoteId, !known.primaryHeartRate);
               case 'auto':
                 _devices.setAutoConnect(known.remoteId, !known.autoConnect);
               case 'connect':
@@ -331,6 +337,15 @@ class _SensorsPageState extends State<SensorsPage> {
               const PopupMenuItem(
                   value: 'calibrate', child: Text('Calibrer la puissance')),
             const PopupMenuItem(value: 'rename', child: Text('Renommer')),
+            // Seulement sur ce qui mesure le cardio : sur un radar, la commande
+            // ne voudrait rien dire.
+            if (known.kinds.contains(SensorKind.heartRate))
+              PopupMenuItem(
+                value: 'primary_hr',
+                child: Text(known.primaryHeartRate
+                    ? 'Ne plus être le cardio principal'
+                    : 'Cardio principal'),
+              ),
             PopupMenuItem(
               value: 'auto',
               child: Text(known.autoConnect
