@@ -7,6 +7,7 @@ import '../../dashboard/dashboard_block.dart';
 import '../../dashboard/metric_id.dart';
 import '../../ui/zone_colors.dart';
 import '../widgets/background_chart_graph.dart';
+import '../workout_target_color.dart';
 import 'block_card.dart';
 
 /// Une mesure du catalogue, dessinée selon sa disposition ([MetricLayout]) :
@@ -197,8 +198,17 @@ class MetricView extends StatelessWidget {
       sources.recorder.trackFor(metric).add(sources.recorder.recorded.inSeconds, reading.numericValue);
     }
 
-    final background =
-        color ?? _thresholdColorFor(reading.numericValue) ?? reading.background ?? zoneColorOf(reading.zoneKey);
+    // Le step en cours du programme d'entraînement, s'il y en a un — la
+    // couleur qu'il en tire (voir `workoutTargetColorFor`) prime sur tout le
+    // reste, réglages fixes de l'éditeur inclus : c'est le signal le plus
+    // pertinent en plein effort.
+    final activeMilestone =
+        sources.recorder.activeWorkout?.milestoneAt(sources.recorder.workoutElapsed ?? Duration.zero);
+    final background = workoutTargetColorFor(activeMilestone, metric, reading.numericValue) ??
+        color ??
+        _thresholdColorFor(reading.numericValue) ??
+        reading.background ??
+        zoneColorOf(reading.zoneKey);
     final ink = textColor ?? (background == null ? Colors.white : foregroundOf(background));
     final valueSize = layout.gaugeRow != null ? _gaugeValueSize : _bigValueSize;
     final rows = _usedRows;

@@ -17,6 +17,7 @@ import '../blocks/sleep_block.dart';
 import '../blocks/toggle_pause_block.dart';
 import '../blocks/toggle_workout_block.dart';
 import '../radar_severity.dart';
+import '../workout_target_color.dart';
 import 'band_metric_tile.dart';
 import 'swipe_zone.dart';
 import 'workout_band_tile.dart';
@@ -239,12 +240,15 @@ class _NotchBandState extends State<NotchBand> {
         listenable: Listenable.merge(metric.dependencies(widget.sources)),
         builder: (context, _) {
           final reading = metric.read(widget.sources);
+          final activeMilestone = widget.sources.recorder.activeWorkout
+              ?.milestoneAt(widget.sources.recorder.workoutElapsed ?? Duration.zero);
           return BandMetricTile(
             value: reading.value,
             label: metric.name,
             zoneKey: reading.zoneKey,
             background: reading.background,
-            thresholdColor: bandThresholdColorFor(reading.numericValue, gaugeThresholds, gaugeThresholdColors),
+            thresholdColor: workoutTargetColorFor(activeMilestone, metric, reading.numericValue) ??
+                bandThresholdColorFor(reading.numericValue, gaugeThresholds, gaugeThresholdColors),
             color: color,
             // Inverse du bandeau du bas : le libellé au-dessus du chiffre.
             labelFirst: true,

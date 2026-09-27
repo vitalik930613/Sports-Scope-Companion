@@ -105,6 +105,18 @@ class WorkoutMilestone {
     required this.cueTiming,
     required this.color,
     required this.textColor,
+    required this.targetPower,
+    required this.minPower,
+    required this.maxPower,
+    required this.targetHeartRate,
+    required this.minHeartRate,
+    required this.maxHeartRate,
+    required this.targetCadence,
+    required this.minCadence,
+    required this.maxCadence,
+    required this.targetSpeedKmh,
+    required this.minSpeedKmh,
+    required this.maxSpeedKmh,
   });
 
   final int offsetSeconds;
@@ -126,6 +138,25 @@ class WorkoutMilestone {
   final Color? color;
   final Color? textColor;
 
+  /// Cible + bornes de ce step pour les quatre mesures en direct, réglées
+  /// dans l'éditeur du site (`TrainingProgram::TARGET_FIELDS`, même unités :
+  /// W, bpm, tr/min, km/h). `target*` n'est pas encore affiché ici — seuls
+  /// `min*`/`max*` pilotent la couleur de fond des composants de mesure, voir
+  /// `workoutTargetColorFor` (`workout_target_color.dart`). Une borne absente
+  /// ne referme pas ce côté-là (ni min ni max n'implique l'autre).
+  final double? targetPower;
+  final double? minPower;
+  final double? maxPower;
+  final double? targetHeartRate;
+  final double? minHeartRate;
+  final double? maxHeartRate;
+  final double? targetCadence;
+  final double? minCadence;
+  final double? maxCadence;
+  final double? targetSpeedKmh;
+  final double? minSpeedKmh;
+  final double? maxSpeedKmh;
+
   static WorkoutMilestone? parse(Object? raw) {
     if (raw is! Map) return null;
     final offset = raw['offset_seconds'];
@@ -138,8 +169,22 @@ class WorkoutMilestone {
       cueTiming: WorkoutCueTiming.parse(raw['cue_timing']),
       color: _colorOf(raw['color']),
       textColor: _colorOf(raw['text_color']),
+      targetPower: _numOf(raw['target_power']),
+      minPower: _numOf(raw['min_power']),
+      maxPower: _numOf(raw['max_power']),
+      targetHeartRate: _numOf(raw['target_heart_rate']),
+      minHeartRate: _numOf(raw['min_heart_rate']),
+      maxHeartRate: _numOf(raw['max_heart_rate']),
+      targetCadence: _numOf(raw['target_cadence']),
+      minCadence: _numOf(raw['min_cadence']),
+      maxCadence: _numOf(raw['max_cadence']),
+      targetSpeedKmh: _numOf(raw['target_speed_kmh']),
+      minSpeedKmh: _numOf(raw['min_speed_kmh']),
+      maxSpeedKmh: _numOf(raw['max_speed_kmh']),
     );
   }
+
+  static double? _numOf(Object? raw) => raw is num ? raw.toDouble() : null;
 
   /// `#rrggbb` uniquement — même format que `sanitize_hex_color` côté site,
   /// mais l'appli ne lui fait pas confiance pour autant (même garde que
