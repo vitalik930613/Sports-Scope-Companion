@@ -5,6 +5,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../dashboard/dashboard_block.dart';
 import '../../dashboard/metric_id.dart';
 import '../../dashboard/ride_preset.dart';
+import '../../network/data_saver.dart';
 import '../../training_program/training_program.dart';
 import '../../ui/barred_icon.dart';
 import '../battery_status.dart';
@@ -81,6 +82,8 @@ class DashboardPage extends StatelessWidget {
     this.mapStyle,
     this.onCalibratePower,
     this.onNearbyPois,
+    this.dataSaver,
+    this.onToggleDataSaver,
     this.debugClimbActive = false,
     this.onSimulateClimb,
     this.debugClimb,
@@ -187,6 +190,13 @@ class DashboardPage extends StatelessWidget {
   /// la page web, masqué dans l'appli. Nulle dans un profil sans carte : sans
   /// page de navigation, il n'y a ni POI ni filtre à piloter.
   final VoidCallback? onNearbyPois;
+
+  /// L'économie de données — voir `DataSaverStore`. Nul avant que la coquille
+  /// ait un magasin à transmettre (ne devrait pas arriver en pratique, la
+  /// commande disparaît simplement dans ce cas) ; contrairement à la plupart
+  /// des commandes ci-dessus, sans rapport avec la présence d'une carte.
+  final DataSaverStore? dataSaver;
+  final VoidCallback? onToggleDataSaver;
 
   /// Un col simulé est-il actuellement affiché par-dessus la sortie ?
   ///
@@ -644,6 +654,7 @@ class DashboardPage extends StatelessWidget {
               onDownloadOffline != null ||
               onMapStyle != null ||
               onCalibratePower != null ||
+              onToggleDataSaver != null ||
               onStartWorkout != null ||
               onSimulateClimb != null ||
               onLeaveRide != null)
@@ -677,6 +688,7 @@ class DashboardPage extends StatelessWidget {
       sources.recorder,
       if (nav != null) nav,
       if (offline != null) offline,
+      if (dataSaver != null) dataSaver!,
     ];
 
     return ListenableBuilder(
@@ -777,6 +789,23 @@ class DashboardPage extends StatelessWidget {
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.place_outlined),
                 title: Text('POI à proximité'),
+              ),
+            ),
+          // Icône et sous-titre à jour d'eux-mêmes : `dataSaver` est dans les
+          // `listenables` d'`_actionsMenu`, même patron que « Carte hors
+          // ligne » avec son propre état.
+          if (onToggleDataSaver case final toggle?)
+            PopupMenuItem(
+              value: toggle,
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(dataSaver?.enabled == true
+                    ? Icons.data_saver_on
+                    : Icons.data_saver_off),
+                title: const Text('Économie de données'),
+                subtitle: Text(dataSaver?.enabled == true
+                    ? 'Activée : carte, POI et météo ne se rafraîchissent plus.'
+                    : 'Coupe les requêtes non essentielles, hors GPS et capteurs.'),
               ),
             ),
           if (onCalibratePower case final calibrate?)

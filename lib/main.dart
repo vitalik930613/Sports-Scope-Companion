@@ -27,6 +27,7 @@ import 'navigation/navigation_picker_sheet.dart';
 import 'navigation/navigation_target.dart';
 import 'navigation/route_catalog_fetch.dart';
 import 'navigation/route_catalog_store.dart';
+import 'network/data_saver.dart';
 import 'phone/debug_log_page.dart';
 import 'phone/phone_sensors.dart';
 import 'phone/rider_compass.dart';
@@ -77,6 +78,10 @@ Future<void> main() async {
   // capteurs, donc ils doivent être là avant le premier écran — et surtout avant
   // qu'on puisse lancer un enregistrement depuis l'accueil.
   final settings = await CompanionSettingsStore.open();
+  // L'économie de données, enfin : lue avant le premier écran pour que le
+  // réglage choisi lors d'une sortie précédente reste visible dès l'accueil,
+  // plutôt que de retomber sur « désactivée » jusqu'au premier changement.
+  final dataSaver = await DataSaverStore.open();
   runApp(SportsScopeApp(
     devices: devices,
     rides: rides,
@@ -86,6 +91,7 @@ Future<void> main() async {
     routes: routes,
     trainingPrograms: trainingPrograms,
     settings: settings,
+    dataSaver: dataSaver,
   ));
 }
 
@@ -100,6 +106,7 @@ class SportsScopeApp extends StatefulWidget {
     required this.routes,
     required this.trainingPrograms,
     required this.settings,
+    required this.dataSaver,
   });
 
   final KnownDevicesStore devices;
@@ -120,6 +127,11 @@ class SportsScopeApp extends StatefulWidget {
 
   /// Les profils de sortie et celui qu'on a choisi.
   final CompanionSettingsStore settings;
+
+  /// L'économie de données — voir `DataSaverStore`. Appartient à
+  /// l'application, comme les autres réglages du compte : il doit survivre au
+  /// retour à l'accueil et être visible avant même de partir.
+  final DataSaverStore dataSaver;
 
   @override
   State<SportsScopeApp> createState() => _SportsScopeAppState();
@@ -282,6 +294,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
       routes: widget.routes,
       trainingPrograms: widget.trainingPrograms,
       settings: widget.settings,
+      dataSaver: widget.dataSaver,
       resume: _resume,
       // Filet : si l'échange ci-dessus a échoué (hors ligne, jeton déjà
       // périmé) ou n'a pas eu lieu, `target` garde son jeton et le WebView de
@@ -357,6 +370,7 @@ class _SportsScopeAppState extends State<SportsScopeApp> {
       home: HomePage(
         devices: widget.devices,
         settings: widget.settings,
+        dataSaver: widget.dataSaver,
         hub: _hub,
         linker: _linker,
         recorder: _recorder,
@@ -393,6 +407,7 @@ Future<void> openNavigation(
   required RouteCatalogStore routes,
   required TrainingProgramCatalogStore trainingPrograms,
   required CompanionSettingsStore settings,
+  required DataSaverStore dataSaver,
   required ValueNotifier<NavigationTarget?> resume,
   /// Appelé au retour de la sortie, mais seulement si [target] porte encore un
   /// [NavigationTarget.handoffToken] à ce moment-là.
@@ -487,6 +502,7 @@ Future<void> openNavigation(
         routes: routes,
         trainingPrograms: trainingPrograms,
         companionSettings: settings,
+        dataSaver: dataSaver,
         // Ce que le tableau de bord mesure part au site au prochain
         // rafraîchissement : son éditeur cesse alors de supposer un téléphone.
         onGridMeasured: settings.recordGrid,
@@ -618,6 +634,7 @@ class HomePage extends StatefulWidget {
     required this.routes,
     required this.trainingPrograms,
     required this.settings,
+    required this.dataSaver,
     required this.resume,
     required this.updates,
   });
@@ -628,6 +645,11 @@ class HomePage extends StatefulWidget {
   /// sélecteur de départ, seul endroit où l'on choisit son vélo, et à
   /// l'enregistrement lancé d'ici, qui doit partir avec les mêmes capteurs.
   final CompanionSettingsStore settings;
+
+  /// L'économie de données — voir `DataSaverStore`. Réglable ici, avant de
+  /// partir (forfait limité connu d'avance), et depuis le menu ⋮ d'une sortie
+  /// déjà commencée.
+  final DataSaverStore dataSaver;
 
   /// La sortie qu'on vient de quitter, s'il y en a une. Elle appartient à
   /// l'application et non à cet écran : un lien entrant ouvre la navigation
@@ -910,6 +932,7 @@ class _HomePageState extends State<HomePage> {
         routes: widget.routes,
         trainingPrograms: widget.trainingPrograms,
         settings: widget.settings,
+        dataSaver: widget.dataSaver,
         resume: widget.resume,
       );
 
@@ -1089,6 +1112,8 @@ class _HomePageState extends State<HomePage> {
           // ne s'affiche que s'il y en a une, et l'installation se fait dans le
           // navigateur — donc pas en pleine préparation de sortie.
           UpdateCard(checker: widget.updates),
+          _dataSaverCard(),
+          const SizedBox(height: 12),
           // L'état des capteurs passe avant tout le reste : c'est la question
           // qu'on se pose au moment de partir, et la seule à laquelle il faut
           // répondre avant de rouler — un capteur oublié sur le vélo d'à côté
@@ -1185,5 +1210,34 @@ class _HomePageState extends State<HomePage> {
             ),
           );
         },
+      );
+
+  /// Interrupteur « économie de données » — voir `DataSaverStore`. Réglable
+  /// ici avant de partir (on sait déjà, à l'accueil, qu'on part avec un
+  /// forfait limité et une carte téléchargée), et depuis le menu ⋮ d'une
+  /// sortie déjà commencée, où le même interrupteur reprend cet état.
+  ///
+  /// Pas de couleur d'alerte comme les cartes au-dessus : ce n'est pas un
+  /// problème à corriger avant de partir, juste un réglage qu'on peut avoir
+  /// laissé actif d'une sortie précédente — un `Switch` ordinaire suffit à le
+  /// remarquer.
+  Widget _dataSaverCard() => ListenableBuilder(
+        listenable: widget.dataSaver,
+        builder: (context, _) => Card(
+          child: SwitchListTile(
+            secondary: Icon(
+              widget.dataSaver.enabled ? Icons.data_saver_on : Icons.data_saver_off,
+            ),
+            title: const Text('Économie de données'),
+            subtitle: const Text(
+              'Coupe les tuiles de carte, POI, météo et catalogues en '
+              'ligne — laisse le GPS, le Bluetooth et le partage de '
+              'position actifs. À activer une fois la carte téléchargée '
+              'hors ligne.',
+            ),
+            value: widget.dataSaver.enabled,
+            onChanged: (value) => widget.dataSaver.setEnabled(value),
+          ),
+        ),
       );
 }

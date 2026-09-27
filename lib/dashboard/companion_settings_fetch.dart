@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../navigation/navigation_target.dart';
+import '../network/data_saver.dart';
 import '../training/training_budget.dart';
 import '../training/training_budget_store.dart';
 import 'companion_settings_store.dart';
@@ -165,6 +166,12 @@ class CompanionSettingsFetch {
 
   /// [grid] : ce que le tableau de bord a mesuré, s'il a déjà été affiché.
   Future<SettingsFetchResult> run({Size? grid}) async {
+    // Économie de données : voir RouteCatalogFetch.run. Le tableau de bord et
+    // le budget de charge déjà en cache restent affichés tels quels.
+    if (NetworkPolicy.dataSaverEnabled) {
+      return const SettingsFetchResult(SettingsFetchStatus.failed);
+    }
+
     final script = _scriptFor(grid);
     final answer = Completer<SettingsFetchResult>();
     late final WebViewController controller;

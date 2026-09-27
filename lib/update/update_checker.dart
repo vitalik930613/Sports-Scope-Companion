@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../navigation/navigation_target.dart';
+import '../network/data_saver.dart';
 import 'companion_release.dart';
 
 /// Va demander au site s'il publie une version plus récente que celle qui
@@ -43,6 +44,10 @@ class UpdateChecker extends ChangeNotifier {
   /// Interroge le site. **Ne lève jamais et n'attend pas longtemps** : c'est
   /// appelé au lancement, et être hors ligne avant de partir est banal.
   Future<void> check() async {
+    // Économie de données : une mise à jour manquée un lancement de plus
+    // n'est jamais urgente.
+    if (NetworkPolicy.dataSaverEnabled) return;
+
     try {
       final body = await _fetch(Uri.parse('$baseUrl/api/companion_version'));
       if (body == null) return;

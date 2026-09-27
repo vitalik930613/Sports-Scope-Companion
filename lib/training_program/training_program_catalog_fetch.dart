@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../navigation/navigation_target.dart';
+import '../network/data_saver.dart';
 import 'training_program_summary.dart';
 
 /// Comment s'est terminé un rafraîchissement du catalogue — mêmes trois issues
@@ -65,6 +66,11 @@ class TrainingProgramCatalogFetch {
   ''';
 
   Future<TrainingProgramFetchResult> run() async {
+    // Économie de données : voir RouteCatalogFetch.run.
+    if (NetworkPolicy.dataSaverEnabled) {
+      return const TrainingProgramFetchResult(TrainingProgramFetchStatus.failed);
+    }
+
     final answer = Completer<TrainingProgramFetchResult>();
     late final WebViewController controller;
     Timer? retries;

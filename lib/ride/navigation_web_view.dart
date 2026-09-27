@@ -350,6 +350,25 @@ class NavigationWebController {
     }
   }
 
+  /// Économie de données (menu natif) : la page cesse de solliciter le réseau
+  /// de son propre chef — tuiles hors couverture de l'archive téléchargée,
+  /// recherche POI, recherche de lieu — voir `companionBridge.ts`,
+  /// `dataSaverActive`. Rejoué à chaque `ready` (voir `RideShellPage`) : la
+  /// page repart de zéro à chaque rechargement, comme `setPoiFilter`.
+  ///
+  /// `?.` sur l'objet ET sur la méthode : un site plus ancien n'expose pas
+  /// cette commande, l'appeler ne doit pas lever d'exception — la page garde
+  /// alors son comportement habituel plutôt que de faire planter la sortie.
+  Future<void> setDataSaver(bool active) async {
+    try {
+      await webView.runJavaScript(
+        'void (window.sportsScopeCompanion?.setDataSaver?.($active));',
+      );
+    } catch (e) {
+      debugPrint('[web] économie de données ignorée : $e');
+    }
+  }
+
   /// `?.` sur l'objet ET sur la méthode : un site plus ancien n'expose pas ces
   /// commandes, et l'appeler ne doit pas lever d'exception.
   Future<void> _offlineCommand(String method) async {

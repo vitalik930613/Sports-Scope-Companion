@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' as ll;
 
+import '../../network/data_saver.dart';
 import '../../recording/gps_fix.dart';
 import '../../recording/ride_recorder.dart';
 import '../../weather/rainviewer_client.dart';
@@ -238,6 +239,21 @@ class _PrecipRadarBlockViewState extends State<PrecipRadarBlockView> {
           return BlockCard(
             title: 'Précipitations',
             lines: const ['Pas de GPS.'],
+            color: widget.color,
+            textColor: widget.textColor,
+          );
+        }
+
+        // Économie de données : ce bloc est le plus gourmand en tuiles de
+        // toute l'appli — fond de carte ET précipitations, redemandés à
+        // chaque déplacement. On coupe son rendu entièrement plutôt que de ne
+        // bloquer que le catalogue (voir RainviewerClient.catalog), sans quoi
+        // un catalogue déjà en cache continuerait de faire télécharger des
+        // tuiles image par image.
+        if (NetworkPolicy.dataSaverEnabled) {
+          return BlockCard(
+            title: 'Précipitations',
+            lines: const ['Économie de données activée.'],
             color: widget.color,
             textColor: widget.textColor,
           );
@@ -861,6 +877,17 @@ class _PrecipRadarDetailPageState extends State<_PrecipRadarDetailPage> {
         builder: (context, _) {
           final fix = widget.recorder.lastFix;
           final catalog = _animator.catalog;
+
+          // Même garde que la case de grille (PrecipRadarBlockView) : voir
+          // son commentaire.
+          if (NetworkPolicy.dataSaverEnabled) {
+            return const Center(
+              child: Text(
+                'Économie de données activée.',
+                style: TextStyle(color: Colors.white70, fontSize: 16),
+              ),
+            );
+          }
 
           if (fix == null || catalog == null || catalog.frames.isEmpty) {
             return Center(

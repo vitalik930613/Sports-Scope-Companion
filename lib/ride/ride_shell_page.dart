@@ -19,6 +19,7 @@ import '../navigation/navigation_picker_sheet.dart';
 import '../navigation/navigation_target.dart';
 import '../navigation/route_catalog_store.dart';
 import '../navigation/screen_dimmer.dart';
+import '../network/data_saver.dart';
 import '../phone/phone_sensors.dart';
 import '../phone/rider_compass.dart';
 import '../recording/ride_recorder.dart';
@@ -118,11 +119,19 @@ class RideShellPage extends StatefulWidget {
     required this.routes,
     required this.trainingPrograms,
     required this.companionSettings,
+    required this.dataSaver,
     this.onGridMeasured,
     this.baseUrl = sportsScopeBaseUrl,
   });
 
   final NavigationTarget target;
+
+  /// Économie de données : coupe les requêtes non essentielles (tuiles hors
+  /// couverture, POI, météo, catalogues) une fois la carte hors ligne
+  /// téléchargée. Appartient à l'application, pas à cette sortie : le réglage
+  /// doit survivre au retour à l'accueil, comme les seuils ou le budget de
+  /// charge.
+  final DataSaverStore dataSaver;
 
   /// Le profil de sortie : les pages, le bandeau, les capteurs, le radar.
   /// Choisi au départ et figé pour la durée de la sortie — changer de tableau
@@ -1544,6 +1553,15 @@ class _RideShellPageState extends State<RideShellPage>
     await widget.companionSettings.recordMapStyle(chosen);
   }
 
+  /// Bascule l'économie de données — voir `DataSaverStore`. Persisté côté
+  /// appli (survit au retour à l'accueil) et relayé à la page déjà ouverte, en
+  /// direct : pas besoin d'attendre un rechargement pour que les tuiles hors
+  /// couverture, POI et recherche de lieu cessent de solliciter le réseau.
+  Future<void> _toggleDataSaver() async {
+    await widget.dataSaver.setEnabled(!widget.dataSaver.enabled);
+    unawaited(_web?.setDataSaver(widget.dataSaver.enabled) ?? Future.value());
+  }
+
   /// Lance le téléchargement hors-ligne sans passer par le menu, quand le lien
   /// qui a ouvert cette sortie le demandait (`?download=1` sur le site, voir
   /// [NavigationTarget.autoDownloadOffline]) — la même boîte que
@@ -1889,6 +1907,9 @@ class _RideShellPageState extends State<RideShellPage>
         if (_poiFilterOverride case final keys?) {
           unawaited(_web?.setPoiFilter(keys) ?? Future.value());
         }
+        // Même raison : la page repart de zéro à chaque (re)chargement,
+        // y compris le premier — voir NavigationWebController.setDataSaver.
+        unawaited(_web?.setDataSaver(widget.dataSaver.enabled) ?? Future.value());
       case 'nav':
         _nav.accept(message);
         final climb = _nav.value?.climb;
@@ -2670,6 +2691,11 @@ class _RideShellPageState extends State<RideShellPage>
           powerCalibrationAvailable(widget.hub) ? _calibratePower : null,
       // Sans carte, il n'y a ni POI ni filtre à piloter.
       onNearbyPois: _preset.hasMap ? _showNearbyPois : null,
+      // Sans rapport avec la carte, contrairement aux commandes ci-dessus :
+      // l'économie de données coupe aussi la météo et les catalogues, utiles
+      // même sur un profil sans carte.
+      dataSaver: widget.dataSaver,
+      onToggleDataSaver: _toggleDataSaver,
       // Sans rapport avec la carte : un programme d'entraînement se démarre
       // aussi bien sur home-trainer.
       onStartWorkout: _chooseWorkout,

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../navigation/navigation_target.dart';
+import '../network/data_saver.dart';
 import '../recording/gps_fix.dart';
 
 /// Un pas de la prévision : précipitations (mm) sur un quart d'heure, à
@@ -56,6 +57,9 @@ class PrecipitationForecastClient {
   /// date de trop longtemps ou si la position a trop bougé depuis, sinon la
   /// dernière connue. `null` seulement si aucun relevé n'a jamais réussi.
   Future<PrecipitationForecast?> forecastFor(double lat, double lng) async {
+    // Économie de données : voir WeatherForecastClient.forecastFor.
+    if (NetworkPolicy.dataSaverEnabled) return _cached;
+
     final cachedAt = _cachedAt;
     final cachedLat = _cachedLat;
     final cachedLng = _cachedLng;

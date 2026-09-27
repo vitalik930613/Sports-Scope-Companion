@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import '../navigation/navigation_target.dart';
+import '../network/data_saver.dart';
 
 /// Une frame du catalogue RainViewer : un horodatage Unix (secondes) et le
 /// chemin à insérer dans le gabarit d'URL de tuile.
@@ -75,6 +76,9 @@ class RainviewerClient {
   /// Le catalogue courant, relevé si le dernier date de plus de [_freshness].
   /// `null` seulement si aucun relevé n'a jamais réussi.
   Future<RainviewerCatalog?> catalog() async {
+    // Économie de données : voir WeatherForecastClient.forecastFor.
+    if (NetworkPolicy.dataSaverEnabled) return _cached;
+
     final cachedAt = _cachedAt;
     if (cachedAt != null && DateTime.now().difference(cachedAt) < _freshness) {
       return _cached;

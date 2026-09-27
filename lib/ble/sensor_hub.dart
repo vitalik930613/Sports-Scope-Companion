@@ -41,6 +41,20 @@ class SensorHub {
   final latestCadence = ValueNotifier<double?>(null);
   final latestGears = ValueNotifier<Di2Gears?>(null);
 
+  /// Au-delà, une mesure affichée est retirée (`—` à l'écran). Sans ça, le hub
+  /// gardait la dernière valeur d'un capteur muet — montre qui a cessé de
+  /// diffuser, ceinture qui glisse — et un pouls figé se lisait comme du
+  /// direct. Un peu plus court que `RideRecorder.sensorTtl` (10 s) : l'écran ne
+  /// doit jamais montrer une valeur que la trace a déjà abandonnée. La position
+  /// Di2 n'expire pas (un braquet reste engagé), et le radar a sa propre
+  /// péremption (`radarViewFor`).
+  static const displayTtl = Duration(seconds: 8);
+
+  Timer? _expiryTimer;
+  DateTime? _heartRateAt;
+  DateTime? _powerAt;
+  DateTime? _cadenceAt;
+
   /// Dernier état du radar. `null` = pas de radar connecté ; un [RadarSample]
   /// vide = route dégagée. La distinction compte : on n'affiche pas la même
   /// chose dans les deux cas.
@@ -108,11 +122,17 @@ class SensorHub {
     switch (sample) {
       case HeartRateSample(:final bpm):
         latestHeartRate.value = bpm;
+        _heartRateAt = DateTime.now();
+        _armExpiry();
       case PowerSample(:final watts, :final balanceLeftPercent):
         latestPower.value = watts;
         latestPowerBalance.value = balanceLeftPercent;
+        _powerAt = DateTime.now();
+        _armExpiry();
       case CadenceSample(:final rpm):
         latestCadence.value = rpm;
+        _cadenceAt = DateTime.now();
+        _armExpiry();
       case GearSample(:final gears):
         latestGears.value = gears;
       case RemoteButtonSample():
@@ -127,10 +147,38 @@ class SensorHub {
     _samples.add(sample);
   }
 
+  /// Tic d'une seconde, allumé à la première mesure et éteint quand plus rien
+  /// n'est affiché : un hub au repos ne réveille personne.
+  void _armExpiry() {
+    _expiryTimer ??= Timer.periodic(const Duration(seconds: 1), (_) {
+      final now = DateTime.now();
+      if (_expired(_heartRateAt, now)) {
+        latestHeartRate.value = null;
+        _heartRateAt = null;
+      }
+      if (_expired(_powerAt, now)) {
+        latestPower.value = null;
+        latestPowerBalance.value = null;
+        _powerAt = null;
+      }
+      if (_expired(_cadenceAt, now)) {
+        latestCadence.value = null;
+        _cadenceAt = null;
+      }
+      if (_heartRateAt == null && _powerAt == null && _cadenceAt == null) {
+        _expiryTimer?.cancel();
+        _expiryTimer = null;
+      }
+    });
+  }
+
+  static bool _expired(DateTime? at, DateTime now) =>
+      at != null && now.difference(at) > displayTtl;
+
   /// Ferme la connexion à un appareil et cesse de le suivre.
   ///
-  /// Les dernières valeurs affichées ne sont pas remises à zéro : un capteur
-  /// débranché en cours de sortie ne doit pas effacer ce qu'il a mesuré.
+  /// Les dernières valeurs affichées ne sont pas remises à zéro sur-le-champ :
+  /// elles expirent d'elles-mêmes au bout de [displayTtl].
   Future<void> remove(DeviceIdentifier remoteId) async {
     final connection = connectionFor(remoteId);
     if (connection == null) return;
@@ -139,6 +187,8 @@ class SensorHub {
   }
 
   Future<void> dispose() async {
+    _expiryTimer?.cancel();
+    _expiryTimer = null;
     for (final connection in _connections) {
       await connection.dispose();
     }

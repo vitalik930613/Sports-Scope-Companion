@@ -166,6 +166,17 @@ pas seulement `latestHeartRate`. Trois choses à ne pas défaire :
   mesure reçue gagne. Les trames brutes, elles, passent toutes, parce que c'est
   l'outil de diagnostic.
 
+### Un capteur muet s'efface au bout de 8 s
+
+`SensorHub` retire de `latestHeartRate`, `latestPower` (et son équilibre) et
+`latestCadence` toute valeur qui n'a pas été renouvelée depuis `displayTtl`
+(8 s) : l'écran affiche alors `—`. Avant, le hub gardait la dernière mesure d'un
+capteur décroché ou muet (montre Garmin dont la diffusion s'arrête), et un pouls
+figé se lisait comme du direct. 8 s, un peu sous le `sensorTtl` (10 s) de
+l'enregistreur : l'écran ne montre jamais ce que la trace a déjà abandonné. La
+position Di2 n'expire pas, le radar a sa péremption à lui (`radarViewFor`). Le
+tic d'une seconde ne tourne que tant qu'une valeur est affichée.
+
 ## Le WebView de navigation
 
 **Choix structurant** : les ~8 000 lignes de navigation web (carte MapLibre,

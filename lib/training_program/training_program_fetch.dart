@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../navigation/navigation_target.dart';
+import '../network/data_saver.dart';
 import 'training_program.dart';
 
 /// Va chercher un programme d'entraînement par son jeton de partage —
@@ -20,6 +21,10 @@ Future<TrainingProgram?> fetchSharedTrainingProgram(
   String baseUrl = sportsScopeBaseUrl,
   Duration timeout = const Duration(seconds: 8),
 }) async {
+  // Économie de données : la sortie part sans le programme plutôt que
+  // d'aller le chercher, comme un lien introuvable.
+  if (NetworkPolicy.dataSaverEnabled) return null;
+
   final client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
   try {
     final url = Uri.parse('$baseUrl/api/training_programs/shared/$shareToken');

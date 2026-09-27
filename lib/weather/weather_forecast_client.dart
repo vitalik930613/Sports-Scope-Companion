@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../navigation/navigation_target.dart';
+import '../network/data_saver.dart';
 import '../recording/gps_fix.dart';
 
 /// Un pas de la prévision : température (°C), vent (km/h), direction d'où
@@ -69,6 +70,10 @@ class WeatherForecastClient {
   /// date de trop longtemps ou si la position a trop bougé depuis, sinon la
   /// dernière connue. `null` seulement si aucun relevé n'a jamais réussi.
   Future<WeatherForecast?> forecastFor(double lat, double lng) async {
+    // Économie de données : on garde la dernière prévision connue plutôt que
+    // d'en redemander une, même périmée — voir NetworkPolicy.
+    if (NetworkPolicy.dataSaverEnabled) return _cached;
+
     final cachedAt = _cachedAt;
     final cachedLat = _cachedLat;
     final cachedLng = _cachedLng;

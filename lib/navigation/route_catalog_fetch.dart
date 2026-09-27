@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../network/data_saver.dart';
 import 'nav_session.dart';
 import 'navigation_target.dart';
 import 'route_summary.dart';
@@ -143,6 +144,12 @@ class RouteCatalogFetch {
   ''';
 
   Future<RouteFetchResult> run() async {
+    // Économie de données : pas même le WebView hors écran, qui coûterait déjà
+    // un chargement de page. Le catalogue en cache reste affiché tel quel.
+    if (NetworkPolicy.dataSaverEnabled) {
+      return const RouteFetchResult(RouteFetchStatus.failed);
+    }
+
     final answer = Completer<RouteFetchResult>();
     late final WebViewController controller;
     Timer? retries;
