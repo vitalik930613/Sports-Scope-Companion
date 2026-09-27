@@ -237,7 +237,13 @@ class _NotchBandState extends State<NotchBand> {
     return FittedBox(
       fit: BoxFit.scaleDown,
       child: ListenableBuilder(
-        listenable: Listenable.merge(metric.dependencies(widget.sources)),
+        // Le clignotement hors cible bat au tic de l'enregistreur — ajouté ici
+        // pour `power`/`heartRate`/`cadence`, qui n'y sont sinon pas abonnées
+        // (cf. `MetricView.build`, même raison).
+        listenable: Listenable.merge([
+          ...metric.dependencies(widget.sources),
+          if (isWorkoutTargetMetric(metric)) widget.sources.recorder,
+        ]),
         builder: (context, _) {
           final reading = metric.read(widget.sources);
           final activeMilestone = widget.sources.recorder.activeWorkout
@@ -247,7 +253,12 @@ class _NotchBandState extends State<NotchBand> {
             label: metric.name,
             zoneKey: reading.zoneKey,
             background: reading.background,
-            thresholdColor: workoutTargetColorFor(activeMilestone, metric, reading.numericValue) ??
+            thresholdColor: workoutTargetColorFor(
+                  activeMilestone,
+                  metric,
+                  reading.numericValue,
+                  blinkOn: widget.sources.recorder.workoutTargetBlinkOn,
+                ) ??
                 bandThresholdColorFor(reading.numericValue, gaugeThresholds, gaugeThresholdColors),
             color: color,
             // Inverse du bandeau du bas : le libellé au-dessus du chiffre.

@@ -159,6 +159,11 @@ class MetricView extends StatelessWidget {
       listenable: Listenable.merge([
         ...metric.dependencies(sources),
         for (final slot in layout.secondary) ...slot.metric.dependencies(sources),
+        // Le clignotement hors cible (`workoutTargetColorFor`) bat au tic de
+        // l'enregistreur : `power`/`heartRate`/`cadence` ne l'ont pas déjà
+        // dans leurs dépendances (elles ne suivent que le capteur), sans quoi
+        // la case ne se redessinerait pas entre deux mesures.
+        if (isWorkoutTargetMetric(metric)) sources.recorder,
       ]),
       builder: (context, _) =>
           _paint(metric.read(sources, format: format, computeWindowS: computeWindowS)),
@@ -204,7 +209,12 @@ class MetricView extends StatelessWidget {
     // pertinent en plein effort.
     final activeMilestone =
         sources.recorder.activeWorkout?.milestoneAt(sources.recorder.workoutElapsed ?? Duration.zero);
-    final background = workoutTargetColorFor(activeMilestone, metric, reading.numericValue) ??
+    final background = workoutTargetColorFor(
+          activeMilestone,
+          metric,
+          reading.numericValue,
+          blinkOn: sources.recorder.workoutTargetBlinkOn,
+        ) ??
         color ??
         _thresholdColorFor(reading.numericValue) ??
         reading.background ??

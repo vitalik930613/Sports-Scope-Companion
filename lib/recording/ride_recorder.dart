@@ -273,6 +273,14 @@ class RideRecorder extends ChangeNotifier {
       ? null
       : Duration(seconds: _recordedSeconds - _workoutStartSeconds!);
 
+  /// Une seconde sur deux — le battement partagé du clignotement des cases
+  /// hors cible d'entraînement (`workoutTargetColorFor`, `workout_target_color.dart`).
+  /// Dérivé de [_recordedSeconds] plutôt que d'un minuteur à part : toutes les
+  /// cases lisent le même [RideRecorder] et se redessinent au même tic
+  /// ([tick]/[notifyListeners]), donc elles clignotent déjà en phase sans rien
+  /// de plus à orchestrer.
+  bool get workoutTargetBlinkOn => _recordedSeconds.isEven;
+
   /// Démarre (ou remplace) le programme actif.
   ///
   /// Sans garde sur [isActive] — contrairement à [markLap] — parce
