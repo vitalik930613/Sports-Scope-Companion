@@ -288,8 +288,8 @@ class RideStats {
   int _cadenceCount = 0;
   int _powerSum = 0;
   int _powerCount = 0;
-  double _speedSum = 0;
-  int _speedCount = 0;
+  double _movingSpeedM = 0;
+  double _movingSpeedS = 0;
   double _gradeSum = 0;
   int _gradeCount = 0;
   double _altitudeSum = 0;
@@ -370,7 +370,14 @@ class RideStats {
 
   int? get avgPower => _powerCount > 0 ? (_powerSum / _powerCount).round() : null;
 
-  double? get avgSpeedMps => _speedCount > 0 ? _speedSum / _speedCount : null;
+  /// La vitesse moyenne *en mouvement* : les arrêts (sous
+  /// [stationarySpeedMps]) ne diluent pas le chiffre, comme [movingTime] les
+  /// exclut déjà du `.fit`. Un point par seconde est écrit même au feu rouge,
+  /// et une moyenne brute des échantillons lisait ces zéros comme du roulage.
+  /// Pondérée par l'intervalle réel, pas par le nombre de points. `null` tant
+  /// qu'on n'a pas encore roulé.
+  double? get avgSpeedMps =>
+      _movingSpeedS > 0 ? _movingSpeedM / _movingSpeedS : null;
 
   /// La vitesse ascensionnelle moyenne, en m/h : le dénivelé total sur le temps
   /// *en mouvement*, pas chronométré — un arrêt ravito ne doit pas diluer le
@@ -532,7 +539,15 @@ class RideStats {
         moving =
             point.distanceM - previousDistanceM >= stationarySpeedMps * seconds;
       }
-      if (moving == true) _movingMs += seconds * 1000;
+      if (moving == true) {
+        _movingMs += seconds * 1000;
+        // Pondérée par l'intervalle réel et limitée aux intervalles en
+        // mouvement : la moyenne s'accorde ainsi avec [movingTime].
+        if (speed != null) {
+          _movingSpeedM += speed * seconds;
+          _movingSpeedS += seconds;
+        }
+      }
     }
 
     distanceM = point.distanceM;
@@ -633,8 +648,6 @@ class RideStats {
     final speed = speedOf(point);
     if (speed != null) {
       hasSpeed = true;
-      _speedSum += speed;
-      _speedCount++;
       maxSpeedMps =
           maxSpeedMps == null || speed > maxSpeedMps! ? speed : maxSpeedMps;
       minSpeedMps =
@@ -851,8 +864,8 @@ class RideStats {
     _cadenceSum = 0;
     _cadenceCount = 0;
     _powerSum = _powerCount = 0;
-    _speedSum = 0;
-    _speedCount = 0;
+    _movingSpeedM = 0;
+    _movingSpeedS = 0;
     _gradeSum = 0;
     _gradeCount = 0;
     _kilojoules = 0;
